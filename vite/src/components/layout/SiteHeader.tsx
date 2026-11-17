@@ -1,0 +1,259 @@
+import { useEffect, useRef, useState } from 'react';
+import { ChevronDown, Menu, Moon, Search, Sun, X } from 'lucide-react';
+import { useLocation } from 'react-router-dom';
+import { useTheme } from '../../lib/theme';
+import { onSearchOpen } from '../../lib/search';
+import { Button } from '../ui/button';
+import SearchPanel from './SearchPanel';
+import UserCenter from './UserCenter';
+import type { ApiEndpoints, NavItem, SiteInfo, WidgetsData } from '../../types';
+
+interface Props {
+    site: SiteInfo;
+    colorMode: string;
+    widgets: WidgetsData;
+    api?: ApiEndpoints;
+    showUserCenter: boolean;
+}
+
+function navClass(item: NavItem): string {
+    return (
+        'relative inline-flex h-[50px] items-center rounded-[4px] px-2.5 text-[15px] font-normal transition-colors ' +
+        (item.active
+            ? 'text-brand before:absolute before:inset-x-0 before:top-0 before:h-[5px] before:rounded-b-[15px] before:bg-brand before:opacity-100'
+            : 'text-ink-soft hover:text-brand hover:before:absolute hover:before:inset-x-0 hover:before:top-0 hover:before:h-[5px] hover:before:rounded-b-[15px] hover:before:bg-brand hover:before:opacity-100')
+    );
+}
+
+export default function SiteHeader({ site, colorMode, widgets, api, showUserCenter }: Props) {
+    const { theme, toggle } = useTheme(colorMode);
+    const location = useLocation();
+    const headerRef = useRef<HTMLElement>(null);
+    const [menuOpen, setMenuOpen] = useState(false);
+    const [searchOpen, setSearchOpen] = useState(false);
+    const title = site.title || 'SunkenBoat';
+    const showTitle = site.showTitle !== false || !site.logo;
+
+    useEffect(() => onSearchOpen(() => setSearchOpen(true)), []);
+
+    useEffect(() => {
+        setMenuOpen(false);
+        setSearchOpen(false);
+    }, [location.pathname, location.search]);
+
+    useEffect(() => {
+        if (searchOpen) {
+            setMenuOpen(false);
+        }
+    }, [searchOpen]);
+
+    useEffect(() => {
+        if (!searchOpen) {
+            return;
+        }
+
+        const onKeyDown = (event: KeyboardEvent) => {
+            if (event.key === 'Escape') {
+                setSearchOpen(false);
+            }
+        };
+        const onPointerDown = (event: PointerEvent) => {
+            if (event.target instanceof Node && headerRef.current?.contains(event.target)) {
+                return;
+            }
+            setSearchOpen(false);
+        };
+
+        document.addEventListener('keydown', onKeyDown);
+        document.addEventListener('pointerdown', onPointerDown);
+
+        return () => {
+            document.removeEventListener('keydown', onKeyDown);
+            document.removeEventListener('pointerdown', onPointerDown);
+        };
+    }, [searchOpen]);
+
+    return (
+        <header
+            ref={headerRef}
+            className="sticky top-0 z-40 mb-5 bg-surface/80 backdrop-blur-xl"
+        >
+            <div className="mx-auto flex min-h-[68px] w-full max-w-[1380px] items-center gap-3 px-5 py-2">
+                <a className="flex min-w-0 shrink-0 items-center gap-2.5" href={site.url}>
+                    {site.logo ? (
+                        <img
+                            className="size-9 shrink-0 rounded-[4px] object-cover"
+                            src={site.logo}
+                            alt=""
+                            width={36}
+                            height={36}
+                        />
+                    ) : (
+                        <span
+                            className="grid size-9 shrink-0 place-items-center rounded-[4px] bg-brand text-[15px] font-medium text-brand-contrast"
+                            aria-hidden="true"
+                        >
+                            {title.slice(0, 1)}
+                        </span>
+                    )}
+                    {showTitle ? (
+                        <span className="min-w-0">
+                            <span className="block truncate text-[15px] font-medium leading-5 text-ink">
+                                {title}
+                            </span>
+                            {site.subtitle ? (
+                                <span className="hidden max-w-44 truncate text-[11px] leading-4 text-ink-mute sm:block">
+                                    {site.subtitle}
+                                </span>
+                            ) : null}
+                        </span>
+                    ) : null}
+                </a>
+
+                <nav className="hidden h-[52px] flex-1 items-stretch lg:flex" aria-label="主导航">
+                    <ul className="ml-5 flex h-full items-stretch">
+                        {site.nav.map((item) => (
+                            <li key={item.url + item.label} className="group/nav relative flex">
+                                <a
+                                    className={navClass(item)}
+                                    href={item.url}
+                                    aria-current={item.active ? 'page' : undefined}
+                                    aria-haspopup={item.children?.length ? 'true' : undefined}
+                                >
+                                    {item.label}
+                                    {item.children?.length ? (
+                                        <ChevronDown
+                                            className="ml-1 size-3.5 transition-transform group-hover/nav:rotate-180"
+                                            strokeWidth={1.8}
+                                            aria-hidden="true"
+                                        />
+                                    ) : null}
+                                </a>
+                                {item.children?.length ? (
+                                    <ul className="invisible absolute top-full left-0 z-50 min-w-[180px] translate-y-1 rounded-[6px] border border-line bg-surface p-1.5 opacity-0 shadow-pop transition-all group-hover/nav:visible group-hover/nav:translate-y-0 group-hover/nav:opacity-100 group-focus-within/nav:visible group-focus-within/nav:translate-y-0 group-focus-within/nav:opacity-100">
+                                        {item.children.map((child) => (
+                                            <li key={child.url + child.label}>
+                                                <a
+                                                    className={
+                                                        'block rounded-[4px] px-3 py-2 text-[13px] transition-colors ' +
+                                                        (child.active
+                                                            ? 'bg-brand-soft text-brand'
+                                                            : 'text-ink-soft hover:bg-surface-2 hover:text-brand')
+                                                    }
+                                                    href={child.url}
+                                                    aria-current={child.active ? 'page' : undefined}
+                                                >
+                                                    {child.label}
+                                                </a>
+                                            </li>
+                                        ))}
+                                    </ul>
+                                ) : null}
+                            </li>
+                        ))}
+                    </ul>
+                </nav>
+
+                <div className="ml-auto flex items-center gap-1">
+                    <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="size-8 rounded-[4px] text-ink-mute hover:bg-[rgba(136,136,136,0.1)] hover:text-ink-soft"
+                        aria-label={searchOpen ? '关闭搜索' : '打开搜索'}
+                        aria-expanded={searchOpen}
+                        aria-controls="ttdf-search-panel"
+                        onClick={() => setSearchOpen((open) => !open)}
+                    >
+                        <Search strokeWidth={1.8} aria-hidden="true" />
+                    </Button>
+                    <UserCenter
+                        api={api?.user}
+                        show={showUserCenter}
+                        site={site}
+                        stats={widgets.stats}
+                    />
+                    <Button
+                        variant="ghost"
+                        size="icon"
+                        className="size-8 rounded-[4px] text-ink-mute hover:bg-[rgba(136,136,136,0.1)] hover:text-ink-soft"
+                        aria-label={theme === 'dark' ? '切换到浅色模式' : '切换到深色模式'}
+                        aria-pressed={theme === 'dark'}
+                        onClick={toggle}
+                    >
+                        {theme === 'dark' ? <Sun strokeWidth={1.8} /> : <Moon strokeWidth={1.8} />}
+                    </Button>
+                    <Button
+                        variant="ghost"
+                        size="icon"
+                        className="size-8 rounded-[4px] text-ink-mute hover:bg-[rgba(136,136,136,0.1)] hover:text-ink-soft lg:hidden"
+                        aria-label={menuOpen ? '关闭导航菜单' : '打开导航菜单'}
+                        aria-expanded={menuOpen}
+                        aria-controls="ttdf-mobile-nav"
+                        onClick={() => setMenuOpen((open) => !open)}
+                    >
+                        {menuOpen ? <X strokeWidth={1.8} /> : <Menu strokeWidth={1.8} />}
+                    </Button>
+
+                </div>
+            </div>
+
+            {menuOpen ? (
+                <nav
+                    id="ttdf-mobile-nav"
+                    className="bg-surface shadow-card lg:hidden"
+                    aria-label="移动导航"
+                >
+                    <ul className="container-page grid gap-1 py-3">
+                        {site.nav.map((item) => (
+                            <li key={item.url + item.label}>
+                                <a
+                                    className={
+                                        'flex items-center rounded-[4px] px-3 py-2.5 text-[14px] transition-colors ' +
+                                        (item.active
+                                            ? 'bg-brand-soft font-medium text-brand'
+                                            : 'text-ink-soft hover:bg-surface-2 hover:text-ink')
+                                    }
+                                    href={item.url}
+                                    aria-current={item.active ? 'page' : undefined}
+                                    onClick={() => setMenuOpen(false)}
+                                >
+                                    {item.label}
+                                </a>
+                                {item.children?.length ? (
+                                    <ul className="mt-0.5 ml-3 grid gap-0.5 border-l border-line pl-3">
+                                        {item.children.map((child) => (
+                                            <li key={child.url + child.label}>
+                                                <a
+                                                    className={
+                                                        'flex rounded-[4px] px-3 py-2 text-[13px] transition-colors ' +
+                                                        (child.active
+                                                            ? 'text-brand'
+                                                            : 'text-ink-mute hover:text-ink')
+                                                    }
+                                                    href={child.url}
+                                                    aria-current={child.active ? 'page' : undefined}
+                                                    onClick={() => setMenuOpen(false)}
+                                                >
+                                                    {child.label}
+                                                </a>
+                                            </li>
+                                        ))}
+                                    </ul>
+                                ) : null}
+                            </li>
+                        ))}
+                    </ul>
+                </nav>
+            ) : null}
+
+            {searchOpen ? (
+                <SearchPanel
+                    site={site}
+                    widgets={widgets}
+                    onClose={() => setSearchOpen(false)}
+                />
+            ) : null}
+        </header>
+    );
+}
