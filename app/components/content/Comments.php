@@ -69,9 +69,15 @@ if (!function_exists('threadedComments')) {
                         </a>
                     </header>
 
-                    <div class="comment-content" itemprop="commentText"><?php $comments->content(); ?></div>
-
-                    <div class="comment-reply"><?php $comments->reply((string) $options->replyWord); ?></div>
+                    <div class="comment-content-row">
+                        <div class="comment-content" itemprop="commentText"><?php
+                            $commentText = $comments->parentContent->hidden
+                                ? _t('内容被隐藏')
+                                : (string) $comments->text;
+                            echo \SunkenBoat\Support\CommentMarkup::html($commentText);
+                        ?></div>
+                        <div class="comment-reply"><?php $comments->reply((string) $options->replyWord); ?></div>
+                    </div>
 
                     <?php if ($comments->children): ?>
                         <div class="comment-children<?php echo $isReply ? ' comment-children-flat' : ''; ?>">

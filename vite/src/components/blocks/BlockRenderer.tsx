@@ -15,6 +15,20 @@ import {
     SpacerBlock,
     TagsBlock,
 } from './MiscBlocks';
+import {
+    AlertBlock,
+    AuthorCardBlock,
+    FaqBlock,
+    FeatureGridBlock,
+    GalleryBlock,
+    NoticeBlock,
+    QuoteBlock,
+    StatsBlock,
+    StepsBlock,
+    SubscribeBlock,
+    TableBlock,
+    TimelineBlock,
+} from './ContentBlocks';
 import type { Block } from '../../types';
 
 interface Props {
@@ -27,6 +41,7 @@ export default function BlockRenderer({ block }: Props) {
             return (
                 <HeroBlock
                     variant={block.variant}
+                    width={block.width}
                     eyebrow={block.eyebrow}
                     title={block.title}
                     lead={block.lead}
@@ -37,7 +52,7 @@ export default function BlockRenderer({ block }: Props) {
                 />
             );
         case 'carousel':
-            return <CarouselBlock title={block.title} slides={block.slides} />;
+            return <CarouselBlock title={block.title} slides={block.slides} width={block.width} />;
         case 'post-list':
             return (
                 <PostListBlock
@@ -72,7 +87,16 @@ export default function BlockRenderer({ block }: Props) {
         case 'comments':
             return <CommentsBlock data={block.data} />;
         case 'notfound':
-            return <NotFoundBlock title={block.title} text={block.text} action={block.action} />;
+            return (
+                <NotFoundBlock
+                    image={block.image}
+                    title={block.title}
+                    text={block.text}
+                    action={block.action}
+                    searchAction={block.searchAction}
+                    searchPlaceholder={block.searchPlaceholder}
+                />
+            );
         case 'search':
             return (
                 <SearchBlock
@@ -85,6 +109,135 @@ export default function BlockRenderer({ block }: Props) {
             );
         case 'cta':
             return <CtaBlock eyebrow={block.eyebrow} title={block.title} text={block.text} action={block.action} />;
+        case 'alert':
+            return (
+                <AlertBlock
+                    type="alert"
+                    variant={block.variant}
+                    title={block.title}
+                    text={block.text}
+                    action={block.action}
+                />
+            );
+        case 'notice':
+            return (
+                <NoticeBlock
+                    type="notice"
+                    variant={block.variant}
+                    eyebrow={block.eyebrow}
+                    title={block.title}
+                    text={block.text}
+                    action={block.action}
+                />
+            );
+        case 'quote':
+            return (
+                <QuoteBlock
+                    type="quote"
+                    variant={block.variant}
+                    text={block.text}
+                    cite={block.cite}
+                    sourceUrl={block.sourceUrl}
+                />
+            );
+        case 'feature-grid':
+            return (
+                <FeatureGridBlock
+                    type="feature-grid"
+                    variant={block.variant}
+                    eyebrow={block.eyebrow}
+                    title={block.title}
+                    text={block.text}
+                    items={block.items}
+                />
+            );
+        case 'stats':
+            return (
+                <StatsBlock
+                    type="stats"
+                    variant={block.variant}
+                    title={block.title}
+                    text={block.text}
+                    items={block.items}
+                />
+            );
+        case 'steps':
+            return (
+                <StepsBlock
+                    type="steps"
+                    variant={block.variant}
+                    eyebrow={block.eyebrow}
+                    title={block.title}
+                    text={block.text}
+                    items={block.items}
+                />
+            );
+        case 'faq':
+            return (
+                <FaqBlock
+                    type="faq"
+                    variant={block.variant}
+                    eyebrow={block.eyebrow}
+                    title={block.title}
+                    text={block.text}
+                    items={block.items}
+                />
+            );
+        case 'timeline':
+            return (
+                <TimelineBlock
+                    type="timeline"
+                    variant={block.variant}
+                    eyebrow={block.eyebrow}
+                    title={block.title}
+                    text={block.text}
+                    items={block.items}
+                />
+            );
+        case 'gallery':
+            return (
+                <GalleryBlock
+                    type="gallery"
+                    variant={block.variant}
+                    title={block.title}
+                    text={block.text}
+                    images={block.images}
+                />
+            );
+        case 'table':
+            return (
+                <TableBlock
+                    type="table"
+                    variant={block.variant}
+                    title={block.title}
+                    text={block.text}
+                    head={block.head}
+                    rows={block.rows}
+                />
+            );
+        case 'author-card':
+            return (
+                <AuthorCardBlock
+                    type="author-card"
+                    variant={block.variant}
+                    name={block.name}
+                    role={block.role}
+                    bio={block.bio}
+                    avatar={block.avatar}
+                    links={block.links}
+                />
+            );
+        case 'subscribe':
+            return (
+                <SubscribeBlock
+                    type="subscribe"
+                    variant={block.variant}
+                    eyebrow={block.eyebrow}
+                    title={block.title}
+                    text={block.text}
+                    actions={block.actions}
+                />
+            );
         case 'link-list':
             return <LinkListBlock title={block.title} items={block.items} />;
         case 'divider':

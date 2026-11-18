@@ -20,6 +20,8 @@ $siteDescription = trim((string) ($options?->description ?? ''));
 
 $values = Settings::values();
 $siteSubtitle = trim((string) ($values['SubTitle'] ?? ''));
+$pageWidth = (int) ($values['Page_Width'] ?? 1300);
+$pageWidth = max(960, min(1600, $pageWidth));
 $colorMode = (string) ($values['Color_Mode'] ?? 'auto');
 $lightThemeColor = (string) ($values['Color_Background'] ?? '');
 $darkThemeColor = (string) ($values['Color_Background_Dark'] ?? '');
@@ -69,6 +71,7 @@ $structuredData = \SunkenBoat\Support\Seo::structuredData(
 <html
     lang="zh-Hans"
     data-theme="light"
+    style="--page-max: <?php echo Escaper::attr((string) $pageWidth); ?>px"
     data-theme-color-light="<?php echo Escaper::attr($lightThemeColor); ?>"
     data-theme-color-dark="<?php echo Escaper::attr($darkThemeColor); ?>"
 >

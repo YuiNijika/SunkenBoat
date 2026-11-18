@@ -19,6 +19,7 @@ export default defineConfig({
   },
   build: {
     outDir: '../assets/dist',
+    assetsDir: '',
     emptyOutDir: true,
     manifest: true,
     target: 'es2022',

@@ -13,11 +13,15 @@ import type { CarouselSlide } from '../../types';
 interface Props {
     title: string;
     slides: CarouselSlide[];
+    width?: 'content' | 'half' | 'full';
 }
 
-export default function CarouselBlock({ title, slides }: Props) {
+const AUTOPLAY_DELAY = 5600;
+
+export default function CarouselBlock({ title, slides, width = 'content' }: Props) {
     const [api, setApi] = useState<CarouselApi>();
     const [current, setCurrent] = useState(0);
+    const [dragging, setDragging] = useState(false);
 
     useEffect(() => {
         if (!api) {
@@ -25,45 +29,66 @@ export default function CarouselBlock({ title, slides }: Props) {
         }
 
         const update = () => setCurrent(api.selectedScrollSnap());
+        const onPointerDown = () => setDragging(true);
+        const onPointerUp = () => setDragging(false);
         update();
         api.on('select', update);
+        api.on('pointerDown', onPointerDown);
+        api.on('pointerUp', onPointerUp);
 
-        if (slides.length < 2) {
-            return () => api.off('select', update);
+        return () => {
+            api.off('select', update);
+            api.off('pointerDown', onPointerDown);
+            api.off('pointerUp', onPointerUp);
+        };
+    }, [api]);
+
+    useEffect(() => {
+        if (!api || slides.length < 2 || dragging) {
+            return;
         }
 
         const timer = window.setInterval(() => {
             if (!document.hidden) {
                 api.scrollNext();
             }
-        }, 5600);
+        }, AUTOPLAY_DELAY);
 
-        return () => {
-            window.clearInterval(timer);
-            api.off('select', update);
-        };
-    }, [api, slides.length]);
+        return () => window.clearInterval(timer);
+    }, [api, dragging, slides.length]);
 
     if (slides.length === 0) {
         return null;
     }
 
     return (
-        <section className="surface-card overflow-hidden p-0" aria-label={title || '精选内容'}>
+        <section
+            className={`carousel-shell surface-card overflow-hidden p-0 is-${width}`}
+            aria-label={title || '精选内容'}
+            data-width={width}
+        >
             {title ? (
-                <header className="flex items-center justify-between px-5 pt-4 pb-1">
-                    <h2 className="text-[15px] font-medium text-ink">{title}</h2>
-                    <span className="text-[11px] text-ink-faint">
+                <header className="carousel-head">
+                    <h2>{title}</h2>
+                    <span>
                         {current + 1} / {slides.length}
                     </span>
                 </header>
             ) : null}
 
-            <Carousel setApi={setApi} opts={{ loop: slides.length > 1 }} className="w-full">
-                <CarouselContent>
+            <Carousel
+                setApi={setApi}
+                opts={{
+                    loop: slides.length > 1,
+                    containScroll: 'trimSnaps',
+                    dragFree: false,
+                }}
+                className="w-full"
+            >
+                <CarouselContent className="cursor-grab select-none active:cursor-grabbing">
                     {slides.map((slide, index) => {
                         const content = (
-                            <div className="relative aspect-[21/9] min-h-[180px] w-full overflow-hidden bg-surface-3 sm:aspect-[21/8]">
+                            <div className="carousel-slide">
                                 {slide.image ? (
                                     <img
                                         className="size-full object-cover"
@@ -71,26 +96,23 @@ export default function CarouselBlock({ title, slides }: Props) {
                                         alt=""
                                         loading={index === 0 ? 'eager' : 'lazy'}
                                         decoding="async"
+                                        draggable={false}
                                     />
                                 ) : (
-                                    <div className="size-full bg-[linear-gradient(135deg,var(--accent-soft),var(--surface-3))]" />
+                                    <div className="carousel-placeholder" />
                                 )}
-                                <div className="absolute inset-0 bg-[linear-gradient(90deg,rgba(15,18,22,0.72),rgba(15,18,22,0.18)_58%,transparent)]" />
-                                <div className="absolute inset-0 flex max-w-[620px] flex-col justify-end p-5 text-white sm:p-7">
-                                    {slide.title ? (
-                                        <h3 className="text-[20px] font-medium leading-[1.35] sm:text-[26px]">
-                                            {slide.title}
-                                        </h3>
-                                    ) : null}
-                                    {slide.description ? (
-                                        <p className="mt-1.5 line-clamp-2 max-w-[520px] text-[13px] leading-[1.7] text-white/78">
-                                            {slide.description}
-                                        </p>
-                                    ) : null}
+                                <div className="carousel-shade" />
+                                <div className="carousel-copy">
+                                    {slide.title ? <h3>{slide.title}</h3> : null}
+                                    {slide.description ? <p>{slide.description}</p> : null}
                                     {slide.url ? (
-                                        <span className="mt-3 inline-flex items-center gap-1 text-[12px] text-white/85">
+                                        <span>
                                             查看详情
-                                            <ArrowUpRight className="size-3.5" strokeWidth={1.8} aria-hidden="true" />
+                                            <ArrowUpRight
+                                                className="size-3.5"
+                                                strokeWidth={1.8}
+                                                aria-hidden="true"
+                                            />
                                         </span>
                                     ) : null}
                                 </div>
@@ -100,7 +122,7 @@ export default function CarouselBlock({ title, slides }: Props) {
                         return (
                             <CarouselItem key={`${slide.image}-${slide.title}-${index}`}>
                                 {slide.url ? (
-                                    <a className="block" href={slide.url}>
+                                    <a className="block" href={slide.url} draggable={false}>
                                         {content}
                                     </a>
                                 ) : (
@@ -115,14 +137,15 @@ export default function CarouselBlock({ title, slides }: Props) {
                     <>
                         <CarouselPrevious className="left-3 border-0 bg-black/35 text-white hover:bg-black/50 hover:text-white" />
                         <CarouselNext className="right-3 border-0 bg-black/35 text-white hover:bg-black/50 hover:text-white" />
-                        <div className="absolute bottom-3 left-1/2 flex -translate-x-1/2 gap-1.5" aria-hidden="true">
-                            {slides.map((_, index) => (
-                                <span
-                                    key={index}
-                                    className={
-                                        'h-1.5 rounded-full transition-all ' +
-                                        (index === current ? 'w-5 bg-white' : 'w-1.5 bg-white/45')
-                                    }
+                        <div className="carousel-dots">
+                            {slides.map((slide, index) => (
+                                <button
+                                    key={`${slide.title}-${index}`}
+                                    type="button"
+                                    className={index === current ? 'is-active' : ''}
+                                    aria-label={`切换到第 ${index + 1} 张`}
+                                    aria-current={index === current ? 'true' : undefined}
+                                    onClick={() => api?.scrollTo(index)}
                                 />
                             ))}
                         </div>

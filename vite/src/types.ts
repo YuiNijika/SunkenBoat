@@ -35,15 +35,107 @@ export interface ThemeOptions {
     footerLayout: 'columns' | 'compact' | 'centered';
     footerShowCategories: boolean;
     footerShowTags: boolean;
+    footerModules: FooterModule[];
     layoutModules: string[];
+    pageWidth: number;
+}
+
+export interface FooterModule {
+    name: 'brand' | 'nav' | 'categories' | 'tags' | 'custom' | 'meta' | string;
+    variant?: string;
+    data?: {
+        title?: string;
+        text?: string;
+    };
+}
+
+export interface OAuthProvider {
+    id: string;
+    label: string;
+    bound: boolean;
+    name: string;
+    avatar: string;
+    boundAt: number;
+}
+
+export interface OAuthEndpoints {
+    enabled: boolean;
+    providers: OAuthProvider[];
+    startBase: string;
+    unbind: string;
+    nonce: string;
+    nullImage: string;
 }
 
 export interface UserApiEndpoints {
     enabled: boolean;
     session: string;
     login: string;
+    register: string;
+    registerEnabled: boolean;
+    registerVerify: boolean;
+    emailCode: string;
+    resetPassword: string;
+    resetEnabled: boolean;
+    emailVerify: boolean;
+    emailChangeEnabled: boolean;
+    password: string;
     logout: string;
     me: string;
+    profile: string;
+    profileNonce: string;
+    enhanced: boolean;
+    pages: {
+        profile: string;
+        account: string;
+        social: string;
+        content: string;
+        editor: string;
+    };
+    content: {
+        enabled: boolean;
+        contents: string;
+        item: string;
+        posts: string;
+        categories: string;
+        comments: string;
+        media: string;
+    };
+    mailConfigured: boolean;
+    oauth: OAuthEndpoints;
+}
+
+export interface UserProfile {
+    uid: number;
+    name: string;
+    screenName: string;
+    mail?: string;
+    url?: string;
+    group: string;
+    created?: string;
+    avatar?: string;
+    customAvatar?: string;
+    signature?: string;
+    gender?: string;
+    privacy?: string;
+    location?: string;
+    posts?: number;
+    comments?: number;
+    canWrite?: boolean;
+}
+
+export interface MediaItem {
+    id: number;
+    title: string;
+    name: string;
+    url: string;
+    path: string;
+    size: number;
+    type: string;
+    mime: string;
+    created: number;
+    modified: number;
+    authorId: number;
 }
 
 export interface ApiEndpoints {
@@ -119,6 +211,7 @@ export interface CommentsData {
     apiUrl: string;
     cid: number;
     pageSize: number;
+    collapsed: boolean;
     title: string;
     countText: string;
     listHtml: string;
@@ -142,10 +235,12 @@ export interface CommentsData {
 interface BlockBase {
     type: string;
     variant?: string;
+    width?: 'content' | 'half' | 'full';
 }
 
 export interface HeroBlock extends BlockBase {
     type: 'hero';
+    width: 'content' | 'half' | 'full';
     eyebrow: string;
     title: string;
     lead: string;
@@ -233,6 +328,7 @@ export interface CarouselSlide {
 
 export interface CarouselBlock extends BlockBase {
     type: 'carousel';
+    width: 'content' | 'half' | 'full';
     title: string;
     slides: CarouselSlide[];
 }
@@ -250,9 +346,12 @@ export interface CommentsBlock extends BlockBase {
 
 export interface NotFoundBlock extends BlockBase {
     type: 'notfound';
+    image: string;
     title: string;
     text: string;
     action: { label: string; url: string };
+    searchAction: string;
+    searchPlaceholder: string;
 }
 
 export interface SearchBlock extends BlockBase {
@@ -275,6 +374,99 @@ export interface LinkListBlock extends BlockBase {
     type: 'link-list';
     title?: string;
     items: LinkItem[];
+}
+
+export interface AlertBlock extends BlockBase {
+    type: 'alert';
+    title: string;
+    text: string;
+    action: { label: string; url: string };
+}
+
+export interface NoticeBlock extends BlockBase {
+    type: 'notice';
+    eyebrow: string;
+    title: string;
+    text: string;
+    action: { label: string; url: string };
+}
+
+export interface QuoteBlock extends BlockBase {
+    type: 'quote';
+    text: string;
+    cite: string;
+    sourceUrl: string;
+}
+
+export interface FeatureGridBlock extends BlockBase {
+    type: 'feature-grid';
+    eyebrow: string;
+    title: string;
+    text: string;
+    items: { title: string; text: string; url: string }[];
+}
+
+export interface StatsBlock extends BlockBase {
+    type: 'stats';
+    title: string;
+    text: string;
+    items: { value: string; label: string }[];
+}
+
+export interface StepsBlock extends BlockBase {
+    type: 'steps';
+    eyebrow: string;
+    title: string;
+    text: string;
+    items: { title: string; text: string }[];
+}
+
+export interface FaqBlock extends BlockBase {
+    type: 'faq';
+    eyebrow: string;
+    title: string;
+    text: string;
+    items: { question: string; answer: string }[];
+}
+
+export interface TimelineBlock extends BlockBase {
+    type: 'timeline';
+    eyebrow: string;
+    title: string;
+    text: string;
+    items: { date: string; title: string; text: string }[];
+}
+
+export interface GalleryBlock extends BlockBase {
+    type: 'gallery';
+    title: string;
+    text: string;
+    images: string[];
+}
+
+export interface TableBlock extends BlockBase {
+    type: 'table';
+    title: string;
+    text: string;
+    head: string[];
+    rows: string[][];
+}
+
+export interface AuthorCardBlock extends BlockBase {
+    type: 'author-card';
+    name: string;
+    role: string;
+    bio: string;
+    avatar: string;
+    links: { label: string; url: string }[];
+}
+
+export interface SubscribeBlock extends BlockBase {
+    type: 'subscribe';
+    eyebrow: string;
+    title: string;
+    text: string;
+    actions: { label: string; url: string; style: string }[];
 }
 
 export interface DividerBlock extends BlockBase {
@@ -301,11 +493,25 @@ export type Block =
     | SearchBlock
     | CtaBlock
     | LinkListBlock
+    | AlertBlock
+    | NoticeBlock
+    | QuoteBlock
+    | FeatureGridBlock
+    | StatsBlock
+    | StepsBlock
+    | FaqBlock
+    | TimelineBlock
+    | GalleryBlock
+    | TableBlock
+    | AuthorCardBlock
+    | SubscribeBlock
     | DividerBlock
     | SpacerBlock;
 
 export interface PageData {
-    kind: 'home' | 'archive' | 'post' | 'page' | '404' | 'custom';
+    kind: 'home' | 'archive' | 'post' | 'page' | '404' | 'custom' | 'account' | 'editor';
+    userSection?: 'profile' | 'security' | 'social' | 'content';
+    userMode?: 'list' | 'editor';
     site: SiteInfo;
     theme: ThemeOptions;
     api?: ApiEndpoints;

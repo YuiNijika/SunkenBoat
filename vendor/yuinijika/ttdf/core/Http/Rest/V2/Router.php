@@ -318,10 +318,48 @@ final class Router
                 Auth::TIER_USER,
                 static fn (array $p, array $i) => $controller()->attachments($i)
             ),
+            self::route(
+                'GET',
+                'media',
+                Auth::TIER_WRITER,
+                static fn (array $p, array $i) => $controller()->mediaList($i)
+            ),
+            self::route(
+                'GET',
+                'media/{id}',
+                Auth::TIER_WRITER,
+                static fn (array $p, array $i) => $controller()->mediaShow($i, (int) $p['id'])
+            ),
+            self::route(
+                'POST',
+                'media',
+                Auth::TIER_WRITER,
+                static fn (array $p, array $i) => $controller()->mediaUpload($i)
+            ),
+            self::route(
+                'POST',
+                'media/{id}',
+                Auth::TIER_WRITER,
+                static fn (array $p, array $i) => $controller()->mediaRename($i, (int) $p['id'])
+            ),
+            self::route(
+                'DELETE',
+                'media/{id}',
+                Auth::TIER_WRITER,
+                static fn (array $p, array $i) => $controller()->mediaDelete($i, (int) $p['id'])
+            ),
             self::route('GET', 'search', Auth::TIER_PUBLIC, static fn () => $controller()->search()),
             self::route('GET', 'users/{uid}', Auth::TIER_PUBLIC, static fn (array $p) => $controller()->author((int) $p['uid'])),
 
             self::route('POST', 'auth/login', Auth::TIER_PUBLIC, static fn () => $controller()->login()),
+            self::route('POST', 'auth/register', Auth::TIER_PUBLIC, static fn () => $controller()->register()),
+            self::route('POST', 'auth/email-code', Auth::TIER_PUBLIC, static fn () => $controller()->emailCode()),
+            self::route(
+                'POST',
+                'auth/reset-password',
+                Auth::TIER_PUBLIC,
+                static fn () => $controller()->resetPassword()
+            ),
             self::route('POST', 'auth/logout', Auth::TIER_USER, static fn (array $p, array $i) => $controller()->logout($i)),
             self::route('GET', 'auth/session', Auth::TIER_USER, static fn (array $p, array $i) => $controller()->session($i)),
             self::route(

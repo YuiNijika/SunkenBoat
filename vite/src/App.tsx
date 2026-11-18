@@ -1,7 +1,9 @@
 import { Fragment, useMemo } from 'react';
-import type { ReactNode } from 'react';
+import type { CSSProperties, ReactNode } from 'react';
 import BlockRenderer from './components/blocks/BlockRenderer';
+import AccountPanel from './components/layout/AccountPanel';
 import ActionRail from './components/layout/ActionRail';
+import EditorWorkspace from './components/layout/EditorWorkspace';
 import ReadingProgress from './components/layout/ReadingProgress';
 import SiteFooter from './components/layout/SiteFooter';
 import SiteHeader from './components/layout/SiteHeader';
@@ -15,6 +17,59 @@ interface Props {
 }
 
 export default function App({ data }: Props) {
+    const pageWidth = Number.isFinite(data.theme.pageWidth) ? data.theme.pageWidth : 1300;
+    const appStyle = { '--page-max': `${pageWidth}px` } as CSSProperties;
+
+    if (data.kind === 'editor') {
+        return <EditorApp data={data} appStyle={appStyle} />;
+    }
+
+    return <SiteApp data={data} appStyle={appStyle} />;
+}
+
+function EditorApp({ data, appStyle }: { data: PageData; appStyle: CSSProperties }) {
+    const userApi = data.api?.user;
+    const cid = Number(new URLSearchParams(window.location.search).get('cid') ?? 0);
+    const { site, widgets } = useSidebarData(data);
+    const footerModules =
+        Array.isArray(data.theme.footerModules) && data.theme.footerModules.length > 0
+            ? data.theme.footerModules
+            : ['brand', 'nav', 'categories', 'tags', 'meta'].map((name) => ({ name }));
+
+    return (
+        <div className="flex min-h-dvh flex-col" style={appStyle} data-kind="editor">
+            <SiteHeader
+                site={data.site}
+                colorMode={data.theme.colorMode}
+                widgets={widgets}
+                api={data.api}
+                showUserCenter={data.theme.showUserCenter}
+            />
+            <main id="main" className="flex-1 focus:outline-none" tabIndex={-1}>
+                <div className="editor-root">
+                    {userApi ? (
+                        <EditorWorkspace api={userApi} cid={cid} />
+                    ) : (
+                        <div className="editor-gate">
+                            <p className="editor-gate-title">编辑器暂不可用</p>
+                            <p className="editor-gate-text">站点内容接口未启用。</p>
+                        </div>
+                    )}
+                </div>
+            </main>
+            <SiteFooter
+                site={site}
+                widgets={widgets}
+                layout={data.theme.footerLayout}
+                modules={footerModules}
+                showCategories={data.theme.footerShowCategories}
+                showTags={data.theme.footerShowTags}
+            />
+        </div>
+    );
+}
+
+function SiteApp({ data, appStyle }: { data: PageData; appStyle: CSSProperties }) {
     const { site: sidebarSite, widgets } = useSidebarData(data);
     const showProgress =
         data.theme.showReadingProgress && (data.kind === 'post' || data.kind === 'page');
@@ -27,8 +82,10 @@ export default function App({ data }: Props) {
     const sidebarPages = Array.isArray(data.theme.sidebarPages)
         ? data.theme.sidebarPages
         : ['home', 'archive', 'post', 'page'];
-    const twoColumn = data.theme.showSidebar && sidebarPages.includes(data.kind);
-    const narrow = data.kind === '404' || data.kind === 'custom';
+    const twoColumn =
+        data.kind !== 'account' &&
+        data.theme.showSidebar &&
+        sidebarPages.includes(data.kind);
     const sidebarFirst = data.theme.sidebarPosition === 'left';
     const layoutModules =
         Array.isArray(data.theme.layoutModules) && data.theme.layoutModules.length > 0
@@ -40,8 +97,10 @@ export default function App({ data }: Props) {
             <BlockRenderer block={block} />
         </div>
     );
-    const heroBlock = data.blocks.find((block) => block.type === 'hero');
-    const contentBlocks = heroBlock ? data.blocks.filter((block) => block !== heroBlock) : data.blocks;
+    const isWideBlock = (block: PageData['blocks'][number]) =>
+        block.width === 'half' || block.width === 'full';
+    const wideBlocks = data.blocks.filter(isWideBlock);
+    const contentBlocks = data.blocks.filter((block) => !isWideBlock(block));
 
     const modules: Record<string, ReactNode> = {
         'reading-progress': showProgress ? <ReadingProgress /> : null,
@@ -61,13 +120,25 @@ export default function App({ data }: Props) {
                 tabIndex={-1}
             >
                 <div className="container-page pt-0 pb-5">
-                    {twoColumn ? (
-                        <div className="grid gap-[15px]">
-                            {heroBlock ? (
-                                <div data-block="hero">
-                                    <BlockRenderer block={heroBlock} />
+                    {wideBlocks.length > 0 ? (
+                        <div className="page-wide-stack">
+                            {wideBlocks.map((block, index) => (
+                                <div
+                                    key={`${block.type}-${index}`}
+                                    className={
+                                        block.width === 'full'
+                                            ? 'page-wide-full'
+                                            : 'page-wide-half'
+                                    }
+                                    data-block={block.type}
+                                >
+                                    <BlockRenderer block={block} />
                                 </div>
-                            ) : null}
+                            ))}
+                        </div>
+                    ) : null}
+                    {twoColumn ? (
+                        <div className="grid grid-cols-[minmax(0,1fr)] gap-[15px]">
                             <div
                                 className={
                                     sidebarFirst
@@ -77,7 +148,7 @@ export default function App({ data }: Props) {
                             >
                                 <div
                                     className={
-                                        'grid min-w-0 gap-[15px]' +
+                                        'grid min-w-0 grid-cols-[minmax(0,1fr)] gap-[15px]' +
                                         (sidebarFirst ? ' lg:order-2' : '')
                                     }
                                 >
@@ -106,8 +177,14 @@ export default function App({ data }: Props) {
                             </div>
                         </div>
                     ) : (
-                        <div className={'grid gap-[15px]' + (narrow ? ' mx-auto max-w-3xl' : '')}>
-                            {data.blocks.map(renderBlock)}
+                        <div className="grid grid-cols-[minmax(0,1fr)] gap-[15px]">
+                            {contentBlocks.map(renderBlock)}
+                            {data.kind === 'account' ? (
+                                <AccountPanel
+                                    api={data.api?.user}
+                                    section={data.userSection ?? 'profile'}
+                                />
+                            ) : null}
                         </div>
                     )}
                 </div>
@@ -118,6 +195,11 @@ export default function App({ data }: Props) {
                 site={sidebarSite}
                 widgets={widgets}
                 layout={data.theme.footerLayout}
+                modules={
+                    Array.isArray(data.theme.footerModules) && data.theme.footerModules.length > 0
+                        ? data.theme.footerModules
+                        : ['brand', 'nav', 'categories', 'tags', 'meta'].map((name) => ({ name }))
+                }
                 showCategories={data.theme.footerShowCategories}
                 showTags={data.theme.footerShowTags}
             />
@@ -126,7 +208,7 @@ export default function App({ data }: Props) {
     };
 
     return (
-        <div className="flex min-h-dvh flex-col" data-kind={data.kind}>
+        <div className="flex min-h-dvh flex-col" data-kind={data.kind} style={appStyle}>
             {layoutModules.map((module) => (
                 <Fragment key={module}>{modules[module] ?? null}</Fragment>
             ))}

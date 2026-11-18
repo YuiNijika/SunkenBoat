@@ -116,6 +116,7 @@
     const groupFields = (fields, values) => {
         const groups = [];
         let row = null;
+        let rowGroup = null;
 
         (Array.isArray(fields) ? fields : []).forEach((field) => {
             if (!field || !fieldMatches(field, values)) {
@@ -123,8 +124,14 @@
             }
 
             if (field.inline === true) {
-                if (row === null) {
+                const group =
+                    typeof field.inline_group === 'string' && field.inline_group.trim() !== ''
+                        ? field.inline_group.trim()
+                        : '__default';
+
+                if (row === null || rowGroup !== group) {
                     row = { type: 'row', fields: [] };
+                    rowGroup = group;
                     groups.push(row);
                 }
                 row.fields.push(field);
@@ -132,6 +139,7 @@
             }
 
             row = null;
+            rowGroup = null;
             groups.push({ type: 'field', field });
         });
 
@@ -930,6 +938,28 @@
                 openBlocks.value = { ...openBlocks.value, [row.key]: !row.open };
             };
 
+            const onBlockCardClick = (event, index) => {
+                const row = blockRows.value[index];
+                if (!row || row.fields.length === 0 || blockDragIndex.value === index) {
+                    return;
+                }
+
+                const target = event.target;
+                if (!(target instanceof Element)) {
+                    return;
+                }
+
+                if (
+                    target.closest(
+                        'button, a, input, textarea, select, label, .arco-select, .arco-btn, .ttdf-block-grip, .ttdf-block-actions'
+                    )
+                ) {
+                    return;
+                }
+
+                toggleBlock(index);
+            };
+
             const startBlockDrag = (event, index) => {
                 if (!blockDragEnabled.value) {
                     return;
@@ -1458,6 +1488,7 @@
                 navItems,
                 numberValue,
                 onBlockHandleKeydown,
+                onBlockCardClick,
                 openMedia,
                 openSlideMedia,
                 confirmMediaSelection,
@@ -1961,7 +1992,11 @@
                             @drop="dropBlock(index)"
                             @dragend="endBlockDrag"
                         >
-                            <div class="ttdf-block-main">
+                            <div
+                                class="ttdf-block-main"
+                                :class="{ 'is-expandable': row.fields.length > 0 }"
+                                @click="onBlockCardClick($event, index)"
+                            >
                                 <button
                                     v-if="blockDragEnabled"
                                     type="button"

@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { FormEvent } from 'react';
-import { MessageCircle, Reply } from 'lucide-react';
+import { ChevronDown, ChevronUp, MessageCircle, Reply } from 'lucide-react';
 import type { CommentsData } from '../../types';
+import MarkdownToolbar from '../content/MarkdownToolbar';
 import { Button } from '../ui/button';
 import { Card } from '../ui/card';
 import { Input } from '../ui/input';
@@ -24,6 +25,16 @@ interface ApiComment {
 
 interface Props {
     data: CommentsData;
+}
+
+function highlightIn(root: HTMLElement | null): void {
+    if (!root) {
+        return;
+    }
+
+    void import('../../lib/highlight')
+        .then(({ highlightCode }) => highlightCode(root))
+        .catch(() => undefined);
 }
 
 function formatCommentTime(value: string): string {
@@ -117,26 +128,29 @@ function CommentItem({
                             </time>
                         </a>
 
+                    </header>
+
+                    <div className="comment-content-row">
+                        <div className="comment-content" itemProp="commentText">
+                            {replyTo ? (
+                                <p className="comment-mention">
+                                    回复 <span>@{replyTo}</span>
+                                </p>
+                            ) : null}
+                            <div
+                                className="comment-body"
+                                dangerouslySetInnerHTML={{ __html: comment.html || comment.text }}
+                            />
+                        </div>
                         <button
                             type="button"
                             className="comment-reply-btn"
+                            aria-label={`回复 ${comment.author || '匿名'}`}
                             onClick={() => onReply(comment)}
                         >
                             <Reply className="size-3" strokeWidth={1.8} aria-hidden="true" />
                             回复
                         </button>
-                    </header>
-
-                    <div className="comment-content" itemProp="commentText">
-                        {replyTo ? (
-                            <p className="comment-mention">
-                                回复 <span>@{replyTo}</span>
-                            </p>
-                        ) : null}
-                        <div
-                            className="comment-body"
-                            dangerouslySetInnerHTML={{ __html: comment.html || comment.text }}
-                        />
                     </div>
                 </div>
             </div>
@@ -145,10 +159,61 @@ function CommentItem({
 }
 
 function LegacyComments({ data }: Props) {
+    const textareaRef = useRef<HTMLTextAreaElement>(null);
+    const [text, setText] = useState('');
+    const [expanded, setExpanded] = useState(!data.collapsed);
+    const listRef = useRef<HTMLDivElement>(null);
+    const rootCount = useMemo(() => {
+        if (data.listHtml === '' || typeof DOMParser === 'undefined') {
+            return 0;
+        }
+
+        const document = new DOMParser().parseFromString(data.listHtml, 'text/html');
+        const list = document.querySelector('.comment-list');
+        if (!list) {
+            return 0;
+        }
+
+        return Array.from(list.children).filter((element) =>
+            element.classList.contains('comment-item')
+        ).length;
+    }, [data.listHtml]);
+
+    useEffect(() => {
+        highlightIn(listRef.current);
+    }, [data.listHtml, expanded]);
+
     return (
         <>
             {data.listHtml ? (
-                <div className="comment-legacy" dangerouslySetInnerHTML={{ __html: data.listHtml }} />
+                <>
+                    <div
+                        className={
+                            'comment-legacy' +
+                            (data.collapsed && !expanded ? ' is-collapsed' : '')
+                        }
+                        ref={listRef}
+                        dangerouslySetInnerHTML={{ __html: data.listHtml }}
+                    />
+                    {rootCount > 3 ? (
+                        <div className="comments-more">
+                            <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                aria-expanded={expanded}
+                                onClick={() => setExpanded((current) => !current)}
+                            >
+                                {expanded ? (
+                                    <ChevronUp aria-hidden="true" />
+                                ) : (
+                                    <ChevronDown aria-hidden="true" />
+                                )}
+                                {expanded ? '收起评论' : `查看更多评论（${rootCount - 3}）`}
+                            </Button>
+                        </div>
+                    ) : null}
+                </>
             ) : (
                 <p className="comments-empty">暂时没有评论，欢迎在下方留言。</p>
             )}
@@ -172,8 +237,26 @@ function LegacyComments({ data }: Props) {
 
                     <form method="post" action={data.action} id="comment-form" className="comment-form">
                         <div className="comment-field">
-                            <Label htmlFor="comment-text">评论内容</Label>
-                            <Textarea id="comment-text" name="text" rows={5} required placeholder="写下你的想法…" />
+                            <div className="comment-field-head">
+                                <Label htmlFor="comment-text">评论内容</Label>
+                                <span className="comment-field-hint">
+                                    支持 Markdown：代码块、链接与图片
+                                </span>
+                            </div>
+                            <div className="markdown-editor">
+                                <MarkdownToolbar target={textareaRef} onChange={setText} />
+                                <Textarea
+                                    ref={textareaRef}
+                                    id="comment-text"
+                                    name="text"
+                                    className="markdown-input"
+                                    rows={5}
+                                    required
+                                    value={text}
+                                    onChange={(event) => setText(event.target.value)}
+                                    placeholder="写下你的想法…支持 Markdown 语法"
+                                />
+                            </div>
                         </div>
 
                         {data.loggedIn ? (
@@ -245,7 +328,10 @@ export default function CommentsBlock({ data }: Props) {
     const [author, setAuthor] = useState(data.remember.author);
     const [mail, setMail] = useState(data.remember.mail);
     const [url, setUrl] = useState(data.remember.url);
+    const [expanded, setExpanded] = useState(!data.collapsed);
     const formRef = useRef<HTMLFormElement>(null);
+    const textareaRef = useRef<HTMLTextAreaElement>(null);
+    const listRef = useRef<HTMLOListElement>(null);
 
     const loadComments = async () => {
         if (!data.apiEnabled) {
@@ -278,6 +364,10 @@ export default function CommentsBlock({ data }: Props) {
     useEffect(() => {
         void loadComments();
     }, [data.apiEnabled, data.apiUrl, data.cid]);
+
+    useEffect(() => {
+        highlightIn(listRef.current);
+    }, [comments, expanded]);
 
     const threads = useMemo(() => {
         const byId = new Map(comments.map((comment) => [comment.coid, comment]));
@@ -333,8 +423,7 @@ export default function CommentsBlock({ data }: Props) {
         setParentTarget(comment.author || '匿名');
         setNotice('');
         formRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        const field = formRef.current?.querySelector<HTMLTextAreaElement>('#api-comment-text');
-        field?.focus();
+        textareaRef.current?.focus();
     };
 
     const submit = async (event: FormEvent<HTMLFormElement>) => {
@@ -389,6 +478,10 @@ export default function CommentsBlock({ data }: Props) {
         return null;
     }
 
+    const previewCount = 3;
+    const visibleRoots = expanded ? threads.roots : threads.roots.slice(0, previewCount);
+    const hiddenCount = threads.roots.length - visibleRoots.length;
+
     return (
         <Card className="surface-card comments-card" id="comments">
             <header className="comments-head">
@@ -424,15 +517,29 @@ export default function CommentsBlock({ data }: Props) {
                         ) : null}
 
                         <div className="comment-field">
-                            <Label htmlFor="api-comment-text">评论内容</Label>
-                            <Textarea
-                                id="api-comment-text"
-                                rows={5}
-                                required
-                                value={text}
-                                onChange={(event) => setText(event.target.value)}
-                                placeholder="写下你的想法…"
-                            />
+                            <div className="comment-field-head">
+                                <Label htmlFor="api-comment-text">评论内容</Label>
+                                <span className="comment-field-hint">
+                                    支持 Markdown：代码块、链接与图片
+                                </span>
+                            </div>
+                            <div className="markdown-editor">
+                                <MarkdownToolbar
+                                    target={textareaRef}
+                                    onChange={setText}
+                                    disabled={submitting}
+                                />
+                                <Textarea
+                                    ref={textareaRef}
+                                    id="api-comment-text"
+                                    className="markdown-input"
+                                    rows={5}
+                                    required
+                                    value={text}
+                                    onChange={(event) => setText(event.target.value)}
+                                    placeholder="写下你的想法…支持 Markdown 语法"
+                                />
+                            </div>
                         </div>
 
                         {data.loggedIn ? (
@@ -510,8 +617,8 @@ export default function CommentsBlock({ data }: Props) {
                             ))}
                         </div>
                     ) : threads.roots.length > 0 ? (
-                        <ol className="comment-list">
-                            {threads.roots.map((comment) => (
+                        <ol className="comment-list" ref={listRef}>
+                            {visibleRoots.map((comment) => (
                                 <li key={comment.coid} className="comment-thread">
                                     <ol className="comment-list">
                                         <CommentItem comment={comment} onReply={handleReply} />
@@ -537,6 +644,25 @@ export default function CommentsBlock({ data }: Props) {
                     ) : (
                         <p className="comments-empty">暂时没有评论，欢迎在上方留言。</p>
                     )}
+
+                    {threads.roots.length > previewCount ? (
+                        <div className="comments-more">
+                            <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                aria-expanded={expanded}
+                                onClick={() => setExpanded((current) => !current)}
+                            >
+                                {expanded ? (
+                                    <ChevronUp aria-hidden="true" />
+                                ) : (
+                                    <ChevronDown aria-hidden="true" />
+                                )}
+                                {expanded ? '收起评论' : `查看更多评论（${hiddenCount}）`}
+                            </Button>
+                        </div>
+                    ) : null}
                 </>
             )}
         </Card>

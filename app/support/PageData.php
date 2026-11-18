@@ -6,6 +6,7 @@ namespace SunkenBoat\Support;
 
 use TTDF\Compat\Typecho;
 use TTDF\Framework;
+use TTDF\Ajax\Endpoint;
 use TTDF\Http\Rest\Prefixes;
 use TTDF\Theme\Assets;
 use TTDF\Theme\Media;
@@ -34,6 +35,8 @@ final class PageData
     private const SIDEBAR_MODULES = ['toc', 'site-card', 'recent-posts', 'categories', 'tags'];
 
     private const SIDEBAR_PAGES = ['home', 'archive', 'post', 'page'];
+
+    private const FOOTER_MODULES = ['brand', 'nav', 'categories', 'tags', 'custom', 'meta'];
 
     /**
      * The hero and sidebar share the same small latest-post window.
@@ -114,6 +117,51 @@ final class PageData
     public static function notFound(Archive $archive): array
     {
         return self::buildPage('404', $archive);
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public static function user(string $section = 'profile', bool $editor = false): array
+    {
+        $sections = [
+            'profile' => ['title' => '个人资料'],
+            'security' => ['title' => '账号安全'],
+            'social' => ['title' => '社交账号'],
+            'content' => ['title' => '内容管理'],
+        ];
+
+        if (!isset($sections[$section])) {
+            $section = 'profile';
+        }
+
+        $meta = $sections[$section];
+        $title = $editor ? '写文章' : $meta['title'];
+        $options = Typecho::options();
+        $siteTitle = trim((string) ($options?->title ?? ''));
+
+        return [
+            'kind' => $editor ? 'editor' : 'account',
+            'userSection' => $section,
+            'userMode' => $editor ? 'editor' : 'list',
+            'site' => self::site(null),
+            'theme' => self::theme(),
+            'api' => self::api(),
+            'blocks' => [],
+            'widgets' => self::widgets(),
+            'title' => $title,
+            'documentTitle' => $siteTitle !== '' ? $title . ' · ' . $siteTitle : $title,
+        ];
+    }
+
+    /**
+     * Backwards-compatible alias for the account security page.
+     *
+     * @return array<string, mixed>
+     */
+    public static function account(): array
+    {
+        return self::user('security');
     }
 
     /**
@@ -267,7 +315,7 @@ final class PageData
             'archive' => ['archive-header', 'post-list:list'],
             'post' => ['prose', 'tags', 'post-nav', 'comments'],
             'page' => ['page-header', 'prose', 'comments'],
-            '404' => ['notfound', 'search'],
+            '404' => ['notfound'],
             default => ['page-header', 'prose'],
         };
     }
@@ -358,7 +406,19 @@ final class PageData
             'notfound' => self::notFoundBlock($archive, $data),
             'search' => self::searchBlock($archive, $variant, $data),
             'cta' => self::ctaBlock($data),
-            'link-list' => null,
+            'alert' => self::alertBlock($variant, $data),
+            'notice' => self::noticeBlock($variant, $data),
+            'quote' => self::quoteBlock($variant, $data),
+            'feature-grid' => self::featureGridBlock($variant, $data),
+            'stats' => self::statsBlock($variant, $data),
+            'steps' => self::stepsBlock($variant, $data),
+            'faq' => self::faqBlock($variant, $data),
+            'timeline' => self::timelineBlock($data),
+            'gallery' => self::galleryBlock($variant, $data),
+            'table' => self::tableBlock($data),
+            'author-card' => self::authorCardBlock($archive, $data),
+            'subscribe' => self::subscribeBlock($archive, $data),
+            'link-list' => self::linkListBlock($data),
             'divider' => ['type' => 'divider', 'variant' => $variant !== '' ? $variant : 'default'],
             'spacer' => ['type' => 'spacer', 'variant' => $variant !== '' ? $variant : 'md'],
             default => null,
@@ -373,9 +433,9 @@ final class PageData
         $site = self::site($archive);
         $lead = $site['subtitle'] !== '' ? $site['subtitle'] : $site['description'];
         $primaryLabel = self::text($data, 'primary_label', '浏览文章');
-        $primaryUrl = self::text($data, 'primary_url', '#latest');
+        $primaryUrl = self::safeUrl($data['primary_url'] ?? '', '#latest');
         $secondaryLabel = self::text($data, 'secondary_label', 'RSS 订阅');
-        $secondaryUrl = self::text($data, 'secondary_url', $site['feedUrl']);
+        $secondaryUrl = self::safeUrl($data['secondary_url'] ?? '', $site['feedUrl']);
         $actions = [];
 
         if ($primaryLabel !== '' && $primaryUrl !== '') {
@@ -389,6 +449,7 @@ final class PageData
         return [
             'type' => 'hero',
             'variant' => $variant !== '' ? $variant : 'default',
+            'width' => self::blockWidth($data),
             'eyebrow' => self::text($data, 'eyebrow', ''),
             'title' => self::text($data, 'title', $site['title']),
             'lead' => self::text($data, 'lead', $lead),
@@ -451,12 +512,13 @@ final class PageData
         return [
             'type' => 'carousel',
             'variant' => $variant !== '' ? $variant : 'default',
+            'width' => self::blockWidth($data),
             'title' => self::text($data, 'title', ''),
             'slides' => array_map(static fn (array $slide): array => [
                 'image' => (string) ($slide['image'] ?? ''),
                 'title' => (string) ($slide['title'] ?? ''),
                 'description' => (string) ($slide['description'] ?? ''),
-                'url' => (string) ($slide['url'] ?? ''),
+                'url' => self::safeUrl($slide['url'] ?? ''),
             ], $slides),
         ];
     }
@@ -603,12 +665,15 @@ final class PageData
 
         return [
             'type' => 'notfound',
+            'image' => Assets::url('img/404.svg'),
             'title' => self::text($data, 'title', '这里没有内容'),
             'text' => self::text($data, 'text', '地址可能已经改变，或者这篇内容被移到了别处。'),
             'action' => [
                 'label' => self::text($data, 'action_label', '返回首页'),
-                'url' => self::text($data, 'action_url', $site['url']),
+                'url' => self::safeUrl($data['action_url'] ?? '', $site['url']),
             ],
+            'searchAction' => $site['url'],
+            'searchPlaceholder' => self::text($data, 'search_placeholder', '搜索站内文章'),
         ];
     }
 
@@ -643,9 +708,523 @@ final class PageData
             'text' => self::text($data, 'text', '在 RSS 阅读器里跟进最新内容。'),
             'action' => [
                 'label' => self::text($data, 'action_label', 'RSS 订阅'),
-                'url' => self::text($data, 'action_url', $site['feedUrl']),
+                'url' => self::safeUrl($data['action_url'] ?? '', $site['feedUrl']),
             ],
         ];
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    private static function alertBlock(string $variant, array $data = []): ?array
+    {
+        $title = self::text($data, 'title', '');
+        $text = self::text($data, 'text', '');
+
+        if ($title === '' && $text === '') {
+            return null;
+        }
+
+        return [
+            'type' => 'alert',
+            'variant' => self::blockVariant($variant, ['info', 'success', 'warning', 'danger'], 'info'),
+            'title' => $title,
+            'text' => $text,
+            'action' => [
+                'label' => self::text($data, 'action_label', ''),
+                'url' => self::safeUrl($data['action_url'] ?? ''),
+            ],
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    private static function noticeBlock(string $variant, array $data = []): ?array
+    {
+        $eyebrow = self::text($data, 'eyebrow', '');
+        $title = self::text($data, 'title', '');
+        $text = self::text($data, 'text', '');
+        $action = [
+            'label' => self::text($data, 'action_label', ''),
+            'url' => self::safeUrl($data['action_url'] ?? ''),
+        ];
+
+        if ($eyebrow === '' && $title === '' && $text === '' && $action['url'] === '') {
+            return null;
+        }
+
+        return [
+            'type' => 'notice',
+            'variant' => self::blockVariant($variant, ['soft', 'accent', 'dark'], 'soft'),
+            'width' => self::blockWidth($data),
+            'eyebrow' => $eyebrow,
+            'title' => $title,
+            'text' => $text,
+            'action' => $action,
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    private static function quoteBlock(string $variant, array $data = []): ?array
+    {
+        $text = self::text($data, 'text', '');
+
+        if ($text === '') {
+            return null;
+        }
+
+        return [
+            'type' => 'quote',
+            'variant' => self::blockVariant($variant, ['default', 'large'], 'default'),
+            'text' => $text,
+            'cite' => self::text($data, 'cite', ''),
+            'sourceUrl' => self::safeUrl($data['source_url'] ?? ''),
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    private static function featureGridBlock(string $variant, array $data = []): ?array
+    {
+        $items = self::pipeRows($data['items'] ?? null, ['title', 'text', 'url'], 8);
+        $items = array_values(array_filter(
+            $items,
+            static fn (array $row): bool => $row['title'] !== '' || $row['text'] !== ''
+        ));
+
+        if ($items === []) {
+            return null;
+        }
+
+        return [
+            'type' => 'feature-grid',
+            'variant' => self::blockVariant($variant, ['two', 'three', 'four'], 'three'),
+            'width' => self::blockWidth($data),
+            'eyebrow' => self::text($data, 'eyebrow', ''),
+            'title' => self::text($data, 'title', ''),
+            'text' => self::text($data, 'text', ''),
+            'items' => array_map(static fn (array $row): array => [
+                'title' => $row['title'],
+                'text' => $row['text'],
+                'url' => self::safeUrl($row['url']),
+            ], $items),
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private static function statsBlock(string $variant, array $data = []): array
+    {
+        $items = self::pipeRows($data['items'] ?? null, ['value', 'label'], 8);
+        $items = array_values(array_filter(
+            $items,
+            static fn (array $row): bool => $row['value'] !== '' || $row['label'] !== ''
+        ));
+
+        if ($items === []) {
+            $stats = self::stats();
+            $items = [
+                ['value' => (string) $stats['posts'], 'label' => '篇文章'],
+                ['value' => (string) $stats['comments'], 'label' => '条评论'],
+                ['value' => (string) $stats['categories'], 'label' => '个分类'],
+                ['value' => (string) $stats['tags'], 'label' => '个标签'],
+            ];
+        }
+
+        return [
+            'type' => 'stats',
+            'variant' => self::blockVariant($variant, ['two', 'three', 'four'], 'four'),
+            'title' => self::text($data, 'title', ''),
+            'text' => self::text($data, 'text', ''),
+            'items' => $items,
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    private static function stepsBlock(string $variant, array $data = []): ?array
+    {
+        $items = self::pipeRows($data['items'] ?? null, ['title', 'text'], 8);
+        $items = array_values(array_filter(
+            $items,
+            static fn (array $row): bool => $row['title'] !== '' || $row['text'] !== ''
+        ));
+
+        if ($items === []) {
+            return null;
+        }
+
+        return [
+            'type' => 'steps',
+            'variant' => self::blockVariant($variant, ['vertical', 'grid'], 'vertical'),
+            'eyebrow' => self::text($data, 'eyebrow', ''),
+            'title' => self::text($data, 'title', ''),
+            'text' => self::text($data, 'text', ''),
+            'items' => $items,
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    private static function faqBlock(string $variant, array $data = []): ?array
+    {
+        $items = self::pipeRows($data['items'] ?? null, ['question', 'answer'], 12);
+        $items = array_values(array_filter(
+            $items,
+            static fn (array $row): bool => $row['question'] !== '' && $row['answer'] !== ''
+        ));
+
+        if ($items === []) {
+            return null;
+        }
+
+        return [
+            'type' => 'faq',
+            'variant' => self::blockVariant($variant, ['default', 'panel'], 'default'),
+            'eyebrow' => self::text($data, 'eyebrow', ''),
+            'title' => self::text($data, 'title', ''),
+            'text' => self::text($data, 'text', ''),
+            'items' => $items,
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    private static function timelineBlock(array $data = []): ?array
+    {
+        $items = self::pipeRows($data['items'] ?? null, ['date', 'title', 'text'], 16);
+        $items = array_values(array_filter(
+            $items,
+            static fn (array $row): bool => $row['date'] !== ''
+                || $row['title'] !== ''
+                || $row['text'] !== ''
+        ));
+
+        if ($items === []) {
+            return null;
+        }
+
+        return [
+            'type' => 'timeline',
+            'eyebrow' => self::text($data, 'eyebrow', ''),
+            'title' => self::text($data, 'title', ''),
+            'text' => self::text($data, 'text', ''),
+            'items' => $items,
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    private static function galleryBlock(string $variant, array $data = []): ?array
+    {
+        $images = [];
+
+        foreach (self::lines($data['images'] ?? null, 24) as $line) {
+            $url = Media::normalizeUrl($line);
+            if ($url !== '' && !ctype_digit($url)) {
+                $images[] = $url;
+            }
+        }
+
+        if ($images === []) {
+            return null;
+        }
+
+        return [
+            'type' => 'gallery',
+            'variant' => self::blockVariant($variant, ['two', 'three', 'four'], 'three'),
+            'width' => self::blockWidth($data),
+            'title' => self::text($data, 'title', ''),
+            'text' => self::text($data, 'text', ''),
+            'images' => array_values(array_unique($images)),
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    private static function tableBlock(array $data = []): ?array
+    {
+        $head = self::cells($data['head'] ?? null);
+        $lines = self::lines($data['rows'] ?? null, 20);
+        $columns = count($head);
+
+        foreach ($lines as $line) {
+            $columns = max($columns, count(explode('|', $line)));
+        }
+
+        $columns = max(1, min(8, $columns));
+        $head = array_slice(array_pad($head, $columns, ''), 0, $columns);
+        $rows = self::tableRows($data['rows'] ?? null, $columns, 20);
+        $hasHead = trim(implode('', $head)) !== '';
+
+        if (!$hasHead && $rows === []) {
+            return null;
+        }
+
+        return [
+            'type' => 'table',
+            'title' => self::text($data, 'title', ''),
+            'text' => self::text($data, 'text', ''),
+            'head' => $head,
+            'rows' => $rows,
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private static function authorCardBlock(Archive $archive, array $data = []): array
+    {
+        $site = self::site($archive);
+        $avatar = self::safeUrl(
+            $data['avatar'] ?? '',
+            $site['logo'] !== '' ? $site['logo'] : Assets::url('img/null.svg')
+        );
+        $links = [];
+
+        foreach (self::pipeRows($data['links'] ?? null, ['label', 'url'], 6) as $row) {
+            $url = self::safeUrl($row['url']);
+            if ($row['label'] !== '' && $url !== '') {
+                $links[] = ['label' => $row['label'], 'url' => $url];
+            }
+        }
+
+        return [
+            'type' => 'author-card',
+            'name' => self::text($data, 'name', $site['title']),
+            'role' => self::text($data, 'role', ''),
+            'bio' => self::text($data, 'bio', $site['description']),
+            'avatar' => $avatar,
+            'links' => $links,
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private static function subscribeBlock(Archive $archive, array $data = []): array
+    {
+        $site = self::site($archive);
+        $primaryLabel = self::text($data, 'action_label', 'RSS 订阅');
+        $primaryUrl = self::safeUrl($data['action_url'] ?? '', $site['feedUrl']);
+        $secondaryLabel = self::text($data, 'secondary_label', '');
+        $secondaryUrl = self::safeUrl($data['secondary_url'] ?? '');
+        $actions = [];
+
+        if ($primaryLabel !== '' && $primaryUrl !== '') {
+            $actions[] = ['label' => $primaryLabel, 'url' => $primaryUrl, 'style' => 'primary'];
+        }
+
+        if ($secondaryLabel !== '' && $secondaryUrl !== '') {
+            $actions[] = ['label' => $secondaryLabel, 'url' => $secondaryUrl, 'style' => 'ghost'];
+        }
+
+        return [
+            'type' => 'subscribe',
+            'eyebrow' => self::text($data, 'eyebrow', ''),
+            'title' => self::text($data, 'title', '订阅更新'),
+            'text' => self::text($data, 'text', '在 RSS 阅读器里跟进最新内容。'),
+            'actions' => $actions,
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    private static function linkListBlock(array $data = []): ?array
+    {
+        $items = [];
+
+        foreach (self::pipeRows($data['items'] ?? null, ['label', 'description', 'url'], 12) as $row) {
+            $url = self::safeUrl($row['url']);
+            if ($row['label'] === '' || $url === '') {
+                continue;
+            }
+
+            $items[] = [
+                'label' => $row['label'],
+                'description' => $row['description'],
+                'url' => $url,
+            ];
+        }
+
+        if ($items === []) {
+            return null;
+        }
+
+        return [
+            'type' => 'link-list',
+            'title' => self::text($data, 'title', ''),
+            'items' => $items,
+        ];
+    }
+
+    /**
+     * @param list<string> $allowed
+     */
+    private static function blockVariant(string $variant, array $allowed, string $fallback): string
+    {
+        return in_array($variant, $allowed, true) ? $variant : $fallback;
+    }
+
+    /**
+     * @param list<string> $keys
+     * @return list<array<string, string>>
+     */
+    private static function pipeRows(mixed $value, array $keys, int $limit): array
+    {
+        $rows = [];
+
+        foreach (self::lines($value, $limit) as $line) {
+            $cells = explode('|', $line);
+            $row = [];
+            $empty = true;
+
+            foreach ($keys as $index => $key) {
+                $cell = self::clip((string) ($cells[$index] ?? ''), 300);
+                $row[$key] = $cell;
+                if ($cell !== '') {
+                    $empty = false;
+                }
+            }
+
+            if (!$empty) {
+                $rows[] = $row;
+            }
+        }
+
+        return $rows;
+    }
+
+    /**
+     * @return list<list<string>>
+     */
+    private static function tableRows(mixed $value, int $columns, int $limit): array
+    {
+        $columns = max(1, min(8, $columns));
+        $rows = [];
+
+        foreach (self::lines($value, $limit) as $line) {
+            $cells = array_map(
+                static fn (string $cell): string => self::clip(trim($cell), 300),
+                explode('|', $line)
+            );
+            $cells = array_slice($cells, 0, $columns);
+
+            while (count($cells) < $columns) {
+                $cells[] = '';
+            }
+
+            if (trim(implode('', $cells)) === '') {
+                continue;
+            }
+
+            $rows[] = array_values($cells);
+        }
+
+        return $rows;
+    }
+
+    /**
+     * @return list<string>
+     */
+    private static function cells(mixed $value): array
+    {
+        if (!is_string($value)) {
+            return [];
+        }
+
+        return array_map(
+            static fn (string $cell): string => self::clip(trim($cell), 120),
+            explode('|', $value)
+        );
+    }
+
+    /**
+     * @return list<string>
+     */
+    private static function lines(mixed $value, int $limit): array
+    {
+        if (!is_string($value)) {
+            return [];
+        }
+
+        $lines = preg_split('/\r\n|\r|\n/', $value);
+        if (!is_array($lines)) {
+            return [];
+        }
+
+        $result = [];
+
+        foreach ($lines as $line) {
+            $line = trim($line);
+            if ($line === '') {
+                continue;
+            }
+
+            $result[] = self::clip($line, 600);
+            if (count($result) >= $limit) {
+                break;
+            }
+        }
+
+        return $result;
+    }
+
+    private static function clip(string $value, int $limit): string
+    {
+        $value = trim($value);
+        if ($value === '' || $limit <= 0) {
+            return '';
+        }
+
+        return function_exists('mb_substr')
+            ? mb_substr($value, 0, $limit)
+            : substr($value, 0, $limit);
+    }
+
+    private static function safeUrl(mixed $value, string $fallback = ''): string
+    {
+        if (!is_scalar($value)) {
+            return $fallback;
+        }
+
+        $url = trim((string) $value);
+        $url = preg_replace('/[\x00-\x1F\x7F]+/', '', $url) ?? '';
+
+        if ($url === '' || strlen($url) > 2048 || str_contains($url, '\\')) {
+            return $fallback;
+        }
+
+        if (preg_match('/^([a-z][a-z0-9+.-]*):/i', $url, $match) === 1) {
+            $scheme = strtolower($match[1]);
+
+            return in_array($scheme, ['http', 'https', 'mailto', 'tel'], true) ? $url : $fallback;
+        }
+
+        if (str_starts_with($url, '//')) {
+            return $fallback;
+        }
+
+        if (str_starts_with($url, '/') || str_starts_with($url, '#') || str_starts_with($url, '?')) {
+            return $url;
+        }
+
+        if (preg_match('#(^|/)\.\.(/|$)#', $url) === 1) {
+            return $fallback;
+        }
+
+        return $url;
     }
 
     /**
@@ -758,6 +1337,11 @@ final class PageData
             }
         }
 
+        $requestPath = (string) parse_url((string) ($_SERVER['REQUEST_URI'] ?? ''), PHP_URL_PATH);
+        if ($requestPath !== '') {
+            return (string) preg_replace('#/index\.php$#i', '/', $requestPath);
+        }
+
         return Typecho::siteUrl();
     }
 
@@ -803,8 +1387,24 @@ final class PageData
                 : 'columns',
             'footerShowCategories' => ($values['Footer_Show_Categories'] ?? true) === true,
             'footerShowTags' => ($values['Footer_Show_Tags'] ?? true) === true,
+            'footerModules' => self::footerModules($values['Footer_Blocks'] ?? null),
             'layoutModules' => self::layoutModules($values['Layout_Modules'] ?? null),
+            'pageWidth' => self::pageWidth($values['Page_Width'] ?? null),
         ];
+    }
+
+    private static function blockWidth(array $data): string
+    {
+        $width = (string) ($data['width'] ?? 'content');
+
+        return in_array($width, ['content', 'half', 'full'], true) ? $width : 'content';
+    }
+
+    private static function pageWidth(mixed $value): int
+    {
+        $width = is_numeric($value) ? (int) $value : 1300;
+
+        return max(960, min(1600, $width));
     }
 
     /**
@@ -877,6 +1477,56 @@ final class PageData
     }
 
     /**
+     * @return list<array{name: string, variant: string, data: array<string, string>}>
+     */
+    private static function footerModules(mixed $value): array
+    {
+        $items = is_array($value) ? $value : [];
+        $modules = [];
+
+        foreach ($items as $item) {
+            $spec = self::normalizeSpec($item);
+            if ($spec === null || !in_array($spec['name'], self::FOOTER_MODULES, true)) {
+                continue;
+            }
+
+            $modules[] = [
+                'name' => $spec['name'],
+                'variant' => $spec['variant'],
+                'data' => self::footerModuleData($spec['data']),
+            ];
+        }
+
+        if ($modules !== []) {
+            return $modules;
+        }
+
+        foreach (['brand', 'nav', 'categories', 'tags', 'meta'] as $name) {
+            $modules[] = ['name' => $name, 'variant' => '', 'data' => []];
+        }
+
+        return $modules;
+    }
+
+    /**
+     * @param array<string, mixed> $data
+     * @return array<string, string>
+     */
+    private static function footerModuleData(array $data): array
+    {
+        $result = [];
+
+        foreach (['title', 'text'] as $key) {
+            $value = $data[$key] ?? '';
+            if (is_string($value) && trim($value) !== '') {
+                $result[$key] = trim($value);
+            }
+        }
+
+        return $result;
+    }
+
+    /**
      * The v2 surface is preferred for same-origin theme requests because its
      * public extension routes do not require the optional v1 bearer token.
      * When v2 is off, fall back to v1 only while its token switch is off.
@@ -892,6 +1542,12 @@ final class PageData
 
         $base = rtrim($index, '/') . '/ttdf/sunken';
         $v2Base = rtrim($index, '/') . '/' . Prefixes::v2();
+        $values = Settings::values();
+        $mailConfigured = Mailer::configured();
+        $registerVerify = ($values['Mail_Verify_Register'] ?? false) === true;
+        $resetVerify = ($values['Mail_Verify_Reset'] ?? false) === true;
+        $emailVerify = ($values['Mail_Verify_Email'] ?? false) === true;
+        $allowRegister = (bool) (Typecho::options()?->allowRegister ?? false);
 
         return [
             'enabled' => true,
@@ -906,8 +1562,38 @@ final class PageData
                 'enabled' => ThemeConfig::restV2Enabled(),
                 'session' => $v2Base . '/auth/session',
                 'login' => $v2Base . '/auth/login',
+                'register' => $v2Base . '/auth/register',
+                'registerEnabled' => $allowRegister && (!$registerVerify || $mailConfigured),
+                'registerVerify' => $registerVerify,
+                'emailCode' => $v2Base . '/auth/email-code',
+                'resetPassword' => $v2Base . '/auth/reset-password',
+                'resetEnabled' => $resetVerify && $mailConfigured,
+                'emailVerify' => $emailVerify,
+                'emailChangeEnabled' => !$emailVerify || $mailConfigured,
+                'password' => $v2Base . '/auth/password',
                 'logout' => $v2Base . '/auth/logout',
                 'me' => $v2Base . '/me',
+                'profile' => Endpoint::url('user-profile'),
+                'profileNonce' => Typecho::securityToken(),
+                'enhanced' => ($values['User_Center_Enhanced'] ?? true) === true,
+                'pages' => [
+                    'profile' => rtrim($index, '/') . '/user/profile',
+                    'account' => rtrim($index, '/') . '/user/account',
+                    'social' => rtrim($index, '/') . '/user/social',
+                    'content' => rtrim($index, '/') . '/user/content',
+                    'editor' => rtrim($index, '/') . '/user/content/editor',
+                ],
+                'content' => [
+                    'enabled' => ThemeConfig::restV2Enabled() && UserProfile::canWrite(),
+                    'contents' => $v2Base . '/admin/contents',
+                    'item' => $v2Base . '/admin/contents',
+                    'posts' => $v2Base . '/admin/posts',
+                    'categories' => $v2Base . '/admin/categories',
+                    'comments' => $v2Base . '/me/comments',
+                    'media' => $v2Base . '/media',
+                ],
+                'mailConfigured' => $mailConfigured,
+                'oauth' => OAuth::client(),
             ],
         ];
     }
@@ -1405,8 +2091,8 @@ final class PageData
 
         $values = Settings::values();
         $useFirstImage = ($values['Thumbnail_Use_First_Image'] ?? true) === true;
-        if ($useFirstImage && preg_match('/<img[^>]+src=["\']([^"\']+)["\']/i', $text, $matches) === 1) {
-            $firstImage = self::resolveThumbnailUrl($matches[1], $siteUrl);
+        if ($useFirstImage) {
+            $firstImage = self::firstBodyImage($text, $siteUrl);
             if ($firstImage !== '') {
                 return $firstImage;
             }
@@ -1418,6 +2104,92 @@ final class PageData
         }
 
         return Assets::url('img/thumbnail.svg');
+    }
+
+    /**
+     * Find the first usable image in the stored body text.
+     *
+     * Typecho themes receive both rendered HTML and raw Markdown for older
+     * posts, so checking only `<img src>` misses the common
+     * `![alt](url)` form. Lazy-loaded markup often keeps the real URL in
+     * `data-src`/`data-original`, which is preferred over a placeholder `src`.
+     */
+    private static function firstBodyImage(string $text, string $siteUrl): string
+    {
+        $candidates = [];
+
+        if (preg_match_all('/<img\b[^>]*>/i', $text, $tags, PREG_OFFSET_CAPTURE) > 0) {
+            foreach ($tags[0] as $tag) {
+                $url = self::imageUrlFromTag((string) $tag[0]);
+                if ($url !== '') {
+                    $candidates[] = ['offset' => (int) $tag[1], 'url' => $url];
+                }
+            }
+        }
+
+        $markdown = '/!\[[^\]]*\]\(\s*<?([^\s)>]+)>?(?:\s+["\'][^"\']*["\'])?\s*\)/u';
+        if (preg_match_all($markdown, $text, $images, PREG_OFFSET_CAPTURE) > 0) {
+            foreach ($images[1] as $index => $image) {
+                $candidates[] = [
+                    'offset' => (int) ($images[0][$index][1] ?? 0),
+                    'url' => (string) $image[0],
+                ];
+            }
+        }
+
+        usort(
+            $candidates,
+            static fn (array $left, array $right): int => $left['offset'] <=> $right['offset']
+        );
+
+        foreach ($candidates as $candidate) {
+            $url = self::resolveThumbnailUrl($candidate['url'], $siteUrl);
+            if ($url !== '') {
+                return $url;
+            }
+        }
+
+        return '';
+    }
+
+    private static function imageUrlFromTag(string $tag): string
+    {
+        $attributes = [];
+        $pattern = '/\b(src|data-src|data-original|srcset)\s*=\s*(?:"([^"]*)"|\'([^\']*)\'|([^\s"\'=<>`]+))/i';
+
+        if (
+            preg_match_all($pattern, $tag, $matches, PREG_SET_ORDER) > 0
+        ) {
+            foreach ($matches as $match) {
+                $name = strtolower((string) ($match[1] ?? ''));
+                $value = (string) ($match[2] ?? '');
+                if ($value === '') {
+                    $value = (string) ($match[3] ?? '');
+                }
+                if ($value === '') {
+                    $value = (string) ($match[4] ?? '');
+                }
+
+                $value = trim(html_entity_decode($value, ENT_QUOTES | ENT_HTML5, 'UTF-8'));
+                if ($value !== '' && !str_starts_with(strtolower($value), 'data:')) {
+                    $attributes[$name][] = $value;
+                }
+            }
+        }
+
+        foreach (['data-src', 'data-original', 'src', 'srcset'] as $name) {
+            foreach ($attributes[$name] ?? [] as $value) {
+                if ($name === 'srcset') {
+                    $value = trim((string) preg_split('/\s+/', $value)[0]);
+                }
+
+                if ($value !== '') {
+                    return $value;
+                }
+            }
+        }
+
+        return '';
     }
 
     /**
@@ -1472,10 +2244,44 @@ final class PageData
             preg_match('#^[a-z][a-z0-9+.-]*:#i', $value) !== 1
             && ctype_digit($value) === false
         ) {
-            $value = rtrim($siteUrl, '/') . '/' . ltrim($value, '/');
+            $value = self::resolveRelativeUrl($value, $siteUrl);
         }
 
         return Media::url($value);
+    }
+
+    private static function resolveRelativeUrl(string $value, string $siteUrl): string
+    {
+        $parts = parse_url($value);
+        if (!is_array($parts) || !isset($parts['path'])) {
+            return rtrim($siteUrl, '/') . '/' . ltrim($value, '/');
+        }
+
+        $segments = [];
+        foreach (explode('/', (string) $parts['path']) as $segment) {
+            if ($segment === '' || $segment === '.') {
+                continue;
+            }
+
+            if ($segment === '..') {
+                array_pop($segments);
+                continue;
+            }
+
+            $segments[] = $segment;
+        }
+
+        $suffix = '';
+        if (isset($parts['query'])) {
+            $suffix .= '?' . $parts['query'];
+        }
+        if (isset($parts['fragment'])) {
+            $suffix .= '#' . $parts['fragment'];
+        }
+
+        $path = implode('/', $segments);
+
+        return rtrim($siteUrl, '/') . ($path === '' ? '' : '/' . $path) . $suffix;
     }
 
     /**
@@ -1702,6 +2508,7 @@ final class PageData
         $data['apiUrl'] = rtrim($indexUrl, '/') . '/' . Prefixes::v2() . '/comments';
         $data['apiEnabled'] = ThemeConfig::restEnabled() && ThemeConfig::restV2Enabled();
         $data['pageSize'] = 20;
+        $data['collapsed'] = (Settings::values()['Comments_Collapsed'] ?? true) === true;
 
         return $data;
     }

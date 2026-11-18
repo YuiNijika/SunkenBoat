@@ -66,7 +66,7 @@ export default function SearchPanel({ site, widgets, onClose }: Props) {
             id="ttdf-search-panel"
             className="search-panel absolute inset-x-0 top-full z-50 border-t border-line bg-surface shadow-card"
         >
-            <div className="mx-auto w-full max-w-[1380px] px-5 py-4 sm:py-5">
+            <div className="container-page py-4 sm:py-5">
                 <Command
                     shouldFilter={false}
                     className="overflow-hidden rounded-none border-0 bg-transparent shadow-none"

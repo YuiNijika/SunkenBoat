@@ -72,34 +72,84 @@ export function PostNavBlock({ previousHtml, nextHtml }: PostNavProps) {
 }
 
 interface NotFoundProps {
+    image: string;
     title: string;
     text: string;
     action: { label: string; url: string };
+    searchAction: string;
+    searchPlaceholder: string;
 }
 
-export function NotFoundBlock({ title, text, action }: NotFoundProps) {
+export function NotFoundBlock({
+    image,
+    title,
+    text,
+    action,
+    searchAction,
+    searchPlaceholder,
+}: NotFoundProps) {
     return (
-        <Card className="surface-card relative gap-0 overflow-hidden px-5 py-14 text-center sm:py-20">
-            <span
-                className="pointer-events-none absolute inset-x-0 top-1/2 -z-0 -translate-y-1/2 font-mono text-[10rem] leading-none font-bold tracking-[-0.08em] text-brand/[0.045]"
-                aria-hidden="true"
-            >
-                404
-            </span>
-            <div className="relative">
-                <p className="font-mono text-[2.5rem] leading-none font-semibold text-brand/30" aria-hidden="true">
-                    404
-                </p>
-                <h1 className="mt-5 text-[22px] font-medium text-ink sm:text-[24px]">{title}</h1>
-                <p className="mx-auto mt-3 max-w-md text-[14px] leading-[1.7] text-ink-mute">{text}</p>
-                {action.label !== '' && action.url !== '' ? (
-                    <Button asChild className="mt-7">
-                        <a href={action.url}>
-                            {action.label}
-                            <ArrowRight className="size-4" strokeWidth={1.8} />
-                        </a>
-                    </Button>
-                ) : null}
+        <Card className="surface-card gap-0 overflow-hidden p-0">
+            <div className="grid items-center gap-6 px-5 py-10 sm:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)] sm:gap-10 sm:px-10 sm:py-14">
+                <div className="relative mx-auto w-full max-w-[380px]">
+                    <span
+                        className="pointer-events-none absolute inset-0 grid place-items-center font-mono text-[6rem] font-bold tracking-[-0.08em] text-brand/[0.055]"
+                        aria-hidden="true"
+                    >
+                        404
+                    </span>
+                    {image !== '' ? (
+                        <img
+                            className="relative mx-auto w-full"
+                            src={image}
+                            alt=""
+                            loading="eager"
+                            decoding="async"
+                        />
+                    ) : null}
+                </div>
+
+                <div className="min-w-0 text-center sm:text-left">
+                    <p className="section-label">404 · Not found</p>
+                    <h1 className="mt-3 text-[24px] font-semibold leading-9 text-ink sm:text-[28px]">
+                        {title}
+                    </h1>
+                    <p className="mt-3 text-[13px] leading-6 text-ink-mute">{text}</p>
+
+                    {searchAction !== '' ? (
+                        <Form className="mt-6" method="get" action={searchAction} role="search">
+                            <label className="sr-only" htmlFor="ttdf-notfound-search">
+                                {searchPlaceholder}
+                            </label>
+                            <div className="flex items-center gap-2 rounded-[8px] border border-line bg-surface-2 p-1.5 transition-colors focus-within:border-brand">
+                                <Search
+                                    className="ml-2 size-4 shrink-0 text-ink-mute"
+                                    strokeWidth={1.8}
+                                    aria-hidden="true"
+                                />
+                                <Input
+                                    id="ttdf-notfound-search"
+                                    className="h-9 border-0 bg-transparent px-1 shadow-none focus-visible:ring-0"
+                                    name="s"
+                                    placeholder={searchPlaceholder}
+                                    autoComplete="off"
+                                />
+                                <Button type="submit" size="sm" className="h-9 shrink-0 px-4">
+                                    搜索
+                                </Button>
+                            </div>
+                        </Form>
+                    ) : null}
+
+                    {action.label !== '' && action.url !== '' ? (
+                        <Button asChild variant="outline" className="mt-4">
+                            <a href={action.url}>
+                                {action.label}
+                                <ArrowRight className="size-4" strokeWidth={1.8} />
+                            </a>
+                        </Button>
+                    ) : null}
+                </div>
             </div>
         </Card>
     );

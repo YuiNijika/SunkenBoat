@@ -78,7 +78,7 @@ export default function SiteHeader({ site, colorMode, widgets, api, showUserCent
             ref={headerRef}
             className="sticky top-0 z-40 mb-5 bg-surface/80 backdrop-blur-xl"
         >
-            <div className="mx-auto flex min-h-[68px] w-full max-w-[1380px] items-center gap-3 px-5 py-2">
+            <div className="container-page flex min-h-[68px] items-center gap-3 py-2">
                 <a className="flex min-w-0 shrink-0 items-center gap-2.5" href={site.url}>
                     {site.logo ? (
                         <img
@@ -167,12 +167,7 @@ export default function SiteHeader({ site, colorMode, widgets, api, showUserCent
                     >
                         <Search strokeWidth={1.8} aria-hidden="true" />
                     </Button>
-                    <UserCenter
-                        api={api?.user}
-                        show={showUserCenter}
-                        site={site}
-                        stats={widgets.stats}
-                    />
+                    <UserCenter api={api?.user} show={showUserCenter} site={site} />
                     <Button
                         variant="ghost"
                         size="icon"
