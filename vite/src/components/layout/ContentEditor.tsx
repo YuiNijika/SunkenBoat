@@ -1,8 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import type { FormEvent, ReactNode } from 'react';
+import type { FormEvent, KeyboardEvent, ReactNode } from 'react';
 import {
     ArrowLeft,
+    Blocks,
+    CalendarDays,
     CheckCircle2,
+    ChevronDown,
     Clock3,
     Columns2,
     Eye,
@@ -15,6 +18,7 @@ import {
     Save,
     Send,
     Upload,
+    UserRound,
     X,
 } from 'lucide-react';
 import { Badge } from '../ui/badge';
@@ -22,24 +26,27 @@ import { Button } from '../ui/button';
 import { Checkbox } from '../ui/checkbox';
 import { Input } from '../ui/input';
 import { Textarea } from '../ui/textarea';
+import ComponentLibrary from '../content/ComponentLibrary';
 import MarkdownToolbar from '../content/MarkdownToolbar';
 import MediaLibrary from '../content/MediaLibrary';
 import { renderMarkdown } from '../../lib/markdown';
 import { errorMessage, readPayload } from '../../lib/user';
 import { termsFrom } from '../../lib/content';
 import type { ContentItem, TermItem } from '../../lib/content';
-import type { MediaItem, UserApiEndpoints, UserProfile } from '../../types';
+import type { ArticleField, MediaItem, UserApiEndpoints, UserProfile } from '../../types';
 
 interface Props {
     api: UserApiEndpoints;
     profile: UserProfile;
     cid?: number;
+    fields?: ArticleField[];
     onSaved?: () => void;
 }
 
 type Feedback = { tone: 'success' | 'error'; text: string };
 type SaveState = 'draft' | 'publish' | null;
 type ViewMode = 'write' | 'split' | 'preview';
+const EMPTY_FIELDS: ArticleField[] = [];
 
 interface SnapshotInput {
     title: string;
@@ -49,6 +56,7 @@ interface SnapshotInput {
     categories: number[];
     tags: string[];
     allowComment: boolean;
+    fields: Record<string, string>;
 }
 
 function snapshotOf(value: SnapshotInput): string {
@@ -60,15 +68,19 @@ function snapshotOf(value: SnapshotInput): string {
         [...value.categories].sort((left, right) => left - right),
         [...value.tags].sort(),
         value.allowComment,
+        Object.entries(value.fields).sort(([left], [right]) => left.localeCompare(right)),
     ]);
 }
 
 function MetaBox({ title, children }: { title: string; children: ReactNode }) {
     return (
-        <section className="editor-meta-box">
-            <div className="editor-meta-head">{title}</div>
+        <details className="editor-meta-box" open>
+            <summary className="editor-meta-head">
+                <span>{title}</span>
+                <ChevronDown className="size-3.5" strokeWidth={1.8} aria-hidden="true" />
+            </summary>
             <div className="editor-meta-body">{children}</div>
-        </section>
+        </details>
     );
 }
 
@@ -83,7 +95,13 @@ function countWords(value: string): number {
     return latin + cjk;
 }
 
-export default function ContentEditor({ api, profile, cid = 0, onSaved }: Props) {
+export default function ContentEditor({
+    api,
+    profile,
+    cid = 0,
+    fields = EMPTY_FIELDS,
+    onSaved,
+}: Props) {
     const initialId = Number.isFinite(cid) && cid > 0 ? Math.round(cid) : 0;
     const [editingId, setEditingId] = useState(initialId);
     const [categories, setCategories] = useState<TermItem[]>([]);
@@ -94,6 +112,9 @@ export default function ContentEditor({ api, profile, cid = 0, onSaved }: Props)
     const [tags, setTags] = useState<string[]>([]);
     const [tagInput, setTagInput] = useState('');
     const [allowComment, setAllowComment] = useState(true);
+    const [fieldValues, setFieldValues] = useState<Record<string, string>>(() =>
+        Object.fromEntries(fields.map((field) => [field.name, field.value]))
+    );
     const [status, setStatus] = useState('draft');
     const [created, setCreated] = useState('');
     const [modified, setModified] = useState('');
@@ -103,6 +124,8 @@ export default function ContentEditor({ api, profile, cid = 0, onSaved }: Props)
     const [feedback, setFeedback] = useState<Feedback | null>(null);
     const [viewMode, setViewMode] = useState<ViewMode>('split');
     const [mediaOpen, setMediaOpen] = useState(false);
+    const [fieldMediaTarget, setFieldMediaTarget] = useState<string | null>(null);
+    const [libraryOpen, setLibraryOpen] = useState(false);
     const [uploading, setUploading] = useState(false);
     const [dragging, setDragging] = useState(false);
     const [dirty, setDirty] = useState(false);
@@ -116,6 +139,7 @@ export default function ContentEditor({ api, profile, cid = 0, onSaved }: Props)
         categories: selectedCategories,
         tags,
         allowComment,
+        fields: fieldValues,
     });
 
     useEffect(() => {
@@ -188,6 +212,10 @@ export default function ContentEditor({ api, profile, cid = 0, onSaved }: Props)
                         const nextStatus = item.status === 'draft' ? 'draft' : 'publish';
                         const nextCategories = item.categories.map((category) => category.mid);
                         const nextTags = item.tags.map((tag) => tag.name);
+                        const nextFields = {
+                            ...Object.fromEntries(fields.map((field) => [field.name, field.value])),
+                            ...(item.fields ?? {}),
+                        };
                         setTitle(item.title);
                         setText(item.text);
                         setSlug(item.slug);
@@ -195,6 +223,7 @@ export default function ContentEditor({ api, profile, cid = 0, onSaved }: Props)
                         setSelectedCategories(nextCategories);
                         setTags(nextTags);
                         setAllowComment(item.allowComment);
+                        setFieldValues(nextFields);
                         setCreated(item.created);
                         setModified(item.modified);
                         setPermalink(item.permalink);
@@ -206,9 +235,14 @@ export default function ContentEditor({ api, profile, cid = 0, onSaved }: Props)
                             categories: nextCategories,
                             tags: nextTags,
                             allowComment: item.allowComment,
+                            fields: nextFields,
                         });
                     }
                 } else if (active) {
+                    const nextFields = Object.fromEntries(
+                        fields.map((field) => [field.name, field.value])
+                    );
+                    setFieldValues(nextFields);
                     baseline.current = snapshotOf({
                         title: '',
                         text: '',
@@ -217,6 +251,7 @@ export default function ContentEditor({ api, profile, cid = 0, onSaved }: Props)
                         categories: [],
                         tags: [],
                         allowComment: true,
+                        fields: nextFields,
                     });
                 }
             } catch (reason) {
@@ -241,7 +276,7 @@ export default function ContentEditor({ api, profile, cid = 0, onSaved }: Props)
             active = false;
             controller.abort();
         };
-    }, [api.content.categories, api.content.item, initialId]);
+    }, [api.content.categories, api.content.item, fields, initialId]);
 
     const stats = useMemo(() => {
         const words = countWords(text);
@@ -294,6 +329,31 @@ export default function ContentEditor({ api, profile, cid = 0, onSaved }: Props)
     const insertMedia = (item: MediaItem) => {
         const alt = item.title.replace(/[[\]]/g, '').trim();
         insertSnippet(`\n![${alt}](${item.url})\n`);
+    };
+
+    const selectMedia = (item: MediaItem) => {
+        if (fieldMediaTarget !== null) {
+            setFieldValues((current) => ({ ...current, [fieldMediaTarget]: item.url }));
+            setFieldMediaTarget(null);
+            setMediaOpen(false);
+            return;
+        }
+
+        insertMedia(item);
+    };
+
+    const openBodyMedia = () => {
+        setFieldMediaTarget(null);
+        setMediaOpen(true);
+    };
+
+    const openFieldMedia = (name: string) => {
+        setFieldMediaTarget(name);
+        setMediaOpen(true);
+    };
+
+    const setFieldValue = (name: string, value: string) => {
+        setFieldValues((current) => ({ ...current, [name]: value }));
     };
 
     const uploadFiles = async (files: File[]) => {
@@ -369,6 +429,7 @@ export default function ContentEditor({ api, profile, cid = 0, onSaved }: Props)
                     categories: selectedCategories,
                     tags,
                     allowComment,
+                    fields: fieldValues,
                 }),
             });
             const payload = await readPayload(response);
@@ -386,6 +447,9 @@ export default function ContentEditor({ api, profile, cid = 0, onSaved }: Props)
                 setCreated(saved.created);
                 setModified(saved.modified);
                 setPermalink(saved.permalink);
+                if (saved.fields) {
+                    setFieldValues((current) => ({ ...current, ...saved.fields }));
+                }
                 setStatus(nextStatus);
                 window.history.replaceState(
                     window.history.state,
@@ -402,6 +466,7 @@ export default function ContentEditor({ api, profile, cid = 0, onSaved }: Props)
                 categories: selectedCategories,
                 tags,
                 allowComment,
+                fields: saved?.fields ?? fieldValues,
             });
             setDirty(false);
             setFeedback({
@@ -435,50 +500,178 @@ export default function ContentEditor({ api, profile, cid = 0, onSaved }: Props)
     const statusLabel =
         status === 'draft' ? '草稿' : status === 'publish' ? '已发布' : status || '未保存';
 
-    return (
-        <div className="editor-workspace">
-            <div className="editor-toolbar">
-                <a className="editor-back" href={api.pages.content}>
-                    <ArrowLeft aria-hidden="true" />
-                    <span>内容管理</span>
-                </a>
-                <div className="editor-toolbar-title">
-                    <span>{editingId > 0 ? '编辑文章' : '新建文章'}</span>
-                    <Badge variant={status === 'publish' ? 'default' : 'secondary'}>
-                        {statusLabel}
-                    </Badge>
-                    {dirty ? <span className="editor-dirty">未保存</span> : null}
+    const renderArticleField = (field: ArticleField) => {
+        const value = fieldValues[field.name] ?? '';
+        const type = field.type.toLowerCase();
+        const selectedValues = value
+            .split(',')
+            .map((item) => item.trim())
+            .filter((item) => item !== '');
+
+        const control =
+            type === 'select' ? (
+                <select
+                    className="editor-field-select"
+                    value={value}
+                    onChange={(event) => setFieldValue(field.name, event.target.value)}
+                    aria-label={field.label}
+                >
+                    <option value="">未选择</option>
+                    {field.options.map((option) => (
+                        <option key={option.value} value={option.value}>
+                            {option.label}
+                        </option>
+                    ))}
+                </select>
+            ) : type === 'radio' && field.options.length > 0 ? (
+                <div className="editor-field-choices" role="group" aria-label={field.label}>
+                    {field.options.map((option) => {
+                        const active = value === option.value;
+                        return (
+                            <button
+                                key={option.value}
+                                type="button"
+                                className={active ? 'is-active' : ''}
+                                aria-pressed={active}
+                                onClick={() => setFieldValue(field.name, option.value)}
+                            >
+                                {option.label}
+                            </button>
+                        );
+                    })}
                 </div>
-                <div className="editor-toolbar-actions">
-                    <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        disabled={saving !== null}
-                        onClick={() => void save('draft')}
-                    >
-                        {saving === 'draft' ? (
-                            <LoaderCircle className="animate-spin" aria-hidden="true" />
-                        ) : (
-                            <Save aria-hidden="true" />
-                        )}
-                        保存草稿
-                    </Button>
-                    <Button
-                        type="button"
-                        size="sm"
-                        disabled={saving !== null}
-                        onClick={() => void save('publish')}
-                    >
-                        {saving === 'publish' ? (
-                            <LoaderCircle className="animate-spin" aria-hidden="true" />
-                        ) : (
-                            <Send aria-hidden="true" />
-                        )}
-                        {status === 'publish' ? '更新文章' : '发布文章'}
-                    </Button>
+            ) : type === 'checkbox' && field.options.length > 0 ? (
+                <div className="content-checks">
+                    {field.options.map((option) => (
+                        <label key={option.value} className="content-check">
+                            <Checkbox
+                                checked={selectedValues.includes(option.value)}
+                                onCheckedChange={(checked) => {
+                                    const next = checked
+                                        ? [...new Set([...selectedValues, option.value])]
+                                        : selectedValues.filter(
+                                              (item) => item !== option.value
+                                          );
+                                    setFieldValue(field.name, next.join(','));
+                                }}
+                            />
+                            <span>{option.label}</span>
+                        </label>
+                    ))}
                 </div>
+            ) : type === 'textarea' ? (
+                <Textarea
+                    rows={3}
+                    value={value}
+                    onChange={(event) => setFieldValue(field.name, event.target.value)}
+                    placeholder={field.description || field.label}
+                    aria-label={field.label}
+                />
+            ) : (
+                <Input
+                    value={value}
+                    onChange={(event) => setFieldValue(field.name, event.target.value)}
+                    placeholder={field.description || field.label}
+                    aria-label={field.label}
+                />
+            );
+
+        return (
+            <div key={field.name} className="editor-field">
+                <div className="editor-field-head">
+                    <span>{field.label}</span>
+                    {field.media ? (
+                        <Button
+                            type="button"
+                            variant="ghost"
+                            size="xs"
+                            onClick={() => openFieldMedia(field.name)}
+                        >
+                            <ImagePlus aria-hidden="true" />
+                            选择图片
+                        </Button>
+                    ) : null}
+                </div>
+                {control}
+                {field.description !== '' ? (
+                    <p className="editor-field-hint">{field.description}</p>
+                ) : null}
             </div>
+        );
+    };
+
+    const handleEditorKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+        if (!(event.ctrlKey || event.metaKey) || saving !== null) {
+            return;
+        }
+
+        if (event.key.toLowerCase() === 's') {
+            event.preventDefault();
+            void save('draft');
+        } else if (event.key === 'Enter') {
+            event.preventDefault();
+            void save('publish');
+        }
+    };
+
+    return (
+        <div className="editor-workspace" onKeyDown={handleEditorKeyDown}>
+            <header className="editor-topbar">
+                <div className="editor-topbar-row">
+                    <div className="editor-topbar-left">
+                        <a className="editor-back" href={api.pages.content}>
+                            <ArrowLeft aria-hidden="true" />
+                            <span>内容管理</span>
+                        </a>
+                        <span className="editor-topbar-sep" aria-hidden="true">
+                            /
+                        </span>
+                        <span className="editor-topbar-doc">
+                            {editingId > 0 ? '编辑文章' : '新建文章'}
+                        </span>
+                        <Badge variant={status === 'publish' ? 'default' : 'secondary'}>
+                            {statusLabel}
+                        </Badge>
+                        {dirty ? <span className="editor-dirty">未保存</span> : null}
+                    </div>
+                    <div className="editor-toolbar-actions">
+                        <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            disabled={saving !== null}
+                            onClick={() => void save('draft')}
+                        >
+                            {saving === 'draft' ? (
+                                <LoaderCircle className="animate-spin" aria-hidden="true" />
+                            ) : (
+                                <Save aria-hidden="true" />
+                            )}
+                            保存草稿
+                        </Button>
+                        <Button
+                            type="button"
+                            size="sm"
+                            disabled={saving !== null}
+                            onClick={() => void save('publish')}
+                        >
+                            {saving === 'publish' ? (
+                                <LoaderCircle className="animate-spin" aria-hidden="true" />
+                            ) : (
+                                <Send aria-hidden="true" />
+                            )}
+                            {status === 'publish' ? '更新文章' : '发布文章'}
+                        </Button>
+                    </div>
+                </div>
+                <div className="editor-topbar-sub">
+                    <span>Markdown 写作 · 组件库 · 媒体库 · 文章字段</span>
+                    <span className="editor-shortcut">
+                        <kbd>Ctrl</kbd>+<kbd>S</kbd> 保存草稿
+                        <kbd>Ctrl</kbd>+<kbd>Enter</kbd> 发布
+                    </span>
+                </div>
+            </header>
 
             <div className="editor-canvas">
                 {feedback ? (
@@ -502,11 +695,29 @@ export default function ContentEditor({ api, profile, cid = 0, onSaved }: Props)
                                 className="editor-title-input"
                                 value={title}
                                 onChange={(event) => setTitle(event.target.value)}
-                                placeholder="添加标题…"
+                                placeholder="输入文章标题"
                                 maxLength={150}
                                 aria-label="文章标题"
                                 autoFocus={editingId === 0}
                             />
+                            <div className="editor-document-meta">
+                                <span>
+                                    <UserRound className="size-3.5" strokeWidth={1.8} aria-hidden="true" />
+                                    {profile.screenName || profile.name}
+                                </span>
+                                {created !== '' ? (
+                                    <span>
+                                        <CalendarDays
+                                            className="size-3.5"
+                                            strokeWidth={1.8}
+                                            aria-hidden="true"
+                                        />
+                                        {created.slice(0, 10)}
+                                    </span>
+                                ) : null}
+                                <span>{stats.chars} 字</span>
+                                <span>{stats.words} 词</span>
+                            </div>
                             <div className="editor-permalink">
                                 <Link2 className="size-3.5" strokeWidth={1.7} aria-hidden="true" />
                                 <span>固定链接</span>
@@ -556,10 +767,22 @@ export default function ContentEditor({ api, profile, cid = 0, onSaved }: Props)
                                         预览
                                     </button>
                                 </div>
-                                <div className="editor-stats">
-                                    <span>{stats.chars} 字</span>
-                                    <span>{stats.words} 词</span>
-                                    <span>约 {stats.minutes} 分钟</span>
+                                <div className="editor-writing-tools">
+                                    <Button
+                                        type="button"
+                                        variant="outline"
+                                        size="xs"
+                                        onClick={() => setLibraryOpen(true)}
+                                        disabled={saving !== null}
+                                    >
+                                        <Blocks aria-hidden="true" />
+                                        组件
+                                    </Button>
+                                    <div className="editor-stats">
+                                        <span>{stats.chars} 字</span>
+                                        <span>{stats.words} 词</span>
+                                        <span>约 {stats.minutes} 分钟</span>
+                                    </div>
                                 </div>
                             </div>
 
@@ -585,7 +808,7 @@ export default function ContentEditor({ api, profile, cid = 0, onSaved }: Props)
                                         <MarkdownToolbar
                                             target={textareaRef}
                                             onChange={setText}
-                                            onImage={() => setMediaOpen(true)}
+                                            onImage={openBodyMedia}
                                             disabled={saving !== null}
                                         />
                                         <Textarea
@@ -602,7 +825,7 @@ export default function ContentEditor({ api, profile, cid = 0, onSaved }: Props)
                                                     void uploadFiles(files);
                                                 }
                                             }}
-                                            placeholder="开始写作…支持 Markdown、代码块、链接与图片；可直接拖拽或粘贴图片上传。"
+                                            placeholder="开始写作…支持 Markdown、组件、代码块与图片；可直接拖拽或粘贴图片上传。"
                                             aria-label="文章正文"
                                             spellCheck={false}
                                         />
@@ -634,17 +857,28 @@ export default function ContentEditor({ api, profile, cid = 0, onSaved }: Props)
 
                             <div className="editor-writing-foot">
                                 <span>
-                                    {uploading ? '图片上传中…' : '支持拖拽、粘贴与媒体库插图'}
+                                    {uploading ? '图片上传中…' : '支持拖拽、粘贴、组件与媒体库'}
                                 </span>
-                                <Button
-                                    type="button"
-                                    variant="ghost"
-                                    size="xs"
-                                    onClick={() => setMediaOpen(true)}
-                                >
-                                    <ImagePlus aria-hidden="true" />
-                                    媒体库
-                                </Button>
+                                <div className="editor-writing-foot-actions">
+                                    <Button
+                                        type="button"
+                                        variant="ghost"
+                                        size="xs"
+                                        onClick={() => setLibraryOpen(true)}
+                                    >
+                                        <Blocks aria-hidden="true" />
+                                        插入组件
+                                    </Button>
+                                    <Button
+                                        type="button"
+                                        variant="ghost"
+                                        size="xs"
+                                        onClick={openBodyMedia}
+                                    >
+                                        <ImagePlus aria-hidden="true" />
+                                        媒体库
+                                    </Button>
+                                </div>
                             </div>
                         </section>
                     </div>
@@ -690,6 +924,14 @@ export default function ContentEditor({ api, profile, cid = 0, onSaved }: Props)
                                 </Button>
                             </div>
                         </MetaBox>
+
+                        {fields.length > 0 ? (
+                            <MetaBox title="文章字段">
+                                <div className="editor-fields">
+                                    {fields.map(renderArticleField)}
+                                </div>
+                            </MetaBox>
+                        ) : null}
 
                         <MetaBox title="分类">
                             {categories.length > 0 ? (
@@ -781,11 +1023,44 @@ export default function ContentEditor({ api, profile, cid = 0, onSaved }: Props)
                 </div>
             </div>
 
+            <div className="editor-mobile-bar">
+                <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    disabled={saving !== null}
+                    onClick={() => void save('draft')}
+                >
+                    <Save aria-hidden="true" />
+                    草稿
+                </Button>
+                <Button
+                    type="button"
+                    size="sm"
+                    disabled={saving !== null}
+                    onClick={() => void save('publish')}
+                >
+                    <Send aria-hidden="true" />
+                    {status === 'publish' ? '更新' : '发布'}
+                </Button>
+            </div>
+
+            <ComponentLibrary
+                open={libraryOpen}
+                onOpenChange={setLibraryOpen}
+                onInsert={insertSnippet}
+            />
+
             <MediaLibrary
                 open={mediaOpen}
-                onOpenChange={setMediaOpen}
+                onOpenChange={(next) => {
+                    setMediaOpen(next);
+                    if (!next) {
+                        setFieldMediaTarget(null);
+                    }
+                }}
                 api={api}
-                onSelect={insertMedia}
+                onSelect={selectMedia}
             />
         </div>
     );

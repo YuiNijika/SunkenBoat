@@ -29,6 +29,9 @@ import {
     TableBlock,
     TimelineBlock,
 } from './ContentBlocks';
+import MediaGridBlock from './MediaGridBlock';
+import PricingBlock from './PricingBlock';
+import UserSpaceBlock from './UserSpaceBlock';
 import type { Block } from '../../types';
 
 interface Props {
@@ -45,6 +48,12 @@ export default function BlockRenderer({ block }: Props) {
                     eyebrow={block.eyebrow}
                     title={block.title}
                     lead={block.lead}
+                    image={block.image}
+                    height={block.height}
+                    overlay={block.overlay}
+                    align={block.align}
+                    hot={block.hot}
+                    showFeatured={block.showFeatured}
                     searchAction={block.searchAction}
                     searchPlaceholder={block.searchPlaceholder}
                     actions={block.actions}
@@ -58,13 +67,25 @@ export default function BlockRenderer({ block }: Props) {
                 <PostListBlock
                     variant={block.variant}
                     title={block.title}
+                    anchor={block.anchor}
                     posts={block.posts}
                     paginationHtml={block.paginationHtml}
                     empty={block.empty}
+                    limit={block.limit}
+                    columns={block.columns}
+                    showPagination={block.showPagination}
                 />
             );
         case 'categories':
-            return <CategoriesBlock variant={block.variant} title={block.title} items={block.items} />;
+            return (
+                <CategoriesBlock
+                    variant={block.variant}
+                    title={block.title}
+                    items={block.items}
+                    limit={block.limit}
+                    columns={block.columns}
+                />
+            );
         case 'archive-header':
             return <ArchiveHeaderBlock title={block.title} description={block.description} count={block.count} />;
         case 'post-header':
@@ -215,6 +236,27 @@ export default function BlockRenderer({ block }: Props) {
                     rows={block.rows}
                 />
             );
+        case 'media-grid':
+            return (
+                <MediaGridBlock
+                    variant={block.variant}
+                    title={block.title}
+                    text={block.text}
+                    columns={block.columns}
+                    items={block.items}
+                />
+            );
+        case 'pricing':
+            return (
+                <PricingBlock
+                    title={block.title}
+                    text={block.text}
+                    columns={block.columns}
+                    plans={block.plans}
+                />
+            );
+        case 'user-space':
+            return <UserSpaceBlock profile={block.profile} />;
         case 'author-card':
             return (
                 <AuthorCardBlock

@@ -127,6 +127,82 @@ final class UserProfile
         ], $extra);
     }
 
+    public static function viewerUid(): int
+    {
+        return self::currentUid();
+    }
+
+    public static function viewerIsAdmin(): bool
+    {
+        try {
+            return \Widget\User::alloc()->pass('administrator', true);
+        } catch (\Throwable) {
+            return false;
+        }
+    }
+
+    /**
+     * Public user-space payload. Email is never exposed; extra profile fields
+     * follow the saved privacy mode and the current viewer.
+     *
+     * @return array<string, mixed>|null
+     */
+    public static function spaceProfile(int $uid, int $viewerUid, bool $admin): ?array
+    {
+        if ($uid <= 0) {
+            return null;
+        }
+
+        try {
+            $db = Db::get();
+            $rows = $db->fetchAll(
+                $db->select('uid', 'name', 'screenName', 'mail', 'url', 'group', 'created')
+                    ->from('table.users')
+                    ->where('uid = ?', $uid)
+                    ->limit(1)
+            );
+        } catch (\Throwable) {
+            return null;
+        }
+
+        $row = $rows[0] ?? null;
+        if (!is_array($row)) {
+            return null;
+        }
+
+        $enabled = self::enabled();
+        $extra = $enabled ? self::read($uid) : self::defaults();
+        $privacy = (string) ($extra['privacy'] ?? 'public');
+        $self = $viewerUid === $uid;
+        $detailsVisible = $enabled && (
+            $privacy === 'public'
+            || ($privacy === 'members' && $viewerUid > 0)
+            || ($privacy === 'private' && ($self || $admin))
+        );
+        $customAvatar = $enabled ? (string) ($extra['avatar'] ?? '') : '';
+        $created = is_numeric($row['created'] ?? null) ? (int) $row['created'] : 0;
+
+        return [
+            'uid' => (int) ($row['uid'] ?? 0),
+            'name' => (string) ($row['name'] ?? ''),
+            'screenName' => (string) ($row['screenName'] ?? ''),
+            'avatar' => $customAvatar !== '' ? $customAvatar : Avatar::url((string) ($row['mail'] ?? '')),
+            'customAvatar' => $customAvatar,
+            'url' => (string) ($row['url'] ?? ''),
+            'group' => (string) ($row['group'] ?? ''),
+            'created' => $created > 0 ? date('c', $created) : '',
+            'posts' => self::countPosts($uid),
+            'comments' => self::countComments($uid),
+            'canWrite' => self::canWriteGroup((string) ($row['group'] ?? '')),
+            'isSelf' => $self,
+            'privacy' => $privacy,
+            'detailsVisible' => $detailsVisible,
+            'signature' => $detailsVisible ? (string) ($extra['signature'] ?? '') : '',
+            'gender' => $detailsVisible ? (string) ($extra['gender'] ?? 'secret') : '',
+            'location' => $detailsVisible ? (string) ($extra['location'] ?? '') : '',
+        ];
+    }
+
     /**
      * Whether the current visitor may write content through REST v2.
      */

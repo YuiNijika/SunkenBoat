@@ -21,6 +21,7 @@ export interface ContentItem {
     allowComment: boolean;
     categories: TermItem[];
     tags: TermItem[];
+    fields?: Record<string, string>;
 }
 
 export interface CommentItem {

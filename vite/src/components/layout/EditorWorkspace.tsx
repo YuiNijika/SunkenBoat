@@ -2,14 +2,15 @@ import { useEffect, useState } from 'react';
 import { LoaderCircle } from 'lucide-react';
 import ContentEditor from './ContentEditor';
 import { errorMessage, profileFrom, readPayload } from '../../lib/user';
-import type { UserApiEndpoints, UserProfile } from '../../types';
+import type { ArticleField, UserApiEndpoints, UserProfile } from '../../types';
 
 interface Props {
     api: UserApiEndpoints;
     cid: number;
+    fields: ArticleField[];
 }
 
-export default function EditorWorkspace({ api, cid }: Props) {
+export default function EditorWorkspace({ api, cid, fields }: Props) {
     const [profile, setProfile] = useState<UserProfile | null>(null);
     const [status, setStatus] = useState<'loading' | 'ready' | 'guest' | 'error'>('loading');
     const [error, setError] = useState('');
@@ -137,5 +138,5 @@ export default function EditorWorkspace({ api, cid }: Props) {
         );
     }
 
-    return <ContentEditor api={api} profile={profile} cid={cid} />;
+    return <ContentEditor api={api} profile={profile} cid={cid} fields={fields} />;
 }

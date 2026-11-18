@@ -9,6 +9,7 @@ use TTDF\Framework;
 use TTDF\Ajax\Endpoint;
 use TTDF\Http\Rest\Prefixes;
 use TTDF\Theme\Assets;
+use TTDF\Theme\Fields;
 use TTDF\Theme\Media;
 use TTDF\Theme\Options;
 use TTDF\Theme\Settings;
@@ -151,7 +152,41 @@ final class PageData
             'widgets' => self::widgets(),
             'title' => $title,
             'documentTitle' => $siteTitle !== '' ? $title . ' · ' . $siteTitle : $title,
+            'fields' => $editor ? self::articleFields() : [],
         ];
+    }
+
+    /**
+     * Field declarations from `app/config/fields.php`, normalised for the
+     * React editor. Only metadata is exposed; values come from the content API.
+     *
+     * @return list<array<string, mixed>>
+     */
+    private static function articleFields(): array
+    {
+        $items = [];
+
+        foreach (Fields::declarations(Framework::root()) as $name => $field) {
+            $options = [];
+            if (isset($field['options']) && is_array($field['options'])) {
+                foreach ($field['options'] as $value => $label) {
+                    $options[] = ['value' => (string) $value, 'label' => (string) $label];
+                }
+            }
+
+            $value = $field['value'] ?? '';
+            $items[] = [
+                'name' => (string) $name,
+                'label' => (string) ($field['label'] ?? $name),
+                'type' => (string) ($field['type'] ?? 'Text'),
+                'description' => (string) ($field['description'] ?? ''),
+                'options' => $options,
+                'value' => is_scalar($value) ? (string) $value : '',
+                'media' => (bool) ($field['media'] ?? false),
+            ];
+        }
+
+        return $items;
     }
 
     /**
@@ -162,6 +197,155 @@ final class PageData
     public static function account(): array
     {
         return self::user('security');
+    }
+
+    /**
+     * Public profile space at `/users/{uid}`.
+     *
+     * @return array<string, mixed>
+     */
+    public static function space(int $uid): array
+    {
+        $profile = UserProfile::spaceProfile(
+            $uid,
+            UserProfile::viewerUid(),
+            UserProfile::viewerIsAdmin()
+        );
+
+        if ($profile === null) {
+            return self::missingUser();
+        }
+
+        $site = self::site(null);
+        $profile['editUrl'] = self::api()['user']['pages']['profile'];
+        $name = trim((string) ($profile['screenName'] ?? ''));
+        if ($name === '') {
+            $name = (string) ($profile['name'] ?? '用户');
+        }
+        $title = $name . ' 的空间';
+        $posts = self::spacePosts((int) ($profile['uid'] ?? 0), 12);
+
+        return [
+            'kind' => 'user-space',
+            'site' => $site,
+            'theme' => self::theme(),
+            'api' => self::api(),
+            'blocks' => [
+                [
+                    'type' => 'user-space',
+                    'profile' => $profile,
+                ],
+                [
+                    'type' => 'post-list',
+                    'variant' => 'grid',
+                    'title' => 'TA 的文章',
+                    'anchor' => 'user-space-posts',
+                    'category' => '',
+                    'limit' => 12,
+                    'columns' => 3,
+                    'showPagination' => false,
+                    'posts' => $posts,
+                    'paginationHtml' => '',
+                    'empty' => '这个用户还没有发布文章。',
+                ],
+            ],
+            'widgets' => self::widgets(),
+            'title' => $title,
+            'documentTitle' => $site['title'] !== '' ? $title . ' · ' . $site['title'] : $title,
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private static function missingUser(): array
+    {
+        $site = self::site(null);
+        $title = '用户不存在';
+
+        return [
+            'kind' => '404',
+            'site' => $site,
+            'theme' => self::theme(),
+            'api' => self::api(),
+            'blocks' => [[
+                'type' => 'notfound',
+                'image' => Assets::url('img/404.svg'),
+                'title' => '没有找到这个用户',
+                'text' => '用户可能已经注销，或者地址中的 UID 不正确。',
+                'action' => ['label' => '返回首页', 'url' => $site['url']],
+                'searchAction' => $site['url'],
+                'searchPlaceholder' => '搜索站内文章',
+            ]],
+            'widgets' => self::widgets(),
+            'title' => $title,
+            'documentTitle' => $site['title'] !== '' ? $title . ' · ' . $site['title'] : $title,
+        ];
+    }
+
+    /**
+     * Published posts written by one user.
+     *
+     * @return list<array<string, mixed>>
+     */
+    private static function spacePosts(int $uid, int $limit): array
+    {
+        if ($uid <= 0 || !class_exists('Typecho\\Db')) {
+            return [];
+        }
+
+        try {
+            $db = \Typecho\Db::get();
+            $options = Typecho::options();
+            $now = (int) ($options?->time ?? time());
+            $rows = $db->fetchAll(
+                $db->select('cid', 'title', 'slug', 'created', 'text', 'commentsNum', 'authorId')
+                    ->from('table.contents')
+                    ->where('authorId = ?', $uid)
+                    ->where('type = ?', 'post')
+                    ->where('status = ?', 'publish')
+                    ->where('created < ?', $now)
+                    ->where('(table.contents.password IS NULL OR table.contents.password = ?)', '')
+                    ->order('created', \Typecho\Db::SORT_DESC)
+                    ->limit(max(1, min(30, $limit)))
+            );
+        } catch (\Throwable) {
+            return [];
+        }
+
+        $siteUrl = Typecho::siteUrl();
+        $cids = array_map(
+            static fn (mixed $row): int => is_array($row) ? (int) ($row['cid'] ?? 0) : 0,
+            $rows
+        );
+        $views = ArticleViews::counts($cids);
+        self::primeThumbnailFields($cids);
+
+        $items = [];
+        foreach ($rows as $row) {
+            if (!is_array($row)) {
+                continue;
+            }
+
+            $cid = (int) ($row['cid'] ?? 0);
+            $text = (string) ($row['text'] ?? '');
+            $items[] = [
+                'title' => trim((string) ($row['title'] ?? '')),
+                'url' => self::postUrl($row),
+                'excerpt' => self::excerpt($row, $text, 120),
+                'date' => self::postDate($row, 'Y-m-d'),
+                'dateIso' => self::postDate($row, 'c'),
+                'thumb' => self::thumbnail($cid, $text, $siteUrl),
+                'author' => self::authorName((int) ($row['authorId'] ?? 0)),
+                'comments' => (int) ($row['commentsNum'] ?? 0),
+                'readingTime' => self::readingMinutes($text),
+                'categories' => self::termsOfCid($cid, 'category'),
+                'tags' => self::termsOfCid($cid, 'tag'),
+                'views' => $views[$cid] ?? 0,
+            ];
+        }
+
+        return $items;
     }
 
     /**
@@ -391,7 +575,7 @@ final class PageData
         $variant = $spec['variant'];
         $data = $spec['data'];
 
-        return match ($type) {
+        $block = match ($type) {
             'hero' => self::heroBlock($archive, $variant, $data),
             'carousel' => self::carouselBlock($variant, $data),
             'post-list' => self::postListBlock($kind, $archive, $variant, $cache, $data),
@@ -416,6 +600,8 @@ final class PageData
             'timeline' => self::timelineBlock($data),
             'gallery' => self::galleryBlock($variant, $data),
             'table' => self::tableBlock($data),
+            'media-grid' => self::mediaGridBlock($data),
+            'pricing' => self::pricingBlock($data),
             'author-card' => self::authorCardBlock($archive, $data),
             'subscribe' => self::subscribeBlock($archive, $data),
             'link-list' => self::linkListBlock($data),
@@ -423,6 +609,8 @@ final class PageData
             'spacer' => ['type' => 'spacer', 'variant' => $variant !== '' ? $variant : 'md'],
             default => null,
         };
+
+        return $block === null ? null : array_merge($block, self::blockLayout($data));
     }
 
     /**
@@ -446,13 +634,33 @@ final class PageData
             $actions[] = ['label' => $secondaryLabel, 'url' => $secondaryUrl, 'style' => 'ghost'];
         }
 
+        $hot = [];
+        foreach (self::lines($data['hot'] ?? null, 10) as $line) {
+            $line = trim($line);
+            if ($line !== '') {
+                $hot[] = $line;
+            }
+        }
+
+        $overlay = is_numeric($data['overlay'] ?? null) ? (int) $data['overlay'] : 55;
+        $height = (string) ($data['height'] ?? '');
+        $align = (string) ($data['align'] ?? 'left');
+
         return [
             'type' => 'hero',
-            'variant' => $variant !== '' ? $variant : 'default',
+            'variant' => in_array($variant, ['default', 'compact', 'banner', 'search'], true)
+                ? $variant
+                : 'default',
             'width' => self::blockWidth($data),
             'eyebrow' => self::text($data, 'eyebrow', ''),
             'title' => self::text($data, 'title', $site['title']),
             'lead' => self::text($data, 'lead', $lead),
+            'image' => Media::url($data['image'] ?? ''),
+            'height' => in_array($height, ['sm', 'md', 'lg', 'screen'], true) ? $height : '',
+            'overlay' => max(0, min(90, $overlay)),
+            'align' => in_array($align, ['left', 'center'], true) ? $align : 'left',
+            'hot' => $hot,
+            'showFeatured' => !isset($data['show_featured']) || (string) $data['show_featured'] !== '0',
             'searchAction' => $site['url'],
             'searchPlaceholder' => self::text($data, 'search_placeholder', '输入关键词搜索站内文章…'),
             'actions' => $actions,
@@ -469,12 +677,18 @@ final class PageData
         $category = trim((string) ($data['category'] ?? ''));
         $cacheKey = $category === '' ? 'posts' : 'posts:' . $category;
         $paginationKey = $category === '' ? 'pagination' : 'pagination:' . $category;
+        $limit = is_numeric($data['limit'] ?? null) ? (int) $data['limit'] : 0;
+        $columns = is_numeric($data['columns'] ?? null) ? (int) $data['columns'] : 0;
+        $showPagination = !isset($data['show_pagination']) || (string) $data['show_pagination'] !== '0';
 
         return [
             'type' => 'post-list',
             'variant' => $variant !== '' ? $variant : 'list',
             'title' => self::text($data, 'title', $kind === 'home' ? '最新文章' : ''),
             'category' => $category,
+            'limit' => max(0, min(30, $limit)),
+            'columns' => max(0, min(5, $columns)),
+            'showPagination' => $showPagination,
             'posts' => self::cached(
                 $cache,
                 $cacheKey,
@@ -482,7 +696,7 @@ final class PageData
                     ? self::postSummariesByCategory($category)
                     : self::postSummaries($archive)
             ),
-            'paginationHtml' => $category !== ''
+            'paginationHtml' => $category !== '' || !$showPagination
                 ? ''
                 : self::cached($cache, $paginationKey, static fn (): string => self::pagination($archive)),
             'empty' => self::text($data, 'empty', $kind === 'home' ? '这里还没有文章。' : '没有找到内容。'),
@@ -529,10 +743,15 @@ final class PageData
      */
     private static function categoriesBlock(string $variant, array &$cache, array $data = []): array
     {
+        $limit = is_numeric($data['limit'] ?? null) ? (int) $data['limit'] : 0;
+        $columns = is_numeric($data['columns'] ?? null) ? (int) $data['columns'] : 0;
+
         return [
             'type' => 'categories',
             'variant' => $variant !== '' ? $variant : 'grid',
             'title' => self::text($data, 'title', '分类'),
+            'limit' => max(0, min(24, $limit)),
+            'columns' => max(0, min(6, $columns)),
             'items' => self::cached($cache, 'categories', static fn (): array => self::categories()),
         ];
     }
@@ -593,7 +812,14 @@ final class PageData
             'type' => 'prose',
             'title' => $kind === 'post' ? (string) ($archive->title ?? '') : '',
             'meta' => $meta,
-            'html' => self::cached($cache, 'content', static fn (): string => self::content($archive)),
+            'html' => self::cached($cache, 'content', static function () use ($archive): string {
+                $html = self::content($archive);
+                $cid = (int) ($archive->cid ?? 0);
+
+                $html = $cid > 0 ? ContentGate::render($html, $cid) : $html;
+
+                return ContentComponents::render($html);
+            }),
             'toc' => $theme['showToc'],
             'tocTitle' => self::text($data, 'toc_title', '本页目录'),
             'codeCopy' => true,
@@ -838,7 +1064,7 @@ final class PageData
 
         return [
             'type' => 'stats',
-            'variant' => self::blockVariant($variant, ['two', 'three', 'four'], 'four'),
+            'variant' => self::blockVariant($variant, ['two', 'three', 'four', 'strip'], 'four'),
             'title' => self::text($data, 'title', ''),
             'text' => self::text($data, 'text', ''),
             'items' => $items,
@@ -977,6 +1203,97 @@ final class PageData
             'text' => self::text($data, 'text', ''),
             'head' => $head,
             'rows' => $rows,
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private static function mediaGridBlock(array $data = []): ?array
+    {
+        $rows = self::pipeRows($data['items'] ?? null, ['title', 'image', 'url', 'text'], 12);
+        $items = [];
+
+        foreach ($rows as $row) {
+            $image = Media::url($row['image']);
+            if ($image === '' && $row['title'] === '') {
+                continue;
+            }
+
+            $items[] = [
+                'title' => $row['title'],
+                'text' => $row['text'],
+                'image' => $image,
+                'url' => self::safeUrl($row['url'], '#'),
+            ];
+        }
+
+        if ($items === []) {
+            return null;
+        }
+
+        $columns = is_numeric($data['columns'] ?? null) ? (int) $data['columns'] : 5;
+
+        return [
+            'type' => 'media-grid',
+            'variant' => self::blockVariant((string) ($data['variant'] ?? ''), ['overlay', 'card'], 'overlay'),
+            'title' => self::text($data, 'title', ''),
+            'text' => self::text($data, 'text', ''),
+            'columns' => max(2, min(6, $columns)),
+            'items' => $items,
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    private static function pricingBlock(array $data = []): ?array
+    {
+        $rows = self::pipeRows(
+            $data['plans'] ?? null,
+            ['name', 'price', 'period', 'features', 'label', 'url', 'featured'],
+            6
+        );
+        $plans = [];
+
+        foreach ($rows as $row) {
+            if ($row['name'] === '' && $row['price'] === '') {
+                continue;
+            }
+
+            $features = [];
+            foreach (preg_split('/[;；]/u', $row['features']) ?: [] as $feature) {
+                $feature = trim($feature);
+                if ($feature !== '') {
+                    $features[] = $feature;
+                }
+            }
+
+            $plans[] = [
+                'name' => $row['name'],
+                'price' => $row['price'],
+                'period' => $row['period'],
+                'features' => $features,
+                'action' => [
+                    'label' => $row['label'] !== '' ? $row['label'] : '了解详情',
+                    'url' => self::safeUrl($row['url'], '#'),
+                ],
+                'featured' => $row['featured'] === '1' || $row['featured'] === 'true',
+            ];
+        }
+
+        if ($plans === []) {
+            return null;
+        }
+
+        $columns = is_numeric($data['columns'] ?? null) ? (int) $data['columns'] : 4;
+
+        return [
+            'type' => 'pricing',
+            'title' => self::text($data, 'title', ''),
+            'text' => self::text($data, 'text', ''),
+            'columns' => max(2, min(4, $columns)),
+            'plans' => $plans,
         ];
     }
 
@@ -1400,6 +1717,35 @@ final class PageData
         return in_array($width, ['content', 'half', 'full'], true) ? $width : 'content';
     }
 
+    /**
+     * Shared layout knobs for every block: width, vertical rhythm and an
+     * optional minimum height for full-bleed sections.
+     *
+     * @return array<string, string>
+     */
+    private static function blockLayout(array $data): array
+    {
+        $space = static function (mixed $value): string {
+            $value = is_scalar($value) ? (string) $value : 'default';
+
+            return in_array($value, ['default', 'none', 'sm', 'md', 'lg', 'xl'], true)
+                ? $value
+                : 'default';
+        };
+
+        $height = is_scalar($data['min_height'] ?? null) ? trim((string) $data['min_height']) : '';
+        if ($height !== '' && preg_match('/^\d{1,4}(?:px|vh|rem|em|%)$/', $height) !== 1) {
+            $height = '';
+        }
+
+        return [
+            'width' => self::blockWidth($data),
+            'spaceTop' => $space($data['space_top'] ?? 'default'),
+            'spaceBottom' => $space($data['space_bottom'] ?? 'default'),
+            'minHeight' => $height,
+        ];
+    }
+
     private static function pageWidth(mixed $value): int
     {
         $width = is_numeric($value) ? (int) $value : 1300;
@@ -1582,6 +1928,7 @@ final class PageData
                     'social' => rtrim($index, '/') . '/user/social',
                     'content' => rtrim($index, '/') . '/user/content',
                     'editor' => rtrim($index, '/') . '/user/content/editor',
+                    'space' => rtrim($index, '/') . '/users',
                 ],
                 'content' => [
                     'enabled' => ThemeConfig::restV2Enabled() && UserProfile::canWrite(),
@@ -1750,21 +2097,45 @@ final class PageData
      */
     private static function excerpt(array $post, string $text, int $length): string
     {
-        $excerpt = trim(strip_tags((string) ($post['excerpt'] ?? '')));
+        $excerpt = trim(self::plainText((string) ($post['excerpt'] ?? '')));
         if ($excerpt === '') {
-            $excerpt = trim(strip_tags($text));
+            $excerpt = trim(self::plainText($text));
         }
-
-        $excerpt = trim((string) preg_replace('/\s+/u', ' ', $excerpt));
 
         return $excerpt !== '' ? \Typecho\Common::subStr($excerpt, 0, $length, '…') : '';
     }
 
     private static function readingMinutes(string $text): int
     {
-        $plain = trim((string) preg_replace('/\s+/u', ' ', strip_tags($text)));
+        $plain = self::plainText($text);
 
         return max(1, (int) ceil(mb_strlen($plain, 'UTF-8') / 500));
+    }
+
+    /**
+     * Turn stored HTML or Markdown into a compact plain-text preview.
+     */
+    private static function plainText(string $text): string
+    {
+        if ($text === '') {
+            return '';
+        }
+
+        $text = (string) preg_replace('/<!--.*?-->/s', ' ', $text);
+        $text = ContentGate::redact($text);
+        $text = (string) preg_replace('/```.*?```/s', ' ', $text);
+        $text = (string) preg_replace('/!\[[^\]]*\]\((?:[^()]|\([^)]*\))*\)/u', ' ', $text);
+        $text = (string) preg_replace('/!\[[^\]]*\]\[[^\]]*\]/u', ' ', $text);
+        $text = (string) preg_replace('/\[([^\]]+)\]\((?:[^()]|\([^)]*\))*\)/u', '$1', $text);
+        $text = (string) preg_replace('/\[([^\]]+)\]\[[^\]]*\]/u', '$1', $text);
+        $text = (string) preg_replace('/^[ \t]{0,3}#{1,6}[ \t]*/mu', '', $text);
+        $text = (string) preg_replace('/^[ \t]*>[ \t]?/mu', '', $text);
+        $text = (string) preg_replace('/^[ \t]*(?:[-*+]|\d+\.)[ \t]+/mu', '', $text);
+        $text = (string) preg_replace('/(\*\*|__|~~|`)/u', '', $text);
+        $text = strip_tags($text);
+        $text = html_entity_decode($text, ENT_QUOTES | ENT_HTML5, 'UTF-8');
+
+        return trim((string) preg_replace('/\s+/u', ' ', $text));
     }
 
     /**
@@ -1964,7 +2335,7 @@ final class PageData
                     ->where('type = ?', 'post')
                     ->where('status = ?', 'publish')
                     ->where('created < ?', $now)
-                    ->where('password = ?', '')
+                    ->where('(table.contents.password IS NULL OR table.contents.password = ?)', '')
                     ->where('cid IN ?', $cids)
                     ->order('created', \Typecho\Db::SORT_DESC)
                     ->limit(12)

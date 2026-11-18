@@ -47,10 +47,18 @@ $documentTitle = $resolvedTitle !== '' && $resolvedTitle !== $siteTitle
 $isSingle = is_object($archive) && is_callable([$archive, 'is']) && $archive->is('single');
 $description = $siteDescription !== '' ? $siteDescription : $siteSubtitle;
 if ($isSingle) {
-    $excerpt = trim((string) preg_replace('/\s+/u', ' ', strip_tags((string) ($archive->excerpt ?? ''))));
+    $excerpt = trim((string) preg_replace(
+        '/\s+/u',
+        ' ',
+        strip_tags(\SunkenBoat\Support\ContentGate::redact((string) ($archive->excerpt ?? '')))
+    ));
     if ($excerpt !== '') {
         $description = \Typecho\Common::subStr($excerpt, 0, 150, '…');
     }
+}
+
+if (is_object($archive) && is_callable([$archive, 'setArchiveDescription'])) {
+    $archive->setArchiveDescription($description);
 }
 
 $canonicalUrl = Typecho::siteUrl();

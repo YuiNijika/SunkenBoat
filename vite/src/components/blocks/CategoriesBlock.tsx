@@ -4,23 +4,35 @@ import { Badge } from '../ui/badge';
 import { Card } from '../ui/card';
 import type { CategoryItem } from '../../types';
 
+const GRID_COLUMNS: Record<number, string> = {
+    2: 'sm:grid-cols-2 lg:grid-cols-2',
+    3: 'sm:grid-cols-2 lg:grid-cols-3',
+    4: 'sm:grid-cols-2 lg:grid-cols-4',
+    5: 'sm:grid-cols-3 lg:grid-cols-5',
+    6: 'sm:grid-cols-3 lg:grid-cols-6',
+};
+
 interface Props {
     variant?: string;
     title: string;
     items: CategoryItem[];
+    limit?: number;
+    columns?: number;
 }
 
-export default function CategoriesBlock({ variant, title, items }: Props) {
-    if (items.length === 0) {
+export default function CategoriesBlock({ variant, title, items, limit = 0, columns = 0 }: Props) {
+    const visible = limit > 0 ? items.slice(0, limit) : items;
+
+    if (visible.length === 0) {
         return null;
     }
 
     if (variant === 'chips') {
         return (
             <section className="grid gap-3">
-                <SectionHeading title={title} count={items.length} suffix="个" />
+                <SectionHeading title={title} count={visible.length} suffix="个" />
                 <ul className="flex flex-wrap gap-[5px]">
-                    {items.map((item) => (
+                    {visible.map((item) => (
                         <li key={item.url + item.label}>
                             <Badge
                                 asChild
@@ -41,9 +53,11 @@ export default function CategoriesBlock({ variant, title, items }: Props) {
 
     return (
         <section className="grid gap-4">
-            <SectionHeading title={title} count={items.length} suffix="个" />
-            <ul className="grid gap-[15px] sm:grid-cols-2 lg:grid-cols-4">
-                {items.map((item) => (
+            <SectionHeading title={title} count={visible.length} suffix="个" />
+            <ul
+                className={'grid gap-[15px] ' + (GRID_COLUMNS[columns] ?? GRID_COLUMNS[4])}
+            >
+                {visible.map((item) => (
                     <li key={item.url + item.label}>
                         <Card className="surface-card group gap-0 p-0">
                             <a

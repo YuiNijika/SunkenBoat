@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { ChevronDown, Menu, Moon, Search, Sun, X } from 'lucide-react';
 import { useLocation } from 'react-router-dom';
 import { useTheme } from '../../lib/theme';
@@ -72,6 +73,28 @@ export default function SiteHeader({ site, colorMode, widgets, api, showUserCent
             document.removeEventListener('pointerdown', onPointerDown);
         };
     }, [searchOpen]);
+
+    useEffect(() => {
+        if (!menuOpen) {
+            return;
+        }
+
+        const previousOverflow = document.body.style.overflow;
+        document.body.style.overflow = 'hidden';
+
+        const onKeyDown = (event: KeyboardEvent) => {
+            if (event.key === 'Escape') {
+                setMenuOpen(false);
+            }
+        };
+
+        document.addEventListener('keydown', onKeyDown);
+
+        return () => {
+            document.body.style.overflow = previousOverflow;
+            document.removeEventListener('keydown', onKeyDown);
+        };
+    }, [menuOpen]);
 
     return (
         <header
@@ -193,54 +216,94 @@ export default function SiteHeader({ site, colorMode, widgets, api, showUserCent
                 </div>
             </div>
 
-            {menuOpen ? (
-                <nav
-                    id="ttdf-mobile-nav"
-                    className="bg-surface shadow-card lg:hidden"
-                    aria-label="移动导航"
-                >
-                    <ul className="container-page grid gap-1 py-3">
-                        {site.nav.map((item) => (
-                            <li key={item.url + item.label}>
-                                <a
-                                    className={
-                                        'flex items-center rounded-[4px] px-3 py-2.5 text-[14px] transition-colors ' +
-                                        (item.active
-                                            ? 'bg-brand-soft font-medium text-brand'
-                                            : 'text-ink-soft hover:bg-surface-2 hover:text-ink')
-                                    }
-                                    href={item.url}
-                                    aria-current={item.active ? 'page' : undefined}
-                                    onClick={() => setMenuOpen(false)}
-                                >
-                                    {item.label}
-                                </a>
-                                {item.children?.length ? (
-                                    <ul className="mt-0.5 ml-3 grid gap-0.5 border-l border-line pl-3">
-                                        {item.children.map((child) => (
-                                            <li key={child.url + child.label}>
-                                                <a
-                                                    className={
-                                                        'flex rounded-[4px] px-3 py-2 text-[13px] transition-colors ' +
-                                                        (child.active
-                                                            ? 'text-brand'
-                                                            : 'text-ink-mute hover:text-ink')
-                                                    }
-                                                    href={child.url}
-                                                    aria-current={child.active ? 'page' : undefined}
-                                                    onClick={() => setMenuOpen(false)}
-                                                >
-                                                    {child.label}
-                                                </a>
-                                            </li>
-                                        ))}
-                                    </ul>
-                                ) : null}
-                            </li>
-                        ))}
-                    </ul>
-                </nav>
-            ) : null}
+            {menuOpen && typeof document !== 'undefined'
+                ? createPortal(
+                <div className="mobile-drawer lg:hidden" role="dialog" aria-modal="true" aria-label="移动导航">
+                    <button
+                        type="button"
+                        className="mobile-drawer-backdrop"
+                        aria-label="关闭导航菜单"
+                        onClick={() => setMenuOpen(false)}
+                    />
+                    <nav id="ttdf-mobile-nav" className="mobile-drawer-panel" aria-label="移动导航">
+                        <div className="mobile-drawer-head">
+                            <div className="min-w-0">
+                                <p className="section-label">Navigation</p>
+                                <p className="mt-1 truncate text-[16px] font-medium text-ink">
+                                    {title}
+                                </p>
+                            </div>
+                            <Button
+                                type="button"
+                                variant="ghost"
+                                size="icon"
+                                className="size-9 rounded-[6px] text-ink-mute"
+                                aria-label="关闭导航菜单"
+                                onClick={() => setMenuOpen(false)}
+                            >
+                                <X strokeWidth={1.8} aria-hidden="true" />
+                            </Button>
+                        </div>
+                        <ul className="mobile-drawer-list">
+                            {site.nav.map((item) => (
+                                <li key={item.url + item.label}>
+                                    <a
+                                        className={
+                                            'mobile-drawer-link ' +
+                                            (item.active ? 'is-active' : '')
+                                        }
+                                        href={item.url}
+                                        aria-current={item.active ? 'page' : undefined}
+                                        onClick={() => setMenuOpen(false)}
+                                    >
+                                        <span>{item.label}</span>
+                                        {item.children?.length ? (
+                                            <ChevronDown
+                                                className="size-4 rotate-[-90deg] text-ink-faint"
+                                                strokeWidth={1.8}
+                                                aria-hidden="true"
+                                            />
+                                        ) : null}
+                                    </a>
+                                    {item.children?.length ? (
+                                        <ul className="mobile-drawer-children">
+                                            {item.children.map((child) => (
+                                                <li key={child.url + child.label}>
+                                                    <a
+                                                        className={
+                                                            'mobile-drawer-child ' +
+                                                            (child.active ? 'is-active' : '')
+                                                        }
+                                                        href={child.url}
+                                                        aria-current={
+                                                            child.active ? 'page' : undefined
+                                                        }
+                                                        onClick={() => setMenuOpen(false)}
+                                                    >
+                                                        {child.label}
+                                                    </a>
+                                                </li>
+                                            ))}
+                                        </ul>
+                                    ) : null}
+                                </li>
+                            ))}
+                        </ul>
+                        <div className="mobile-drawer-foot">
+                            <a className="mobile-drawer-home" href={site.url}>
+                                返回首页
+                            </a>
+                            {site.subtitle ? (
+                                <p className="mt-2 text-[11px] leading-5 text-ink-faint">
+                                    {site.subtitle}
+                                </p>
+                            ) : null}
+                        </div>
+                    </nav>
+                </div>,
+                document.body
+            )
+                : null}
 
             {searchOpen ? (
                 <SearchPanel

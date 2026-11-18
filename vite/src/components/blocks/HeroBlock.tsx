@@ -17,6 +17,12 @@ interface Props {
     eyebrow: string;
     title: string;
     lead: string;
+    image?: string;
+    height?: '' | 'sm' | 'md' | 'lg' | 'screen';
+    overlay?: number;
+    align?: 'left' | 'center';
+    hot?: string[];
+    showFeatured?: boolean;
     searchAction: string;
     searchPlaceholder: string;
     actions: { label: string; url: string; style: string }[];
@@ -29,6 +35,12 @@ export default function HeroBlock({
     eyebrow,
     title,
     lead,
+    image = '',
+    height = '',
+    overlay = 55,
+    align = 'center',
+    hot = [],
+    showFeatured = true,
     searchAction,
     searchPlaceholder,
     actions,
@@ -37,16 +49,38 @@ export default function HeroBlock({
     const compact = variant === 'compact';
     const primary = actions.find((action) => action.style === 'primary') ?? actions[0];
     const secondary = actions.filter((action) => action !== primary);
-    const showFeatured = featured !== null;
+    const featuredPost = showFeatured ? featured : null;
+    const hasImage = image !== '';
+    const className = [
+        'hero-block',
+        `hero-block-${width}`,
+        compact ? 'is-compact' : '',
+        hasImage ? 'is-image' : '',
+        align === 'center' ? 'is-center' : '',
+        featuredPost ? 'has-featured' : '',
+        height !== '' ? `is-height-${height}` : '',
+    ]
+        .filter(Boolean)
+        .join(' ');
 
     return (
         <section
-            className={`hero-block hero-block-${width}${compact ? ' is-compact' : ''}`}
+            className={className}
             data-width={width}
             aria-labelledby="hero-title"
         >
+            {hasImage ? (
+                <>
+                    <img className="hero-bg" src={image} alt="" loading="eager" decoding="async" />
+                    <span
+                        className="hero-overlay"
+                        style={{ opacity: Math.max(0, Math.min(90, overlay)) / 100 }}
+                        aria-hidden="true"
+                    />
+                </>
+            ) : null}
             <div className="hero-block-inner">
-                <div className={`hero-layout${showFeatured ? ' has-featured' : ''}`}>
+                <div className={`hero-layout${featuredPost ? ' has-featured' : ''}`}>
                     <div className="hero-copy">
                         {eyebrow ? (
                             <p className="hero-eyebrow">
@@ -80,6 +114,20 @@ export default function HeroBlock({
                                     搜索
                                 </Button>
                             </form>
+                        ) : null}
+
+                        {hot.length > 0 ? (
+                            <p className="hero-hot">
+                                <span>热门搜索</span>
+                                {hot.map((keyword) => (
+                                    <a
+                                        key={keyword}
+                                        href={`${searchAction}?s=${encodeURIComponent(keyword)}`}
+                                    >
+                                        {keyword}
+                                    </a>
+                                ))}
+                            </p>
                         ) : null}
 
                         {primary || secondary.length > 0 ? (
@@ -118,39 +166,39 @@ export default function HeroBlock({
                         ) : null}
                     </div>
 
-                    {showFeatured ? (
+                    {featuredPost ? (
                         <a
                             className="hero-featured group"
-                            href={featured.url}
-                            aria-label={`阅读最新文章：${featured.title}`}
+                            href={featuredPost.url}
+                            aria-label={`阅读最新文章：${featuredPost.title}`}
                         >
                             <div className="hero-featured-media">
-                                {featured.thumb ? (
+                                {featuredPost.thumb ? (
                                     <img
-                                        src={featured.thumb}
+                                        src={featuredPost.thumb}
                                         alt=""
                                         loading="lazy"
                                         decoding="async"
                                     />
                                 ) : (
                                     <span className="hero-featured-placeholder" aria-hidden="true">
-                                        {featured.title.slice(0, 1)}
+                                        {featuredPost.title.slice(0, 1)}
                                     </span>
                                 )}
                                 <span className="hero-featured-tag">最新发布</span>
                             </div>
                             <div className="hero-featured-body">
-                                <h2>{featured.title}</h2>
-                                {featured.excerpt ? <p>{featured.excerpt}</p> : null}
+                                <h2>{featuredPost.title}</h2>
+                                {featuredPost.excerpt ? <p>{featuredPost.excerpt}</p> : null}
                                 <div className="hero-featured-meta">
-                                    <time dateTime={featured.date}>{featured.date}</time>
+                                    <time dateTime={featuredPost.date}>{featuredPost.date}</time>
                                     <span>
                                         <MessageCircle className="size-3" strokeWidth={1.8} />
-                                        {featured.comments}
+                                        {featuredPost.comments}
                                     </span>
                                     <span>
                                         <Clock3 className="size-3" strokeWidth={1.8} />
-                                        {featured.readingTime} 分钟
+                                        {featuredPost.readingTime} 分钟
                                     </span>
                                     <ArrowUpRight
                                         className="ml-auto size-4 transition-transform duration-200 group-hover:-translate-y-0.5 group-hover:translate-x-0.5"

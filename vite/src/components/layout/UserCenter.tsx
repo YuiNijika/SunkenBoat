@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { FileText, LogOut, MessageSquare, Shield, UserRound } from 'lucide-react';
+import { ExternalLink, FileText, LogOut, MessageSquare, Shield, UserRound } from 'lucide-react';
 import { Button } from '../ui/button';
 import {
     DropdownMenu,
@@ -200,6 +200,7 @@ export default function UserCenter({ api, show, site }: Props) {
     };
 
     const profileUrl = api.pages.profile;
+    const spaceUrl = `${api.pages.space.replace(/\/+$/, '')}/${user?.uid ?? 0}`;
     const contentUrl = api.pages.content;
     const adminUrl = sitePath(site, 'admin/');
 
@@ -254,6 +255,12 @@ export default function UserCenter({ api, show, site }: Props) {
                                 <a href={profileUrl}>
                                     <UserRound strokeWidth={1.8} />
                                     用户中心
+                                </a>
+                            </DropdownMenuItem>
+                            <DropdownMenuItem asChild className="cursor-pointer px-2 py-2">
+                                <a href={spaceUrl}>
+                                    <ExternalLink strokeWidth={1.8} />
+                                    我的空间
                                 </a>
                             </DropdownMenuItem>
                             {user.group === 'administrator' ? (

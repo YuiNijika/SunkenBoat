@@ -12,6 +12,60 @@ import { parseArticle } from './lib/article';
 import { useSidebarData } from './lib/sidebar';
 import type { PageData, ProseBlock } from './types';
 
+const BLOCK_SPACE: Record<string, string> = {
+    none: '0px',
+    sm: '10px',
+    md: '20px',
+    lg: '32px',
+    xl: '48px',
+};
+
+function blockStyle(block: PageData['blocks'][number]): CSSProperties {
+    const style: CSSProperties = {};
+
+    if (block.spaceTop && block.spaceTop !== 'default') {
+        style.paddingTop = BLOCK_SPACE[block.spaceTop] ?? undefined;
+    }
+
+    if (block.spaceBottom && block.spaceBottom !== 'default') {
+        style.paddingBottom = BLOCK_SPACE[block.spaceBottom] ?? undefined;
+    }
+
+    if (block.minHeight) {
+        style.minHeight = block.minHeight;
+    }
+
+    return style;
+}
+
+function wideBlockStyle(
+    block: PageData['blocks'][number],
+    index: number
+): CSSProperties {
+    const style: CSSProperties = {};
+    const spaceTop = block.spaceTop && block.spaceTop !== 'default' ? block.spaceTop : '';
+    const spaceBottom =
+        block.spaceBottom && block.spaceBottom !== 'default' ? block.spaceBottom : '';
+
+    if (spaceTop !== '') {
+        style.marginTop = BLOCK_SPACE[spaceTop] ?? undefined;
+    } else if (index > 0) {
+        style.marginTop = BLOCK_SPACE.md;
+    }
+
+    if (spaceBottom !== '') {
+        style.marginBottom = BLOCK_SPACE[spaceBottom] ?? undefined;
+    } else {
+        style.marginBottom = BLOCK_SPACE.md;
+    }
+
+    if (block.minHeight) {
+        style.minHeight = block.minHeight;
+    }
+
+    return style;
+}
+
 interface Props {
     data: PageData;
 }
@@ -48,7 +102,7 @@ function EditorApp({ data, appStyle }: { data: PageData; appStyle: CSSProperties
             <main id="main" className="flex-1 focus:outline-none" tabIndex={-1}>
                 <div className="editor-root">
                     {userApi ? (
-                        <EditorWorkspace api={userApi} cid={cid} />
+                        <EditorWorkspace api={userApi} cid={cid} fields={data.fields ?? []} />
                     ) : (
                         <div className="editor-gate">
                             <p className="editor-gate-title">编辑器暂不可用</p>
@@ -93,7 +147,7 @@ function SiteApp({ data, appStyle }: { data: PageData; appStyle: CSSProperties }
             : ['reading-progress', 'header', 'main', 'footer', 'action-rail'];
 
     const renderBlock = (block: PageData['blocks'][number], index: number) => (
-        <div key={`${block.type}-${index}`} data-block={block.type}>
+        <div key={`${block.type}-${index}`} data-block={block.type} style={blockStyle(block)}>
             <BlockRenderer block={block} />
         </div>
     );
@@ -119,24 +173,27 @@ function SiteApp({ data, appStyle }: { data: PageData; appStyle: CSSProperties }
                 className="flex-1 focus:outline-none focus-visible:outline-none"
                 tabIndex={-1}
             >
-                <div className="container-page pt-0 pb-5">
-                    {wideBlocks.length > 0 ? (
-                        <div className="page-wide-stack">
-                            {wideBlocks.map((block, index) => (
-                                <div
-                                    key={`${block.type}-${index}`}
-                                    className={
-                                        block.width === 'full'
-                                            ? 'page-wide-full'
-                                            : 'page-wide-half'
-                                    }
-                                    data-block={block.type}
-                                >
-                                    <BlockRenderer block={block} />
-                                </div>
-                            ))}
-                        </div>
-                    ) : null}
+                {wideBlocks.length > 0 ? (
+                    <div className="page-wide-stack">
+                        {wideBlocks.map((block, index) => (
+                            <div
+                                key={`${block.type}-${index}`}
+                                className={
+                                    block.width === 'full' ? 'page-wide-full' : 'page-wide-half'
+                                }
+                                data-block={block.type}
+                                style={wideBlockStyle(block, index)}
+                            >
+                                <BlockRenderer block={block} />
+                            </div>
+                        ))}
+                    </div>
+                ) : null}
+                <div
+                    className={
+                        'container-page pb-5 ' + (wideBlocks.length > 0 ? 'pt-0' : 'pt-[15px]')
+                    }
+                >
                     {twoColumn ? (
                         <div className="grid grid-cols-[minmax(0,1fr)] gap-[15px]">
                             <div

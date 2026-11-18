@@ -91,6 +91,7 @@ export interface UserApiEndpoints {
         social: string;
         content: string;
         editor: string;
+        space: string;
     };
     content: {
         enabled: boolean;
@@ -236,6 +237,9 @@ interface BlockBase {
     type: string;
     variant?: string;
     width?: 'content' | 'half' | 'full';
+    spaceTop?: 'default' | 'none' | 'sm' | 'md' | 'lg' | 'xl';
+    spaceBottom?: 'default' | 'none' | 'sm' | 'md' | 'lg' | 'xl';
+    minHeight?: string;
 }
 
 export interface HeroBlock extends BlockBase {
@@ -244,6 +248,12 @@ export interface HeroBlock extends BlockBase {
     eyebrow: string;
     title: string;
     lead: string;
+    image: string;
+    height: '' | 'sm' | 'md' | 'lg' | 'screen';
+    overlay: number;
+    align: 'left' | 'center';
+    hot: string[];
+    showFeatured: boolean;
     searchAction: string;
     searchPlaceholder: string;
     actions: { label: string; url: string; style: string }[];
@@ -264,7 +274,11 @@ export interface FeaturedPost {
 export interface PostListBlock extends BlockBase {
     type: 'post-list';
     title: string;
+    anchor?: string;
     category: string;
+    limit: number;
+    columns: number;
+    showPagination: boolean;
     posts: PostSummary[];
     paginationHtml: string;
     empty: string;
@@ -273,6 +287,8 @@ export interface PostListBlock extends BlockBase {
 export interface CategoriesBlock extends BlockBase {
     type: 'categories';
     title: string;
+    limit: number;
+    columns: number;
     items: CategoryItem[];
 }
 
@@ -477,6 +493,64 @@ export interface SpacerBlock extends BlockBase {
     type: 'spacer';
 }
 
+export interface MediaGridItem {
+    title: string;
+    text: string;
+    image: string;
+    url: string;
+}
+
+export interface MediaGridBlock extends BlockBase {
+    type: 'media-grid';
+    title: string;
+    text: string;
+    columns: number;
+    items: MediaGridItem[];
+}
+
+export interface PricingPlan {
+    name: string;
+    price: string;
+    period: string;
+    features: string[];
+    action: { label: string; url: string };
+    featured: boolean;
+}
+
+export interface PricingBlock extends BlockBase {
+    type: 'pricing';
+    title: string;
+    text: string;
+    columns: number;
+    plans: PricingPlan[];
+}
+
+export interface UserSpaceProfile {
+    uid: number;
+    name: string;
+    screenName: string;
+    avatar: string;
+    customAvatar: string;
+    url: string;
+    group: string;
+    created: string;
+    posts: number;
+    comments: number;
+    canWrite: boolean;
+    isSelf: boolean;
+    privacy: string;
+    detailsVisible: boolean;
+    signature: string;
+    gender: string;
+    location: string;
+    editUrl?: string;
+}
+
+export interface UserSpaceBlock extends BlockBase {
+    type: 'user-space';
+    profile: UserSpaceProfile;
+}
+
 export type Block =
     | HeroBlock
     | CarouselBlock
@@ -503,13 +577,25 @@ export type Block =
     | TimelineBlock
     | GalleryBlock
     | TableBlock
+    | MediaGridBlock
+    | PricingBlock
+    | UserSpaceBlock
     | AuthorCardBlock
     | SubscribeBlock
     | DividerBlock
     | SpacerBlock;
 
 export interface PageData {
-    kind: 'home' | 'archive' | 'post' | 'page' | '404' | 'custom' | 'account' | 'editor';
+    kind:
+        | 'home'
+        | 'archive'
+        | 'post'
+        | 'page'
+        | '404'
+        | 'custom'
+        | 'account'
+        | 'editor'
+        | 'user-space';
     userSection?: 'profile' | 'security' | 'social' | 'content';
     userMode?: 'list' | 'editor';
     site: SiteInfo;
@@ -520,6 +606,17 @@ export interface PageData {
     allowComment?: boolean;
     title?: string;
     documentTitle?: string;
+    fields?: ArticleField[];
+}
+
+export interface ArticleField {
+    name: string;
+    label: string;
+    type: string;
+    description: string;
+    options: { value: string; label: string }[];
+    value: string;
+    media: boolean;
 }
 
 /**

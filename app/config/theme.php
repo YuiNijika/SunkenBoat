@@ -20,6 +20,45 @@ $blockWidthField = [
     ],
 ];
 
+$blockLayoutFields = [
+    $blockWidthField,
+    [
+        'type' => 'Select',
+        'name' => 'space_top',
+        'label' => '顶部间距',
+        'value' => 'default',
+        'options' => [
+            'default' => '跟随主题',
+            'none' => '无',
+            'sm' => '小',
+            'md' => '中',
+            'lg' => '大',
+            'xl' => '超大',
+        ],
+    ],
+    [
+        'type' => 'Select',
+        'name' => 'space_bottom',
+        'label' => '底部间距',
+        'value' => 'default',
+        'options' => [
+            'default' => '跟随主题',
+            'none' => '无',
+            'sm' => '小',
+            'md' => '中',
+            'lg' => '大',
+            'xl' => '超大',
+        ],
+    ],
+    [
+        'type' => 'Text',
+        'name' => 'min_height',
+        'label' => '最小高度',
+        'placeholder' => '例如 420px、60vh；留空自适应',
+        'description' => '仅对全宽区块生效，用来消除上下多余留白。',
+    ],
+];
+
 $commonBlocks = [
     'alert' => [
         'label' => '提示框',
@@ -45,7 +84,7 @@ $commonBlocks = [
             ['type' => 'Textarea', 'name' => 'text', 'label' => '内容', 'rows' => 2],
             ['type' => 'Text', 'name' => 'action_label', 'label' => '按钮文案'],
             ['type' => 'Text', 'name' => 'action_url', 'label' => '按钮链接'],
-            $blockWidthField,
+            ...$blockLayoutFields,
         ],
     ],
     'quote' => [
@@ -71,12 +110,17 @@ $commonBlocks = [
                 'rows' => 6,
                 'description' => '每行一条，格式：标题|说明|链接。链接可留空。',
             ],
-            $blockWidthField,
+            ...$blockLayoutFields,
         ],
     ],
     'stats' => [
         'label' => '数据统计',
-        'variants' => ['two' => '两列', 'three' => '三列', 'four' => '四列'],
+        'variants' => [
+            'two' => '两列',
+            'three' => '三列',
+            'four' => '四列',
+            'strip' => '全宽数据条',
+        ],
         'fields' => [
             ['type' => 'Text', 'name' => 'title', 'label' => '标题'],
             ['type' => 'Textarea', 'name' => 'text', 'label' => '说明', 'rows' => 2],
@@ -87,6 +131,7 @@ $commonBlocks = [
                 'rows' => 4,
                 'description' => '每行一条，格式：数值|标签。留空时显示站点文章、评论、分类与标签数量。',
             ],
+            ...$blockLayoutFields,
         ],
     ],
     'steps' => [
@@ -150,7 +195,7 @@ $commonBlocks = [
                 'media' => true,
                 'description' => '每行一张图片，可从媒体库选择。',
             ],
-            $blockWidthField,
+            ...$blockLayoutFields,
         ],
     ],
     'table' => [
@@ -166,6 +211,62 @@ $commonBlocks = [
                 'rows' => 6,
                 'description' => '每行一条，单元格用 | 分隔。',
             ],
+        ],
+    ],
+    'media-grid' => [
+        'label' => '图片磁贴',
+        'variants' => ['overlay' => '图片叠加', 'card' => '卡片'],
+        'fields' => [
+            ['type' => 'Text', 'name' => 'title', 'label' => '标题'],
+            ['type' => 'Textarea', 'name' => 'text', 'label' => '说明', 'rows' => 2],
+            [
+                'type' => 'Textarea',
+                'name' => 'items',
+                'label' => '磁贴列表',
+                'rows' => 6,
+                'media' => true,
+                'description' => '每行一条，格式：标题|图片|链接|说明。图片可从媒体库选择。',
+            ],
+            [
+                'type' => 'Select',
+                'name' => 'columns',
+                'label' => '每行列数',
+                'value' => '5',
+                'options' => [
+                    '2' => '两列',
+                    '3' => '三列',
+                    '4' => '四列',
+                    '5' => '五列',
+                    '6' => '六列',
+                ],
+            ],
+            ...$blockLayoutFields,
+        ],
+    ],
+    'pricing' => [
+        'label' => '会员方案',
+        'fields' => [
+            ['type' => 'Text', 'name' => 'title', 'label' => '标题'],
+            ['type' => 'Textarea', 'name' => 'text', 'label' => '说明', 'rows' => 2],
+            [
+                'type' => 'Textarea',
+                'name' => 'plans',
+                'label' => '方案列表',
+                'rows' => 6,
+                'description' => '每行一条：名称|价格|周期|特性1;特性2|按钮文案|链接|推荐填1。',
+            ],
+            [
+                'type' => 'Select',
+                'name' => 'columns',
+                'label' => '每行列数',
+                'value' => '4',
+                'options' => [
+                    '2' => '两列',
+                    '3' => '三列',
+                    '4' => '四列',
+                ],
+            ],
+            ...$blockLayoutFields,
         ],
     ],
     'author-card' => [
@@ -584,17 +685,34 @@ return [
                             ['type' => 'Text', 'name' => 'primary_url', 'label' => '主按钮链接', 'placeholder' => '#latest'],
                             ['type' => 'Text', 'name' => 'secondary_label', 'label' => '次按钮文案', 'placeholder' => 'RSS 订阅'],
                             ['type' => 'Text', 'name' => 'secondary_url', 'label' => '次按钮链接', 'placeholder' => '留空使用订阅地址'],
+                            ['type' => 'Media', 'name' => 'image', 'label' => '背景图片', 'description' => '从媒体库选择；设置后首屏改为图片背景。'],
                             [
                                 'type' => 'Select',
-                                'name' => 'width',
-                                'label' => '展示宽度',
-                                'value' => 'content',
+                                'name' => 'height',
+                                'label' => '首屏高度',
+                                'value' => '',
                                 'options' => [
-                                    'content' => '当前宽度',
-                                    'half' => '半宽（不含侧栏）',
-                                    'full' => '全宽',
+                                    '' => '自适应',
+                                    'sm' => '紧凑',
+                                    'md' => '标准',
+                                    'lg' => '高',
+                                    'screen' => '满屏',
                                 ],
                             ],
+                            ['type' => 'Number', 'name' => 'overlay', 'label' => '遮罩浓度', 'value' => 55, 'min' => 0, 'max' => 90, 'step' => 5, 'description' => '仅图片背景生效，数值越大文字越清晰。'],
+                            [
+                                'type' => 'Select',
+                                'name' => 'align',
+                                'label' => '内容对齐',
+                                'value' => 'left',
+                                'options' => [
+                                    'center' => '居中',
+                                    'left' => '左对齐',
+                                ],
+                            ],
+                            ['type' => 'Textarea', 'name' => 'hot', 'label' => '热门搜索词', 'rows' => 2, 'description' => '每行一个关键词，显示在搜索框下方。'],
+                            ['type' => 'Switch', 'name' => 'show_featured', 'label' => '显示最新文章卡片', 'value' => true],
+                            ...$blockLayoutFields,
                         ],
                     ],
                     'post-list' => [
@@ -604,6 +722,22 @@ return [
                             ['type' => 'Text', 'name' => 'title', 'label' => '标题', 'placeholder' => '留空使用默认标题'],
                             ['type' => 'Category', 'name' => 'category', 'label' => '限定分类', 'placeholder' => '全部分类'],
                             ['type' => 'Text', 'name' => 'empty', 'label' => '空状态文案', 'placeholder' => '这里还没有文章。'],
+                            ['type' => 'Number', 'name' => 'limit', 'label' => '显示数量', 'value' => 6, 'min' => 0, 'max' => 30, 'step' => 1, 'description' => '0 表示不限制。'],
+                            [
+                                'type' => 'Select',
+                                'name' => 'columns',
+                                'label' => '网格列数',
+                                'value' => '0',
+                                'options' => [
+                                    '0' => '跟随模板',
+                                    '2' => '两列',
+                                    '3' => '三列',
+                                    '4' => '四列',
+                                    '5' => '五列',
+                                ],
+                            ],
+                            ['type' => 'Switch', 'name' => 'show_pagination', 'label' => '显示分页', 'value' => false],
+                            ...$blockLayoutFields,
                         ],
                     ],
                     'carousel' => [
@@ -611,17 +745,7 @@ return [
                         'fields' => [
                             ['type' => 'Text', 'name' => 'title', 'label' => '标题', 'placeholder' => '留空不显示标题'],
                             ['type' => 'Slides', 'name' => 'slides', 'label' => '轮播项目'],
-                            [
-                                'type' => 'Select',
-                                'name' => 'width',
-                                'label' => '展示宽度',
-                                'value' => 'content',
-                                'options' => [
-                                    'content' => '当前宽度',
-                                    'half' => '半宽（不含侧栏）',
-                                    'full' => '全宽',
-                                ],
-                            ],
+                            ...$blockLayoutFields,
                         ],
                     ],
                     'categories' => [
@@ -629,6 +753,21 @@ return [
                         'variants' => ['grid' => '卡片', 'chips' => '标签'],
                         'fields' => [
                             ['type' => 'Text', 'name' => 'title', 'label' => '标题', 'placeholder' => '分类'],
+                            ['type' => 'Number', 'name' => 'limit', 'label' => '显示数量', 'value' => 0, 'min' => 0, 'max' => 24, 'step' => 1, 'description' => '0 表示全部。'],
+                            [
+                                'type' => 'Select',
+                                'name' => 'columns',
+                                'label' => '每行列数',
+                                'value' => '0',
+                                'options' => [
+                                    '0' => '跟随模板',
+                                    '2' => '两列',
+                                    '3' => '三列',
+                                    '4' => '四列',
+                                    '5' => '五列',
+                                ],
+                            ],
+                            ...$blockLayoutFields,
                         ],
                     ],
                     'cta' => [
@@ -639,6 +778,7 @@ return [
                             ['type' => 'Textarea', 'name' => 'text', 'label' => '说明', 'rows' => 3],
                             ['type' => 'Text', 'name' => 'action_label', 'label' => '按钮文案'],
                             ['type' => 'Text', 'name' => 'action_url', 'label' => '按钮链接'],
+                            ...$blockLayoutFields,
                         ],
                     ],
                 ]),
@@ -672,6 +812,22 @@ return [
                             ['type' => 'Text', 'name' => 'title', 'label' => '标题', 'placeholder' => '留空不显示'],
                             ['type' => 'Category', 'name' => 'category', 'label' => '限定分类', 'placeholder' => '使用当前归档'],
                             ['type' => 'Text', 'name' => 'empty', 'label' => '空状态文案'],
+                            ['type' => 'Number', 'name' => 'limit', 'label' => '显示数量', 'value' => 6, 'min' => 0, 'max' => 30, 'step' => 1, 'description' => '0 表示不限制。'],
+                            [
+                                'type' => 'Select',
+                                'name' => 'columns',
+                                'label' => '网格列数',
+                                'value' => '0',
+                                'options' => [
+                                    '0' => '跟随模板',
+                                    '2' => '两列',
+                                    '3' => '三列',
+                                    '4' => '四列',
+                                    '5' => '五列',
+                                ],
+                            ],
+                            ['type' => 'Switch', 'name' => 'show_pagination', 'label' => '显示分页', 'value' => false],
+                            ...$blockLayoutFields,
                         ],
                     ],
                     'categories' => [
@@ -679,6 +835,21 @@ return [
                         'variants' => ['grid' => '卡片', 'chips' => '标签'],
                         'fields' => [
                             ['type' => 'Text', 'name' => 'title', 'label' => '标题', 'placeholder' => '分类'],
+                            ['type' => 'Number', 'name' => 'limit', 'label' => '显示数量', 'value' => 0, 'min' => 0, 'max' => 24, 'step' => 1, 'description' => '0 表示全部。'],
+                            [
+                                'type' => 'Select',
+                                'name' => 'columns',
+                                'label' => '每行列数',
+                                'value' => '0',
+                                'options' => [
+                                    '0' => '跟随模板',
+                                    '2' => '两列',
+                                    '3' => '三列',
+                                    '4' => '四列',
+                                    '5' => '五列',
+                                ],
+                            ],
+                            ...$blockLayoutFields,
                         ],
                     ],
                     'search' => [
@@ -768,17 +939,34 @@ return [
                             ['type' => 'Text', 'name' => 'primary_url', 'label' => '主按钮链接', 'placeholder' => '#latest'],
                             ['type' => 'Text', 'name' => 'secondary_label', 'label' => '次按钮文案', 'placeholder' => 'RSS 订阅'],
                             ['type' => 'Text', 'name' => 'secondary_url', 'label' => '次按钮链接', 'placeholder' => '留空使用订阅地址'],
+                            ['type' => 'Media', 'name' => 'image', 'label' => '背景图片', 'description' => '从媒体库选择；设置后首屏改为图片背景。'],
                             [
                                 'type' => 'Select',
-                                'name' => 'width',
-                                'label' => '展示宽度',
-                                'value' => 'content',
+                                'name' => 'height',
+                                'label' => '首屏高度',
+                                'value' => '',
                                 'options' => [
-                                    'content' => '当前宽度',
-                                    'half' => '半宽（不含侧栏）',
-                                    'full' => '全宽',
+                                    '' => '自适应',
+                                    'sm' => '紧凑',
+                                    'md' => '标准',
+                                    'lg' => '高',
+                                    'screen' => '满屏',
                                 ],
                             ],
+                            ['type' => 'Number', 'name' => 'overlay', 'label' => '遮罩浓度', 'value' => 55, 'min' => 0, 'max' => 90, 'step' => 5, 'description' => '仅图片背景生效，数值越大文字越清晰。'],
+                            [
+                                'type' => 'Select',
+                                'name' => 'align',
+                                'label' => '内容对齐',
+                                'value' => 'left',
+                                'options' => [
+                                    'center' => '居中',
+                                    'left' => '左对齐',
+                                ],
+                            ],
+                            ['type' => 'Textarea', 'name' => 'hot', 'label' => '热门搜索词', 'rows' => 2, 'description' => '每行一个关键词，显示在搜索框下方。'],
+                            ['type' => 'Switch', 'name' => 'show_featured', 'label' => '显示最新文章卡片', 'value' => true],
+                            ...$blockLayoutFields,
                         ],
                     ],
                     'comments' => [
@@ -830,6 +1018,7 @@ return [
                             ['type' => 'Textarea', 'name' => 'text', 'label' => '说明', 'rows' => 3],
                             ['type' => 'Text', 'name' => 'action_label', 'label' => '按钮文案'],
                             ['type' => 'Text', 'name' => 'action_url', 'label' => '按钮链接'],
+                            ...$blockLayoutFields,
                         ],
                     ],
                 ]),

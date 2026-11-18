@@ -180,12 +180,23 @@ export function FeatureGridBlock({ variant, eyebrow, title, text, items }: Featu
 }
 
 export function StatsBlock({ variant, title, text, items }: StatsBlockData) {
+    const strip = variant === 'strip';
+
     return (
-        <section className="grid gap-4">
-            <SectionIntro title={title} text={text} />
-            <div className={`grid gap-3 ${GRID_COLUMNS[variant ?? 'four'] ?? GRID_COLUMNS.four}`}>
+        <section className={strip ? 'stats-strip' : 'grid gap-4'}>
+            {strip ? null : <SectionIntro title={title} text={text} />}
+            <div
+                className={
+                    strip
+                        ? 'stats-strip-grid'
+                        : `grid gap-3 ${GRID_COLUMNS[variant ?? 'four'] ?? GRID_COLUMNS.four}`
+                }
+            >
                 {items.map((item, index) => (
-                    <div key={`${item.label}-${index}`} className="surface-card stat-card">
+                    <div
+                        key={`${item.label}-${index}`}
+                        className={strip ? 'stats-strip-item' : 'surface-card stat-card'}
+                    >
                         <p className="stat-value">{item.value || '0'}</p>
                         <p className="stat-label">{item.label}</p>
                     </div>

@@ -1,3 +1,4 @@
+import { CalendarDays, Eye, MessageCircle } from 'lucide-react';
 import Pagination from '../content/Pagination';
 import PostCard from '../content/PostCard';
 import SectionHeading from '../content/SectionHeading';
@@ -6,29 +7,219 @@ import type { PostSummary } from '../../types';
 interface Props {
     variant?: string;
     title: string;
+    anchor?: string;
     posts: PostSummary[];
     paginationHtml: string;
     empty: string;
+    limit?: number;
+    columns?: number;
+    showPagination?: boolean;
 }
 
-export default function PostListBlock({ variant, title, posts, paginationHtml, empty }: Props) {
-    const grid = variant === 'grid';
+function Thumb({ post, className = '' }: { post: PostSummary; className?: string }) {
+    const fallback = (post.categories[0]?.label ?? post.title ?? '文').trim().slice(0, 1);
 
     return (
-        <section id="latest" className="grid gap-[15px]">
-            <SectionHeading title={title} count={posts.length} />
+        <span className={'post-list-thumb ' + className}>
+            {post.thumb ? (
+                <img src={post.thumb} alt="" loading="lazy" decoding="async" />
+            ) : (
+                <span className="post-list-thumb-fallback" aria-hidden="true">
+                    {fallback}
+                </span>
+            )}
+        </span>
+    );
+}
 
-            {posts.length > 0 ? (
-                <div className={grid ? 'grid gap-[15px] sm:grid-cols-2' : 'grid gap-[15px]'}>
-                    {posts.map((post) => (
-                        <PostCard key={post.url} post={post} variant={grid ? 'grid' : 'list'} />
+function Meta({ post }: { post: PostSummary }) {
+    return (
+        <div className="post-list-meta">
+            {post.date ? (
+                <span>
+                    <CalendarDays aria-hidden="true" />
+                    <time dateTime={post.dateIso}>{post.date}</time>
+                </span>
+            ) : null}
+            <span>
+                <MessageCircle aria-hidden="true" />
+                {post.comments}
+            </span>
+            {post.views > 0 ? (
+                <span>
+                    <Eye aria-hidden="true" />
+                    {post.views}
+                </span>
+            ) : null}
+        </div>
+    );
+}
+
+function LargeCard({ post }: { post: PostSummary }) {
+    return (
+        <article className="post-list-large group">
+            <a className="post-list-large-media" href={post.url}>
+                <Thumb post={post} />
+                <span className="post-list-large-tag">{post.categories[0]?.label ?? '文章'}</span>
+            </a>
+            <div className="post-list-large-body">
+                <h3>
+                    <a href={post.url}>{post.title}</a>
+                </h3>
+                {post.excerpt ? <p>{post.excerpt}</p> : null}
+                <Meta post={post} />
+            </div>
+        </article>
+    );
+}
+
+function CompactRow({ post }: { post: PostSummary }) {
+    return (
+        <article className="post-list-row group">
+            <a href={post.url} className="post-list-row-media">
+                <Thumb post={post} />
+            </a>
+            <div className="post-list-row-body">
+                <h3>
+                    <a href={post.url}>{post.title}</a>
+                </h3>
+                {post.excerpt ? <p>{post.excerpt}</p> : null}
+                <Meta post={post} />
+            </div>
+        </article>
+    );
+}
+
+function HeadlineList({ posts }: { posts: PostSummary[] }) {
+    return (
+        <ul className="post-headline-list">
+            {posts.map((post) => (
+                <li key={post.url}>
+                    <a href={post.url}>{post.title}</a>
+                    {post.date ? <time dateTime={post.dateIso}>{post.date}</time> : null}
+                </li>
+            ))}
+        </ul>
+    );
+}
+
+function chunk<T>(items: T[], size: number): T[][] {
+    const groups: T[][] = [];
+    for (let index = 0; index < items.length; index += size) {
+        groups.push(items.slice(index, index + size));
+    }
+
+    return groups;
+}
+
+export default function PostListBlock({
+    variant,
+    title,
+    anchor,
+    posts,
+    paginationHtml,
+    empty,
+    limit = 0,
+    columns = 0,
+    showPagination = true,
+}: Props) {
+    const items = limit > 0 ? posts.slice(0, limit) : posts;
+    const mode = variant || 'list';
+
+    const body = (() => {
+        if (items.length === 0) {
+            return <p className="surface-card card-pad text-sm text-ink-mute">{empty}</p>;
+        }
+
+        if (mode === 'feature') {
+            const [lead, ...rest] = items;
+            return (
+                <div className="post-feature-layout">
+                    {lead ? <LargeCard post={lead} /> : null}
+                    <div className="post-feature-side">
+                        {rest.slice(0, 4).map((post) => (
+                            <CompactRow key={post.url} post={post} />
+                        ))}
+                    </div>
+                </div>
+            );
+        }
+
+        if (mode === 'showcase') {
+            const top = items.slice(0, 3);
+            const rest = items.slice(3, 9);
+            return (
+                <div className="post-showcase-layout">
+                    <div className="post-showcase-top">
+                        {top.map((post) => (
+                            <LargeCard key={post.url} post={post} />
+                        ))}
+                    </div>
+                    {rest.length > 0 ? (
+                        <div className="post-showcase-rest">
+                            {rest.map((post) => (
+                                <CompactRow key={post.url} post={post} />
+                            ))}
+                        </div>
+                    ) : null}
+                </div>
+            );
+        }
+
+        if (mode === 'split') {
+            const rows = items.slice(0, 4);
+            const lead = items[4] ?? items[0];
+            return (
+                <div className="post-split-layout">
+                    <div className="post-split-list">
+                        {rows.map((post) => (
+                            <CompactRow key={post.url} post={post} />
+                        ))}
+                    </div>
+                    {lead ? <LargeCard post={lead} /> : null}
+                </div>
+            );
+        }
+
+        if (mode === 'headline') {
+            const groups = chunk(items.slice(0, 12), Math.max(1, Math.ceil(items.length / 3)));
+            return (
+                <div className="post-headline-layout">
+                    {groups.slice(0, 3).map((group, index) => (
+                        <HeadlineList key={index} posts={group} />
                     ))}
                 </div>
-            ) : (
-                <p className="surface-card card-pad text-sm text-ink-mute">{empty}</p>
-            )}
+            );
+        }
 
-            <Pagination html={paginationHtml} label="文章分页" />
+        if (mode === 'compact') {
+            return (
+                <div className="post-compact-layout">
+                    {items.map((post) => (
+                        <CompactRow key={post.url} post={post} />
+                    ))}
+                </div>
+            );
+        }
+
+        const grid = mode === 'grid';
+        const columnClass =
+            columns >= 2 && columns <= 5 ? ` post-grid-cols-${columns}` : ' sm:grid-cols-2';
+
+        return (
+            <div className={grid ? 'grid gap-[15px]' + columnClass : 'grid gap-[15px]'}>
+                {items.map((post) => (
+                    <PostCard key={post.url} post={post} variant={grid ? 'grid' : 'list'} />
+                ))}
+            </div>
+        );
+    })();
+
+    return (
+        <section id={anchor || 'latest'} className="grid gap-[15px]">
+            <SectionHeading title={title} count={items.length} />
+            {body}
+            {showPagination ? <Pagination html={paginationHtml} label="文章分页" /> : null}
         </section>
     );
 }

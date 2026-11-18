@@ -778,6 +778,7 @@ export default function AccountPanel({ api, section = 'profile' }: Props) {
             : '';
 
     const pageUrls = api.pages;
+    const spaceUrl = `${pageUrls.space.replace(/\/+$/, '')}/${profile.uid}`;
     const navItems: { id: AccountSection; href: string; label: string; icon: ReactNode }[] = [
         {
             id: 'profile',
@@ -862,12 +863,26 @@ export default function AccountPanel({ api, section = 'profile' }: Props) {
                                 </div>
                                 <p className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-[12px] text-ink-mute">
                                     <span>@{profile.name}</span>
+                                    <span>UID {profile.uid}</span>
                                     {createdText ? <span>{createdText} 加入</span> : null}
-                                    {profile.mail ? (
-                                        <span className="inline-flex items-center gap-1">
-                                            <Mail className="size-3" strokeWidth={1.8} aria-hidden="true" />
-                                            {profile.mail}
-                                        </span>
+                                    {details.location ? <span>{details.location}</span> : null}
+                                    {details.gender !== 'secret'
+                                        ? <span>{GENDER_LABELS[details.gender] ?? details.gender}</span>
+                                        : null}
+                                    {profile.url ? (
+                                        <a
+                                            className="inline-flex items-center gap-1 text-brand hover:underline"
+                                            href={profile.url}
+                                            target="_blank"
+                                            rel="noreferrer noopener"
+                                        >
+                                            <ExternalLink
+                                                className="size-3"
+                                                strokeWidth={1.8}
+                                                aria-hidden="true"
+                                            />
+                                            个人主页
+                                        </a>
                                     ) : null}
                                 </p>
                                 {details.signature ? (
@@ -877,20 +892,28 @@ export default function AccountPanel({ api, section = 'profile' }: Props) {
                                 ) : null}
                             </div>
                         </div>
-                        <Button
-                            type="button"
-                            variant="outline"
-                            size="sm"
-                            disabled={loggingOut}
-                            onClick={() => void logout()}
-                        >
-                            {loggingOut ? (
-                                <LoaderCircle className="animate-spin" aria-hidden="true" />
-                            ) : (
-                                <LogOut aria-hidden="true" />
-                            )}
-                            {loggingOut ? '退出中…' : '退出登录'}
-                        </Button>
+                        <div className="flex flex-wrap items-center gap-2">
+                            <Button asChild type="button" variant="outline" size="sm">
+                                <a href={spaceUrl}>
+                                    <ExternalLink aria-hidden="true" />
+                                    查看空间
+                                </a>
+                            </Button>
+                            <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                disabled={loggingOut}
+                                onClick={() => void logout()}
+                            >
+                                {loggingOut ? (
+                                    <LoaderCircle className="animate-spin" aria-hidden="true" />
+                                ) : (
+                                    <LogOut aria-hidden="true" />
+                                )}
+                                {loggingOut ? '退出中…' : '退出登录'}
+                            </Button>
+                        </div>
                     </div>
                     {loadError ? (
                         <p className="mt-4 text-[12px] leading-5 text-destructive" role="alert">
@@ -903,9 +926,8 @@ export default function AccountPanel({ api, section = 'profile' }: Props) {
             <div className="grid items-start gap-[15px] lg:grid-cols-[240px_minmax(0,1fr)]">
                 <aside className="lg:sticky lg:top-[88px]">
                     <section className="surface-card p-1.5 lg:p-5">
-                        <p className="section-label hidden lg:block">User center</p>
                         <nav
-                            className="flex gap-1 overflow-x-auto lg:mt-3 lg:grid lg:gap-1 lg:overflow-visible"
+                            className="flex gap-1 overflow-x-auto lg:grid lg:gap-1 lg:overflow-visible"
                             aria-label="用户中心"
                         >
                             {navItems.map((item) => (
