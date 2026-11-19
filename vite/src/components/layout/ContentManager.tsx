@@ -360,7 +360,7 @@ export default function ContentManager({ api, profile }: Props) {
                         'Content-Type': 'application/json',
                         'X-Typecho-Token': api.forum.nonce,
                     },
-                    body: JSON.stringify({ action: 'list' }),
+                    body: JSON.stringify({ op: 'list' }),
                     signal: controller.signal,
                 });
                 const payload = await readPayload(response);
@@ -682,7 +682,7 @@ export default function ContentManager({ api, profile }: Props) {
         setModerating(action);
         setFeedback(null);
         const body: Record<string, unknown> = {
-            action,
+            op: action,
             ids: moderationSelected,
         };
         if (action === 'views') {

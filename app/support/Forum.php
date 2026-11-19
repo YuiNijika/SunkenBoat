@@ -102,7 +102,7 @@ final class Forum
         ]);
         Endpoint::register('forum-moderation', [self::class, 'handleModeration'], [
             'auth' => 'admin',
-            'method' => 'POST',
+            'method' => 'ANY',
         ]);
 
         Hooks::addAction('rest.request', [self::class, 'restRequest']);
@@ -350,7 +350,9 @@ final class Forum
             Response::error('你没有管理论坛帖子的权限', 403);
         }
 
-        $action = trim((string) ($data['action'] ?? 'list'));
+        // "action" is reserved by the AJAX router for the endpoint name; use
+        // "op" for the sub-operation so the payload key does not collide.
+        $action = trim((string) ($data['op'] ?? 'list'));
         if ($action === 'list') {
             return [
                 'items' => self::moderationTopics(),
