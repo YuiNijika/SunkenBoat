@@ -6,19 +6,15 @@ import {
 } from 'recharts';
 import {
     CircleDot,
-    Check,
     ExternalLink,
     FileText,
     MessageSquare,
     MessagesSquare,
     Pencil,
     PenLine,
-    Pin,
     Plus,
     ShieldCheck,
-    Star,
     Trash2,
-    X,
 } from 'lucide-react';
 import {
     AlertDialog,
@@ -208,10 +204,6 @@ export default function ContentManager({ api, profile }: Props) {
     const [moderationTopics, setModerationTopics] = useState<ForumTopic[]>([]);
     const [moderationLoaded, setModerationLoaded] = useState(false);
     const [moderationLoading, setModerationLoading] = useState(false);
-    const [moderationSelected, setModerationSelected] = useState<number[]>([]);
-    const [moderating, setModerating] = useState('');
-    const [moderationViews, setModerationViews] = useState('');
-    const [moderationKind, setModerationKind] = useState('');
     const [commentsLoaded, setCommentsLoaded] = useState(false);
     const [loading, setLoading] = useState(articleEnabled);
     const [forumLoading, setForumLoading] = useState(forumEnabled);
@@ -365,7 +357,7 @@ export default function ContentManager({ api, profile }: Props) {
                 });
                 const payload = await readPayload(response);
                 if (!response.ok) {
-                    throw new Error(errorMessage(payload, '读取待审核帖子失败'));
+                    throw new Error(errorMessage(payload, '读取论坛帖子失败'));
                 }
 
                 if (active) {
@@ -379,7 +371,7 @@ export default function ContentManager({ api, profile }: Props) {
                 if (active) {
                     setFeedback({
                         tone: 'error',
-                        text: reason instanceof Error ? reason.message : '读取待审核帖子失败',
+                        text: reason instanceof Error ? reason.message : '读取论坛帖子失败',
                     });
                 }
             } finally {
@@ -526,7 +518,7 @@ export default function ContentManager({ api, profile }: Props) {
             if (api.forum.canModerate) {
                 entries.push({
                     id: 'moderation',
-                    label: '帖子审核',
+                    label: '帖子管理',
                     count: moderationTopics.length,
                     icon: ShieldCheck,
                 });
@@ -652,92 +644,6 @@ export default function ContentManager({ api, profile }: Props) {
             });
         } finally {
             setBatchBusy(false);
-        }
-    };
-
-    const toggleModerationTopic = (id: number, checked: boolean) => {
-        setModerationSelected((current) => {
-            if (checked) {
-                return current.includes(id) ? current : [...current, id];
-            }
-
-            return current.filter((value) => value !== id);
-        });
-    };
-
-    const toggleAllModerationTopics = (checked: boolean) => {
-        setModerationSelected(
-            checked ? moderationTopics.map((topic) => topic.id) : []
-        );
-    };
-
-    const moderate = async (action: string) => {
-        if (moderating !== '' || moderationSelected.length === 0) {
-            if (moderationSelected.length === 0) {
-                setFeedback({ tone: 'error', text: '请先选择要处理的帖子。' });
-            }
-            return;
-        }
-
-        setModerating(action);
-        setFeedback(null);
-        const body: Record<string, unknown> = {
-            op: action,
-            ids: moderationSelected,
-        };
-        if (action === 'views') {
-            const views = Number(moderationViews);
-            if (!Number.isInteger(views) || views < 0) {
-                setFeedback({ tone: 'error', text: '请输入有效的阅读量。' });
-                setModerating('');
-                return;
-            }
-            body.views = views;
-        }
-        if (action === 'kind') {
-            if (moderationKind === '') {
-                setFeedback({ tone: 'error', text: '请选择帖子类型。' });
-                setModerating('');
-                return;
-            }
-            body.kind = moderationKind;
-        }
-
-        try {
-            const response = await fetch(api.forum.moderation, {
-                method: 'POST',
-                credentials: 'same-origin',
-                headers: {
-                    Accept: 'application/json',
-                    'Content-Type': 'application/json',
-                    'X-Typecho-Token': api.forum.nonce,
-                },
-                body: JSON.stringify(body),
-            });
-            const payload = await readPayload(response);
-            if (!response.ok) {
-                throw new Error(errorMessage(payload, '处理帖子失败'));
-            }
-
-            const data = payload?.data;
-            const message =
-                data
-                && typeof data === 'object'
-                && !Array.isArray(data)
-                && typeof (data as { message?: unknown }).message === 'string'
-                    ? String((data as { message: string }).message)
-                    : '帖子已更新';
-            setModerationTopics(moderationTopicsFrom(payload));
-            setModerationSelected([]);
-            setForumLoaded(false);
-            setFeedback({ tone: 'success', text: message });
-        } catch (reason) {
-            setFeedback({
-                tone: 'error',
-                text: reason instanceof Error ? reason.message : '处理帖子失败',
-            });
-        } finally {
-            setModerating('');
         }
     };
 
@@ -1202,7 +1108,7 @@ export default function ContentManager({ api, profile }: Props) {
                 )
             ) : tab === 'moderation' ? (
                 moderationLoading ? (
-                    <div className="content-skeleton" aria-busy="true" aria-label="正在加载待审核帖子">
+                    <div className="content-skeleton" aria-busy="true" aria-label="正在加载论坛帖子">
                         {[1, 2, 3].map((item) => (
                             <span key={item} className="content-skeleton-row" />
                         ))}
@@ -1214,171 +1120,63 @@ export default function ContentManager({ api, profile }: Props) {
                             strokeWidth={1.5}
                             aria-hidden="true"
                         />
-                        <p className="mt-3 text-[13px] font-medium">没有待处理的帖子</p>
+                        <p className="mt-3 text-[13px] font-medium">还没有论坛帖子</p>
                         <p className="mt-1 text-[12px] leading-5 text-ink-mute">
-                            待审核和被驳回的帖子会显示在这里。
+                            最近的帖子会显示在这里，可在此查看审核状态。
                         </p>
                     </div>
                 ) : (
-                    <div className="grid gap-3">
-                        <div className="flex flex-wrap items-center justify-between gap-2">
-                            <label className="inline-flex items-center gap-2 text-[12px] text-ink-mute">
-                                <Checkbox
-                                    checked={
-                                        moderationTopics.length > 0
-                                        && moderationSelected.length === moderationTopics.length
-                                    }
-                                    onCheckedChange={(checked) =>
-                                        toggleAllModerationTopics(checked === true)
-                                    }
-                                    aria-label="选择全部待审核帖子"
-                                />
-                                选择全部
-                            </label>
-                            <div className="flex flex-wrap items-center gap-1.5">
-                                <Button
-                                    type="button"
-                                    size="sm"
-                                    disabled={moderating !== '' || moderationSelected.length === 0}
-                                    onClick={() => void moderate('approve')}
-                                >
-                                    <Check aria-hidden="true" />
-                                    {moderating === 'approve' ? '处理中…' : '通过'}
-                                </Button>
-                                <Button
-                                    type="button"
-                                    size="sm"
-                                    variant="outline"
-                                    disabled={moderating !== '' || moderationSelected.length === 0}
-                                    onClick={() => void moderate('reject')}
-                                >
-                                    <X aria-hidden="true" />
-                                    {moderating === 'reject' ? '处理中…' : '驳回'}
-                                </Button>
-                                <Button
-                                    type="button"
-                                    size="sm"
-                                    variant="ghost"
-                                    disabled={moderating !== '' || moderationSelected.length === 0}
-                                    onClick={() => void moderate('pin')}
-                                >
-                                    <Pin aria-hidden="true" />
-                                    置顶
-                                </Button>
-                                <Button
-                                    type="button"
-                                    size="sm"
-                                    variant="ghost"
-                                    disabled={moderating !== '' || moderationSelected.length === 0}
-                                    onClick={() => void moderate('feature')}
-                                >
-                                    <Star aria-hidden="true" />
-                                    精华
-                                </Button>
-                            </div>
-                        </div>
-
-                        <div className="flex flex-wrap items-end gap-1.5 rounded-[6px] bg-surface-2 px-2.5 py-2">
-                            <label className="grid gap-1 text-[10.5px] text-ink-faint">
-                                阅读量
-                                <Input
-                                    type="number"
-                                    min={0}
-                                    max={1000000000}
-                                    className="h-8 w-28"
-                                    value={moderationViews}
-                                    onChange={(event) => setModerationViews(event.target.value)}
-                                    placeholder="例如 1000"
-                                />
-                            </label>
-                            <Button
-                                type="button"
-                                size="sm"
-                                variant="outline"
-                                disabled={moderating !== '' || moderationSelected.length === 0}
-                                onClick={() => void moderate('views')}
-                            >
-                                {moderating === 'views' ? '处理中…' : '设置阅读量'}
-                            </Button>
-                            <label className="grid gap-1 text-[10.5px] text-ink-faint">
-                                帖子类型
-                                <select
-                                    className="h-8 min-w-32 rounded-[4px] border border-line bg-surface px-2 text-[12px] text-ink outline-none"
-                                    value={moderationKind}
-                                    onChange={(event) => setModerationKind(event.target.value)}
-                                >
-                                    <option value="">选择类型</option>
-                                    {api.forum.kinds.map((kind) => (
-                                        <option key={kind.value} value={kind.value}>
-                                            {kind.label}
-                                        </option>
-                                    ))}
-                                </select>
-                            </label>
-                            <Button
-                                type="button"
-                                size="sm"
-                                variant="outline"
-                                disabled={moderating !== '' || moderationSelected.length === 0}
-                                onClick={() => void moderate('kind')}
-                            >
-                                {moderating === 'kind' ? '处理中…' : '修改类型'}
-                            </Button>
-                        </div>
-
-                        <ul className="content-list">
-                            {moderationTopics.map((topic) => (
-                                <li key={topic.id} className="content-list-item content-topic-item">
-                                    <Checkbox
-                                        checked={moderationSelected.includes(topic.id)}
-                                        onCheckedChange={(checked) =>
-                                            toggleModerationTopic(topic.id, checked === true)
-                                        }
-                                        aria-label={`选择 ${topic.title}`}
-                                    />
-                                    <div className="min-w-0 flex-1">
-                                        <div className="flex flex-wrap items-center gap-2">
-                                            <p className="truncate text-[13px] font-medium">
-                                                {topic.title}
-                                            </p>
-                                            <Badge
-                                                variant={
-                                                    topic.status === 'waiting'
-                                                        ? 'secondary'
-                                                        : 'outline'
-                                                }
-                                            >
-                                                {topic.status === 'waiting' ? '待审核' : '已驳回'}
-                                            </Badge>
-                                            <Badge variant="outline">{topic.kindLabel}</Badge>
-                                        </div>
-                                        <p className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-ink-faint">
-                                            {topic.circle ? <span>{topic.circle.name}</span> : null}
-                                            <span>{topic.author.screenName || topic.author.name}</span>
-                                            <span>{topic.createdText}</span>
+                    <ul className="content-list">
+                        {moderationTopics.map((topic) => (
+                            <li key={topic.id} className="content-list-item content-topic-item">
+                                <div className="min-w-0 flex-1">
+                                    <div className="flex flex-wrap items-center gap-2">
+                                        <p className="truncate text-[13px] font-medium">
+                                            {topic.title}
                                         </p>
-                                        {topic.excerpt !== '' ? (
-                                            <p className="mt-1 line-clamp-2 text-[11.5px] leading-5 text-ink-mute">
-                                                {topic.excerpt}
-                                            </p>
-                                        ) : null}
-                                    </div>
-                                    <div className="content-list-actions">
-                                        <Button
-                                            asChild
-                                            variant="ghost"
-                                            size="icon-sm"
-                                            aria-label={`查看 ${topic.title}`}
+                                        <Badge
+                                            variant={
+                                                topic.status === 'waiting'
+                                                    ? 'secondary'
+                                                    : 'outline'
+                                            }
                                         >
-                                            <a href={topic.url} target="_blank" rel="noreferrer">
-                                                <ExternalLink aria-hidden="true" />
-                                            </a>
-                                        </Button>
+                                            {topic.status === 'waiting'
+                                                ? '待审核'
+                                                : topic.status === 'rejected'
+                                                    ? '已驳回'
+                                                    : topic.status === 'publish'
+                                                        ? '已发布'
+                                                        : topic.status}
+                                        </Badge>
+                                        <Badge variant="outline">{topic.kindLabel}</Badge>
                                     </div>
-                                </li>
-                            ))}
-                        </ul>
-                    </div>
+                                    <p className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-ink-faint">
+                                        {topic.circle ? <span>{topic.circle.name}</span> : null}
+                                        <span>{topic.author.screenName || topic.author.name}</span>
+                                        <span>{topic.createdText}</span>
+                                    </p>
+                                    {topic.excerpt !== '' ? (
+                                        <p className="mt-1 line-clamp-2 text-[11.5px] leading-5 text-ink-mute">
+                                            {topic.excerpt}
+                                        </p>
+                                    ) : null}
+                                </div>
+                                <div className="content-list-actions">
+                                    <Button
+                                        asChild
+                                        variant="ghost"
+                                        size="icon-sm"
+                                        aria-label={`查看 ${topic.title}`}
+                                    >
+                                        <a href={topic.url} target="_blank" rel="noreferrer">
+                                            <ExternalLink aria-hidden="true" />
+                                        </a>
+                                    </Button>
+                                </div>
+                            </li>
+                        ))}
+                    </ul>
                 )
             ) : commentsLoading ? (
                 <div className="content-skeleton" aria-busy="true" aria-label="正在加载历史评论">

@@ -356,7 +356,7 @@ final class Forum
         if ($action === 'list') {
             return [
                 'items' => self::moderationTopics(),
-                'status' => 'waiting',
+                'status' => 'all',
             ];
         }
 
@@ -454,7 +454,6 @@ final class Forum
             $rows = $db->fetchAll(
                 $db->select('*')
                     ->from('table.forum_topics')
-                    ->where('status IN ?', ['waiting', 'rejected'])
                     ->order('created', Db::SORT_DESC)
                     ->limit(100)
             );

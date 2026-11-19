@@ -1,6 +1,6 @@
 {
   "src/lib/highlight.ts": {
-    "file": "highlight-DeuWT-i9.js",
+    "file": "highlight-DkfMOsuG.js",
     "name": "highlight",
     "src": "src/lib/highlight.ts",
     "isDynamicEntry": true,
@@ -9,7 +9,7 @@
     ]
   },
   "src/main.tsx": {
-    "file": "main-BPt55c-x.js",
+    "file": "main-DUqGvcFx.js",
     "name": "main",
     "src": "src/main.tsx",
     "isEntry": true,
@@ -19,7 +19,7 @@
       "src/lib/highlight.ts"
     ],
     "css": [
-      "main-wjUdbIEg.css"
+      "main-D-GydSEq.css"
     ]
   }
 }
