@@ -12,6 +12,6 @@ use TTDF\View\Components;
 
 $root = Framework::root();
 
-Components::render($root, 'layout/AppHeader', ['title' => '内容管理']);
+Components::render($root, 'layout/AppHeader', ['title' => '内容管理', 'noindex' => true]);
 PageData::emit(PageData::user('content'));
 Components::render($root, 'layout/AppFooter', []);

@@ -139,20 +139,23 @@ final class PageData
 
         $meta = $sections[$section];
         $title = $editor ? '写文章' : $meta['title'];
-        $options = Typecho::options();
-        $siteTitle = trim((string) ($options?->title ?? ''));
+        $site = self::site(null);
 
         return [
             'kind' => $editor ? 'editor' : 'account',
             'userSection' => $section,
             'userMode' => $editor ? 'editor' : 'list',
-            'site' => self::site(null),
+            'site' => $site,
             'theme' => self::theme(),
             'api' => self::api(),
             'blocks' => [],
             'widgets' => self::widgets(),
             'title' => $title,
-            'documentTitle' => $siteTitle !== '' ? $title . ' · ' . $siteTitle : $title,
+            'documentTitle' => Seo::documentTitle(
+                $title,
+                (string) ($site['title'] ?? ''),
+                (string) ($site['subtitle'] ?? '')
+            ),
             'fields' => $editor ? self::articleFields() : [],
         ];
     }
@@ -209,7 +212,11 @@ final class PageData
     public static function editorPage(string $title, array $editor): array
     {
         $site = self::site(null);
-        $documentTitle = $site['title'] !== '' ? $title . ' · ' . $site['title'] : $title;
+        $documentTitle = Seo::documentTitle(
+            $title,
+            (string) ($site['title'] ?? ''),
+            (string) ($site['subtitle'] ?? '')
+        );
 
         return [
             'kind' => 'editor',
@@ -272,7 +279,11 @@ final class PageData
             ],
             'widgets' => self::widgets(),
             'title' => $title,
-            'documentTitle' => $site['title'] !== '' ? $title . ' · ' . $site['title'] : $title,
+            'documentTitle' => Seo::documentTitle(
+                $title,
+                (string) ($site['title'] ?? ''),
+                (string) ($site['subtitle'] ?? '')
+            ),
         ];
     }
 
@@ -300,7 +311,11 @@ final class PageData
             ]],
             'widgets' => self::widgets(),
             'title' => $title,
-            'documentTitle' => $site['title'] !== '' ? $title . ' · ' . $site['title'] : $title,
+            'documentTitle' => Seo::documentTitle(
+                $title,
+                (string) ($site['title'] ?? ''),
+                (string) ($site['subtitle'] ?? '')
+            ),
         ];
     }
 
@@ -471,9 +486,11 @@ final class PageData
         $site = self::site(null);
         $documentTitle = $documentTitle !== '' ? $documentTitle : $title;
 
-        if ($documentTitle !== '' && $site['title'] !== '') {
-            $documentTitle .= ' · ' . $site['title'];
-        }
+        $documentTitle = Seo::documentTitle(
+            $documentTitle !== '' ? $documentTitle : $title,
+            (string) ($site['title'] ?? ''),
+            (string) ($site['subtitle'] ?? '')
+        );
 
         $data = [
             'kind' => $kind,
@@ -3032,7 +3049,8 @@ final class PageData
         $mailConfigured = Mailer::configured();
         $smsConfigured = Sms::configured();
         $registerVerify = ($values['Mail_Verify_Register'] ?? false) === true;
-        $smsRegisterVerify = ($values['Sms_Verify_Register'] ?? false) === true;
+        $smsVerifyRequested = ($values['Sms_Verify_Register'] ?? false) === true;
+        $smsRegisterVerify = UserProfile::enabled() && $smsVerifyRequested;
         $resetVerify = ($values['Mail_Verify_Reset'] ?? false) === true;
         $emailVerify = ($values['Mail_Verify_Email'] ?? false) === true;
         $allowRegister = (bool) (Typecho::options()?->allowRegister ?? false);
@@ -3053,7 +3071,7 @@ final class PageData
                 'register' => $v2Base . '/auth/register',
                 'registerEnabled' => $allowRegister
                     && (!$registerVerify || $mailConfigured)
-                    && (!$smsRegisterVerify || $smsConfigured),
+                    && (!$smsVerifyRequested || ($smsRegisterVerify && $smsConfigured)),
                 'registerVerify' => $registerVerify,
                 'smsVerify' => $smsRegisterVerify && $smsConfigured,
                 'smsCode' => Endpoint::url('sms-code'),
@@ -3068,6 +3086,10 @@ final class PageData
                 'profile' => Endpoint::url('user-profile'),
                 'profileNonce' => Typecho::securityToken(),
                 'enhanced' => ($values['User_Center_Enhanced'] ?? true) === true,
+                'avatarMedia' => $v2Base . '/media',
+                'avatarMediaEnabled' => ThemeConfig::restV2Enabled()
+                    && UserProfile::enabled()
+                    && UserProfile::viewerUid() > 0,
                 'pages' => [
                     'profile' => rtrim($index, '/') . '/user/profile',
                     'account' => rtrim($index, '/') . '/user/account',

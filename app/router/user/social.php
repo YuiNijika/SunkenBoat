@@ -12,6 +12,6 @@ use TTDF\View\Components;
 
 $root = Framework::root();
 
-Components::render($root, 'layout/AppHeader', ['title' => '社交账号']);
+Components::render($root, 'layout/AppHeader', ['title' => '社交账号', 'noindex' => true]);
 PageData::emit(PageData::user('social'));
 Components::render($root, 'layout/AppFooter', []);

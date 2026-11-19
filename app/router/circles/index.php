@@ -21,6 +21,7 @@ if (($data['kind'] ?? '') === '404' && class_exists('Typecho\\Response')) {
 
 Components::render($root, 'layout/AppHeader', [
     'title' => $title,
+    'noindex' => ($data['kind'] ?? '') === '404',
     'canonical' => (string) ($data['canonical'] ?? ''),
     'description' => (string) ($data['description'] ?? ''),
 ]);

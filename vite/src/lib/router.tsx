@@ -25,12 +25,21 @@ const CACHE_TTL = 30_000;
 interface RouteMeta {
     title: string;
     description: string;
+    robots: string;
     canonical: string;
+    locale: string;
+    image: string;
     ogTitle: string;
     ogDescription: string;
     ogUrl: string;
     ogType: string;
     siteName: string;
+    articlePublishedTime: string;
+    articleModifiedTime: string;
+    twitterCard: string;
+    twitterTitle: string;
+    twitterDescription: string;
+    twitterImage: string;
     jsonLd: string;
 }
 
@@ -69,12 +78,21 @@ function readMeta(doc: Document, url: URL): RouteMeta {
     return {
         title: doc.title.trim(),
         description: metaContent(doc, 'meta[name="description"]'),
+        robots: metaContent(doc, 'meta[name="robots"]'),
         canonical: linkHref(doc, 'link[rel="canonical"]') || url.toString(),
+        locale: metaContent(doc, 'meta[property="og:locale"]'),
+        image: metaContent(doc, 'meta[property="og:image"]'),
         ogTitle: metaContent(doc, 'meta[property="og:title"]'),
         ogDescription: metaContent(doc, 'meta[property="og:description"]'),
         ogUrl: metaContent(doc, 'meta[property="og:url"]'),
         ogType: metaContent(doc, 'meta[property="og:type"]'),
         siteName: metaContent(doc, 'meta[property="og:site_name"]'),
+        articlePublishedTime: metaContent(doc, 'meta[property="article:published_time"]'),
+        articleModifiedTime: metaContent(doc, 'meta[property="article:modified_time"]'),
+        twitterCard: metaContent(doc, 'meta[name="twitter:card"]'),
+        twitterTitle: metaContent(doc, 'meta[name="twitter:title"]'),
+        twitterDescription: metaContent(doc, 'meta[name="twitter:description"]'),
+        twitterImage: metaContent(doc, 'meta[name="twitter:image"]'),
         jsonLd: doc.querySelector('script[type="application/ld+json"]')?.textContent?.trim() ?? '',
     };
 }
@@ -102,11 +120,21 @@ function applyMeta(meta: RouteMeta): void {
     }
 
     setMeta('name', 'description', meta.description);
+    setMeta('name', 'robots', meta.robots);
+    setMeta('property', 'og:locale', meta.locale);
     setMeta('property', 'og:title', meta.ogTitle || meta.title);
     setMeta('property', 'og:description', meta.ogDescription || meta.description);
     setMeta('property', 'og:url', meta.ogUrl || meta.canonical);
     setMeta('property', 'og:type', meta.ogType);
     setMeta('property', 'og:site_name', meta.siteName);
+    setMeta('property', 'og:image', meta.image);
+    setMeta('property', 'og:image:alt', meta.image ? meta.title : '');
+    setMeta('property', 'article:published_time', meta.articlePublishedTime);
+    setMeta('property', 'article:modified_time', meta.articleModifiedTime);
+    setMeta('name', 'twitter:card', meta.twitterCard || (meta.image ? 'summary_large_image' : 'summary'));
+    setMeta('name', 'twitter:title', meta.twitterTitle || meta.title);
+    setMeta('name', 'twitter:description', meta.twitterDescription || meta.description);
+    setMeta('name', 'twitter:image', meta.twitterImage || meta.image);
 
     let canonical = document.head.querySelector<HTMLLinkElement>('link[rel="canonical"]');
     if (!canonical) {

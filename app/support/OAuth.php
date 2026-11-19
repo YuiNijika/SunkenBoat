@@ -590,7 +590,9 @@ final class OAuth
 
         echo '<!doctype html><html lang="zh-CN"><head><meta charset="utf-8">'
             . '<meta name="viewport" content="width=device-width,initial-scale=1">'
-            . '<title>绑定账号 · ' . self::e($siteTitle) . '</title>'
+            . '<meta name="robots" content="noindex,nofollow">'
+            . '<meta name="description" content="' . self::e('验证已有账号并绑定第三方登录。') . '">'
+            . '<title>' . self::e(Seo::documentTitle('绑定账号', $siteTitle)) . '</title>'
             . '<style>'
             . ':root{color-scheme:light;--bg:#f5f6f7;--card:#fff;--ink:#171a21;--muted:#667085;'
             . '--line:#e4e7ec;--brand:#2563eb;--danger:#b42318}'
@@ -639,10 +641,15 @@ final class OAuth
         header('Content-Type: text/html; charset=UTF-8');
         header('Cache-Control: no-store');
 
+        $site = Typecho::options();
+        $siteTitle = is_scalar($site?->title ?? null) ? trim((string) $site->title) : '';
         $login = self::userUrl('social');
         echo '<!doctype html><html lang="zh-CN"><head><meta charset="utf-8">'
             . '<meta name="viewport" content="width=device-width,initial-scale=1">'
-            . '<title>绑定失败</title><style>body{margin:0;min-height:100vh;display:grid;place-items:center;'
+            . '<meta name="robots" content="noindex,nofollow">'
+            . '<meta name="description" content="' . self::e('第三方账号绑定未完成。') . '">'
+            . '<title>' . self::e(Seo::documentTitle('绑定失败', $siteTitle)) . '</title>'
+            . '<style>body{margin:0;min-height:100vh;display:grid;place-items:center;'
             . 'padding:24px;background:#f5f6f7;color:#171a21;font:14px/1.6 system-ui,-apple-system,BlinkMacSystemFont,'
             . '"Segoe UI","Microsoft YaHei",sans-serif}.card{width:min(100%,420px);padding:28px;background:#fff;'
             . 'border:1px solid #e4e7ec;border-radius:12px;box-shadow:0 18px 50px rgba(16,24,40,.08)}'

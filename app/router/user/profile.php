@@ -12,6 +12,6 @@ use TTDF\View\Components;
 
 $root = Framework::root();
 
-Components::render($root, 'layout/AppHeader', ['title' => '个人资料']);
+Components::render($root, 'layout/AppHeader', ['title' => '个人资料', 'noindex' => true]);
 PageData::emit(PageData::user('profile'));
 Components::render($root, 'layout/AppFooter', []);

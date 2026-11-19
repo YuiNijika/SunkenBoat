@@ -203,7 +203,10 @@ export default function ForumTopicEditor({ data }: { data: PageData }) {
                 const response = await fetch(editor.mediaEndpoint, {
                     method: 'POST',
                     credentials: 'same-origin',
-                    headers: { Accept: 'application/json' },
+                    headers: {
+                        Accept: 'application/json',
+                        'X-Upload-Purpose': 'topic',
+                    },
                     body,
                 });
                 const payload = (await response.json().catch(() => null)) as
@@ -707,6 +710,7 @@ export default function ForumTopicEditor({ data }: { data: PageData }) {
                 open={mediaOpen}
                 onOpenChange={setMediaOpen}
                 mediaEndpoint={editor.mediaEndpoint}
+                uploadPurpose="topic"
                 onSelect={(item) => {
                     insertMedia(item);
                     setMediaOpen(false);

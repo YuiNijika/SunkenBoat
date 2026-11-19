@@ -372,7 +372,10 @@ export default function ContentEditor({
                 const response = await fetch(api.content.media, {
                     method: 'POST',
                     credentials: 'same-origin',
-                    headers: { Accept: 'application/json' },
+                    headers: {
+                        Accept: 'application/json',
+                        'X-Upload-Purpose': 'article',
+                    },
                     body,
                 });
                 const payload = await readPayload(response);
@@ -1060,6 +1063,7 @@ export default function ContentEditor({
                     }
                 }}
                 api={api}
+                uploadPurpose="article"
                 onSelect={selectMedia}
             />
         </div>

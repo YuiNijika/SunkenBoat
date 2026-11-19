@@ -55,7 +55,8 @@ final class Sms
 
     public static function registerEnabled(): bool
     {
-        return (Settings::values()['Sms_Verify_Register'] ?? false) === true
+        return UserProfile::enabled()
+            && (Settings::values()['Sms_Verify_Register'] ?? false) === true
             && self::configured();
     }
 

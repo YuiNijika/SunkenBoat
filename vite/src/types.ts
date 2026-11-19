@@ -119,6 +119,8 @@ export interface UserApiEndpoints {
     profile: string;
     profileNonce: string;
     enhanced: boolean;
+    avatarMedia: string;
+    avatarMediaEnabled: boolean;
     pages: {
         profile: string;
         account: string;
@@ -142,6 +144,8 @@ export interface UserApiEndpoints {
     mailConfigured: boolean;
     oauth: OAuthEndpoints;
 }
+
+export type UploadPurpose = 'article' | 'topic' | 'avatar' | 'background';
 
 export interface UserForumContent {
     topics: ForumTopic[];

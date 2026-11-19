@@ -24,6 +24,9 @@ if (($data['kind'] ?? '') === '404') {
     }
 }
 
-Components::render($root, 'layout/AppHeader', ['title' => $title]);
+Components::render($root, 'layout/AppHeader', [
+    'title' => $title,
+    'noindex' => ($data['kind'] ?? '') === '404',
+]);
 PageData::emit($data);
 Components::render($root, 'layout/AppFooter', []);

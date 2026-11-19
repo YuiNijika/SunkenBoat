@@ -28,6 +28,7 @@ import type { OAuthProvider, UserApiEndpoints, UserProfile } from '../../types';
 import ContentManager from './ContentManager';
 import AuthDialog from './AuthDialog';
 import UserAvatar from './UserAvatar';
+import MediaLibrary from '../content/MediaLibrary';
 
 const GROUP_LABELS: Record<string, string> = {
     administrator: '管理员',
@@ -171,6 +172,7 @@ export default function AccountPanel({ api, section = 'profile' }: Props) {
     );
     const [oauthBusy, setOauthBusy] = useState('');
     const [oauthFeedback, setOauthFeedback] = useState<Feedback | null>(null);
+    const [avatarMediaOpen, setAvatarMediaOpen] = useState(false);
 
     const sessionEndpoint = api?.session;
     const meEndpoint = api?.me;
@@ -778,6 +780,11 @@ export default function AccountPanel({ api, section = 'profile' }: Props) {
                   created.getDate()
               ).padStart(2, '0')}`
             : '';
+    const avatarPreview: UserProfile = {
+        ...profile,
+        avatar: details.avatar || profile.avatar,
+        customAvatar: details.avatar,
+    };
 
     const pageUrls = api.pages;
     const spaceUrl = `${pageUrls.space.replace(/\/+$/, '')}/${profile.uid}`;
@@ -1011,26 +1018,56 @@ export default function AccountPanel({ api, section = 'profile' }: Props) {
                                 </div>
                                 {api.enhanced ? (
                                     <>
-                                        <label className="grid gap-1.5">
-                                            <span className="text-[12px] font-medium text-ink-soft">头像地址</span>
-                                            <Input
-                                                className="h-10"
-                                                type="url"
-                                                inputMode="url"
-                                                value={details.avatar}
-                                                onChange={(event) =>
-                                                    setDetails((current) => ({
-                                                        ...current,
-                                                        avatar: event.target.value,
-                                                    }))
-                                                }
-                                                maxLength={512}
-                                                placeholder="https://example.com/avatar.jpg"
-                                            />
-                                            <span className="text-[11px] leading-5 text-ink-faint">
-                                                留空时使用站点头像源，仅支持 http(s) 图片链接。
-                                            </span>
-                                        </label>
+                                        <div className="grid gap-2">
+                                            <span className="text-[12px] font-medium text-ink-soft">头像</span>
+                                            <div className="flex flex-wrap items-center gap-3 rounded-[6px] border border-line bg-surface-2 p-3">
+                                                <ProfileAvatar
+                                                    profile={avatarPreview}
+                                                    className="size-14 border border-line shadow-sm"
+                                                />
+                                                <div className="min-w-0 flex-1">
+                                                    <p className="truncate text-[12px] text-ink-soft">
+                                                        {details.avatar
+                                                            ? '已选择自定义头像'
+                                                            : '当前使用站点头像源'}
+                                                    </p>
+                                                    <p className="mt-0.5 text-[11px] leading-5 text-ink-faint">
+                                                        头像图片上传到媒体库，保存后立即生效。
+                                                    </p>
+                                                </div>
+                                                <div className="flex shrink-0 flex-wrap items-center gap-1">
+                                                    {details.avatar ? (
+                                                        <Button
+                                                            type="button"
+                                                            variant="ghost"
+                                                            size="sm"
+                                                            onClick={() =>
+                                                                setDetails((current) => ({
+                                                                    ...current,
+                                                                    avatar: '',
+                                                                }))
+                                                            }
+                                                        >
+                                                            恢复默认
+                                                        </Button>
+                                                    ) : null}
+                                                    <Button
+                                                        type="button"
+                                                        variant="outline"
+                                                        size="sm"
+                                                        disabled={!api.avatarMediaEnabled}
+                                                        onClick={() => setAvatarMediaOpen(true)}
+                                                    >
+                                                        从媒体库选择
+                                                    </Button>
+                                                </div>
+                                            </div>
+                                            {!api.avatarMediaEnabled ? (
+                                                <span className="text-[11px] leading-5 text-ink-faint">
+                                                    媒体库接口未启用，暂时无法更换头像。
+                                                </span>
+                                            ) : null}
+                                        </div>
                                         <div className="grid gap-4 sm:grid-cols-2">
                                             <label className="grid gap-1.5">
                                                 <span className="text-[12px] font-medium text-ink-soft">性别</span>
@@ -1399,6 +1436,20 @@ export default function AccountPanel({ api, section = 'profile' }: Props) {
                     </section>
                 </div>
             </div>
+
+            <MediaLibrary
+                open={avatarMediaOpen}
+                onOpenChange={setAvatarMediaOpen}
+                mediaEndpoint={api.avatarMedia}
+                uploadPurpose="avatar"
+                allowDelete={false}
+                title="选择头像"
+                description="从媒体库选择或上传头像图片"
+                onSelect={(item) => {
+                    setDetails((current) => ({ ...current, avatar: item.url }));
+                    setAvatarMediaOpen(false);
+                }}
+            />
         </div>
     );
 }

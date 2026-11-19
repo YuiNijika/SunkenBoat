@@ -35,6 +35,8 @@ if (PHP_VERSION_ID < 80200) {
 \TTDF\Hooks\Hooks::addAction('framework.boot', [\SunkenBoat\Support\Forum::class, 'register']);
 \TTDF\Hooks\Hooks::addAction('framework.boot', [\SunkenBoat\Support\UserProfile::class, 'register']);
 \TTDF\Hooks\Hooks::addAction('framework.boot', [\SunkenBoat\Support\OAuth::class, 'register']);
+\TTDF\Hooks\Hooks::addAction('framework.boot', [\SunkenBoat\Support\Seo::class, 'register']);
 \TTDF\Hooks\Hooks::addAction('framework.boot', [\SunkenBoat\Support\Sms::class, 'register']);
+\TTDF\Hooks\Hooks::addAction('framework.boot', [\SunkenBoat\Support\UploadLimits::class, 'register']);
 
 \TTDF\Framework::boot(__DIR__);

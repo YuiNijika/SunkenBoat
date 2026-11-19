@@ -31,13 +31,17 @@ import {
 import { Input } from '../ui/input';
 import { Skeleton } from '../ui/skeleton';
 import { errorMessage, readPayload } from '../../lib/user';
-import type { MediaItem, UserApiEndpoints } from '../../types';
+import type { MediaItem, UploadPurpose, UserApiEndpoints } from '../../types';
 
 interface Props {
     open: boolean;
     onOpenChange: (open: boolean) => void;
     api?: UserApiEndpoints;
     mediaEndpoint?: string;
+    uploadPurpose?: UploadPurpose;
+    allowDelete?: boolean;
+    title?: string;
+    description?: string;
     onSelect: (item: MediaItem) => void;
 }
 
@@ -74,7 +78,17 @@ function formatBytes(value: number): string {
     return `${(value / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-export default function MediaLibrary({ open, onOpenChange, api, mediaEndpoint, onSelect }: Props) {
+export default function MediaLibrary({
+    open,
+    onOpenChange,
+    api,
+    mediaEndpoint,
+    uploadPurpose,
+    allowDelete = true,
+    title = '媒体库',
+    description,
+    onSelect,
+}: Props) {
     const [items, setItems] = useState<MediaItem[]>([]);
     const [total, setTotal] = useState(0);
     const [page, setPage] = useState(1);
@@ -110,7 +124,10 @@ export default function MediaLibrary({ open, onOpenChange, api, mediaEndpoint, o
 
                 const response = await fetch(endpoint.toString(), {
                     credentials: 'same-origin',
-                    headers: { Accept: 'application/json' },
+                    headers: {
+                        Accept: 'application/json',
+                        ...(uploadPurpose ? { 'X-Upload-Purpose': uploadPurpose } : {}),
+                    },
                 });
                 const payload = await readPayload(response);
                 if (!response.ok) {
@@ -135,7 +152,7 @@ export default function MediaLibrary({ open, onOpenChange, api, mediaEndpoint, o
                 }
             }
         },
-        [endpointUrl]
+        [endpointUrl, uploadPurpose]
     );
 
     useEffect(() => {
@@ -166,7 +183,10 @@ export default function MediaLibrary({ open, onOpenChange, api, mediaEndpoint, o
                 const response = await fetch(endpointUrl, {
                     method: 'POST',
                     credentials: 'same-origin',
-                    headers: { Accept: 'application/json' },
+                    headers: {
+                        Accept: 'application/json',
+                        ...(uploadPurpose ? { 'X-Upload-Purpose': uploadPurpose } : {}),
+                    },
                     body,
                 });
                 const payload = await readPayload(response);
@@ -198,7 +218,10 @@ export default function MediaLibrary({ open, onOpenChange, api, mediaEndpoint, o
             const response = await fetch(`${endpointUrl}/${deleteTarget.id}`, {
                 method: 'DELETE',
                 credentials: 'same-origin',
-                headers: { Accept: 'application/json' },
+                headers: {
+                    Accept: 'application/json',
+                    ...(uploadPurpose ? { 'X-Upload-Purpose': uploadPurpose } : {}),
+                },
             });
             const payload = await readPayload(response);
             if (!response.ok) {
@@ -230,9 +253,9 @@ export default function MediaLibrary({ open, onOpenChange, api, mediaEndpoint, o
             <Dialog open={open} onOpenChange={onOpenChange}>
                 <DialogContent className="max-h-[90dvh] overflow-hidden sm:max-w-4xl">
                     <DialogHeader>
-                        <DialogTitle>媒体库</DialogTitle>
+                        <DialogTitle>{title}</DialogTitle>
                         <DialogDescription>
-                            共 {total} 张图片 · 点击图片插入正文 · 支持拖拽上传
+                            {description ?? `共 ${total} 张图片 · 点击图片选择 · 支持拖拽上传`}
                         </DialogDescription>
                     </DialogHeader>
 
@@ -341,15 +364,17 @@ export default function MediaLibrary({ open, onOpenChange, api, mediaEndpoint, o
                                                     <Copy aria-hidden="true" />
                                                 )}
                                             </Button>
-                                            <Button
-                                                type="button"
-                                                variant="secondary"
-                                                size="icon-xs"
-                                                aria-label={`删除 ${item.title}`}
-                                                onClick={() => setDeleteTarget(item)}
-                                            >
-                                                <Trash2 aria-hidden="true" />
-                                            </Button>
+                                            {allowDelete ? (
+                                                <Button
+                                                    type="button"
+                                                    variant="secondary"
+                                                    size="icon-xs"
+                                                    aria-label={`删除 ${item.title}`}
+                                                    onClick={() => setDeleteTarget(item)}
+                                                >
+                                                    <Trash2 aria-hidden="true" />
+                                                </Button>
+                                            ) : null}
                                         </div>
 
                                         <div className="border-t border-line px-2 py-1.5">

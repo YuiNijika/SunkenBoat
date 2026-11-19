@@ -17,6 +17,7 @@ const MESSAGES: Record<string, string> = {
     'Invalid request body': '请检查填写的内容',
     'Invalid verification code': '验证码无效或已过期',
     'Invalid SMS verification code': '短信验证码无效或已过期',
+    'SMS registration requires enhanced user profiles': '短信注册需要先在用户设置中启用更多资料',
     'Invalid phone number': '手机号格式无效',
     'Invalid user name': '用户名不符合要求',
     'Method not allowed': '请求方式不受支持',

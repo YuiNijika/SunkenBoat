@@ -12,6 +12,6 @@ use TTDF\View\Components;
 
 $root = Framework::root();
 
-Components::render($root, 'layout/AppHeader', ['title' => '账号安全']);
+Components::render($root, 'layout/AppHeader', ['title' => '账号安全', 'noindex' => true]);
 PageData::emit(PageData::user('security'));
 Components::render($root, 'layout/AppFooter', []);

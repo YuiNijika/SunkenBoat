@@ -4,6 +4,9 @@ interface TranslateApi {
     language: {
         setLocal: (language: string) => void;
     };
+    selectLanguageTag?: {
+        show?: boolean;
+    };
     service: {
         use: (service: string) => void;
     };
@@ -60,10 +63,15 @@ export async function prepareTranslation(config: SiteInfo['translate']): Promise
         return null;
     }
 
+    if (api.selectLanguageTag) {
+        api.selectLanguageTag.show = false;
+    }
+
     api.language.setLocal(config.local);
     api.service.use(config.service);
     api.listener.start();
     api.execute();
+    document.getElementById('translateSelectLanguage')?.remove();
 
     return api;
 }

@@ -485,6 +485,7 @@ export function CircleDialog({ open, onOpenChange, forum, onCreated }: CircleDia
                     open={mediaOpen}
                     onOpenChange={setMediaOpen}
                     mediaEndpoint={forum.mediaEndpoint}
+                    uploadPurpose="topic"
                     onSelect={(item) => {
                         setIcon(item.url);
                         setMediaOpen(false);
@@ -1976,6 +1977,7 @@ export function ForumTopicBlock({
                             open={mediaOpen}
                             onOpenChange={setMediaOpen}
                             mediaEndpoint={forum.mediaEndpoint}
+                            uploadPurpose="topic"
                             onSelect={(item: MediaItem) => {
                                 insertText(textarea.current, setComment, `\n![${item.title}](${item.url})\n`);
                                 setMediaOpen(false);

@@ -13,7 +13,11 @@ use TTDF\View\Components;
 
 $root = Framework::root();
 
-Components::render($root, 'layout/AppHeader', ['archive' => $this, 'title' => '页面没找到']);
+Components::render($root, 'layout/AppHeader', [
+    'archive' => $this,
+    'title' => '页面没找到',
+    'noindex' => true,
+]);
 
 if (!Templates::render($root, '404', $this, 'content/NotFound')) {
     PageData::emit(PageData::notFound($this));

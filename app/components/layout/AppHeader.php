@@ -6,7 +6,6 @@ if (!defined('__TYPECHO_ROOT_DIR__')) {
     exit;
 }
 
-use TTDF\Compat\Typecho;
 use TTDF\Hooks\Hooks;
 use TTDF\Support\Escaper;
 use TTDF\Theme\Assets;
@@ -14,12 +13,7 @@ use TTDF\Theme\Settings;
 use TTDF\View\Components;
 
 $archive = $viewData['archive'] ?? null;
-$options = Typecho::options();
-$siteTitle = trim((string) ($options?->title ?? ''));
-$siteDescription = trim((string) ($options?->description ?? ''));
-
 $values = Settings::values();
-$siteSubtitle = trim((string) ($values['SubTitle'] ?? ''));
 $pageWidth = (int) ($values['Page_Width'] ?? 1300);
 $pageWidth = max(960, min(1600, $pageWidth));
 $colorMode = (string) ($values['Color_Mode'] ?? 'auto');
@@ -28,58 +22,13 @@ $darkThemeColor = (string) ($values['Color_Background_Dark'] ?? '');
 $lightThemeColor = $lightThemeColor !== '' ? $lightThemeColor : '#f5f6f7';
 $darkThemeColor = $darkThemeColor !== '' ? $darkThemeColor : '#15171c';
 
-$resolvedTitle = trim((string) ($viewData['title'] ?? ''));
-if ($resolvedTitle === '' && is_object($archive)) {
-    if (is_callable([$archive, 'is']) && $archive->is('single')) {
-        $resolvedTitle = trim((string) ($archive->title ?? ''));
-    } elseif (is_callable([$archive, 'getArchiveTitle'])) {
-        $resolvedTitle = trim((string) $archive->getArchiveTitle());
-    }
-}
-
-$siteHeading = $siteSubtitle !== ''
-    ? $siteTitle . ' - ' . $siteSubtitle
-    : $siteTitle;
-$documentTitle = $resolvedTitle !== '' && $resolvedTitle !== $siteTitle
-    ? $resolvedTitle . ' · ' . $siteTitle
-    : $siteHeading;
-
-$isSingle = is_object($archive) && is_callable([$archive, 'is']) && $archive->is('single');
-$description = $siteDescription !== '' ? $siteDescription : $siteSubtitle;
-$viewDescription = trim((string) ($viewData['description'] ?? ''));
-if ($viewDescription !== '') {
-    $description = $viewDescription;
-}
-if ($isSingle) {
-    $excerpt = trim((string) preg_replace(
-        '/\s+/u',
-        ' ',
-        strip_tags(\SunkenBoat\Support\ContentGate::redact((string) ($archive->excerpt ?? '')))
-    ));
-    if ($excerpt !== '') {
-        $description = \Typecho\Common::subStr($excerpt, 0, 150, '…');
-    }
-}
-
-if (is_object($archive) && is_callable([$archive, 'setArchiveDescription'])) {
-    $archive->setArchiveDescription($description);
-}
-
-$canonicalUrl = trim((string) ($viewData['canonical'] ?? ''));
-if ($canonicalUrl === '') {
-    $canonicalUrl = Typecho::siteUrl();
-    if (is_object($archive) && is_callable([$archive, 'is']) && $archive->is('single')) {
-        $candidate = trim((string) ($archive->permalink ?? ''));
-        if ($candidate !== '') {
-            $canonicalUrl = $candidate;
-        }
-    }
-}
-
+$seo = \SunkenBoat\Support\Seo::pageMeta($viewData, is_object($archive) ? $archive : null);
 $structuredData = \SunkenBoat\Support\Seo::structuredData(
     is_object($archive) ? $archive : null,
-    $documentTitle,
-    $description
+    $seo['title'],
+    $seo['description'],
+    $seo['siteName'],
+    $seo['canonical']
 );
 ?>
 <!doctype html>
@@ -93,19 +42,38 @@ $structuredData = \SunkenBoat\Support\Seo::structuredData(
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title><?php echo Escaper::html($documentTitle); ?></title>
-    <?php if ($description !== ''): ?>
-        <meta name="description" content="<?php echo Escaper::attr($description); ?>">
+    <title><?php echo Escaper::html($seo['title']); ?></title>
+    <?php if ($seo['description'] !== ''): ?>
+        <meta name="description" content="<?php echo Escaper::attr($seo['description']); ?>">
     <?php endif; ?>
-    <link rel="canonical" href="<?php echo Escaper::url($canonicalUrl); ?>">
-    <meta property="og:type" content="<?php echo $isSingle ? 'article' : 'website'; ?>">
-    <meta property="og:title" content="<?php echo Escaper::attr($documentTitle); ?>">
-    <?php if ($description !== ''): ?>
-        <meta property="og:description" content="<?php echo Escaper::attr($description); ?>">
+    <meta name="robots" content="<?php echo Escaper::attr($seo['robots']); ?>">
+    <link rel="canonical" href="<?php echo Escaper::url($seo['canonical']); ?>">
+    <meta property="og:locale" content="<?php echo Escaper::attr($seo['locale']); ?>">
+    <meta property="og:type" content="<?php echo Escaper::attr($seo['type']); ?>">
+    <meta property="og:title" content="<?php echo Escaper::attr($seo['title']); ?>">
+    <?php if ($seo['description'] !== ''): ?>
+        <meta property="og:description" content="<?php echo Escaper::attr($seo['description']); ?>">
     <?php endif; ?>
-    <meta property="og:url" content="<?php echo Escaper::url($canonicalUrl); ?>">
-    <meta property="og:site_name" content="<?php echo Escaper::attr($siteTitle); ?>">
-    <meta name="twitter:card" content="summary">
+    <meta property="og:url" content="<?php echo Escaper::url($seo['canonical']); ?>">
+    <meta property="og:site_name" content="<?php echo Escaper::attr($seo['siteName']); ?>">
+    <?php if ($seo['image'] !== ''): ?>
+        <meta property="og:image" content="<?php echo Escaper::url($seo['image']); ?>">
+        <meta property="og:image:alt" content="<?php echo Escaper::attr($seo['title']); ?>">
+    <?php endif; ?>
+    <?php if ($seo['publishedTime'] !== ''): ?>
+        <meta property="article:published_time" content="<?php echo Escaper::attr($seo['publishedTime']); ?>">
+    <?php endif; ?>
+    <?php if ($seo['modifiedTime'] !== ''): ?>
+        <meta property="article:modified_time" content="<?php echo Escaper::attr($seo['modifiedTime']); ?>">
+    <?php endif; ?>
+    <meta name="twitter:card" content="<?php echo $seo['image'] !== '' ? 'summary_large_image' : 'summary'; ?>">
+    <meta name="twitter:title" content="<?php echo Escaper::attr($seo['title']); ?>">
+    <?php if ($seo['description'] !== ''): ?>
+        <meta name="twitter:description" content="<?php echo Escaper::attr($seo['description']); ?>">
+    <?php endif; ?>
+    <?php if ($seo['image'] !== ''): ?>
+        <meta name="twitter:image" content="<?php echo Escaper::url($seo['image']); ?>">
+    <?php endif; ?>
     <meta name="theme-color" content="<?php echo Escaper::attr($lightThemeColor); ?>">
     <script type="application/ld+json"><?php
         echo json_encode(

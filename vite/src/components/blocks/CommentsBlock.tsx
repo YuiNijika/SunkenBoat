@@ -360,6 +360,7 @@ function LegacyComments({ data }: Props) {
                         open={mediaOpen}
                         onOpenChange={setMediaOpen}
                         mediaEndpoint={data.mediaEndpoint}
+                        uploadPurpose="article"
                         onSelect={(item) => {
                             insertMediaMarkdown(textareaRef.current, setText, item.title, item.url);
                             setMediaOpen(false);
@@ -653,6 +654,7 @@ export default function CommentsBlock({ data }: Props) {
                         open={mediaOpen}
                         onOpenChange={setMediaOpen}
                         mediaEndpoint={data.mediaEndpoint}
+                        uploadPurpose="article"
                         onSelect={(item) => {
                             insertMediaMarkdown(textareaRef.current, setText, item.title, item.url);
                             setMediaOpen(false);

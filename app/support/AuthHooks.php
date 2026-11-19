@@ -121,6 +121,12 @@ final class AuthHooks
         }
 
         if (self::enabled('Sms_Verify_Register')) {
+            if (!UserProfile::enabled()) {
+                Response::error('SMS registration requires enhanced user profiles', 503, [
+                    'phone' => '短信注册需要先在用户设置中启用更多资料',
+                ]);
+            }
+
             if (!Sms::configured()) {
                 Response::error('SMS delivery is unavailable', 503);
             }
@@ -145,6 +151,10 @@ final class AuthHooks
      */
     public static function rememberPhone(array $user, array $input): void
     {
+        if (!UserProfile::enabled()) {
+            return;
+        }
+
         $uid = (int) ($user['uid'] ?? 0);
         $phone = Sms::normalizePhone($input['phone'] ?? '');
         if ($uid <= 0 || $phone === '') {

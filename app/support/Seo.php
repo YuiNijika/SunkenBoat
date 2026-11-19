@@ -20,6 +20,354 @@ if (!defined('__TYPECHO_ROOT_DIR__')) {
  */
 final class Seo
 {
+    private const DEFAULT_TITLE_SEPARATOR = '·';
+
+    private const DESCRIPTION_LIMIT = 160;
+
+    /**
+     * This theme owns SEO metadata, but Typecho's header still carries feed
+     * links, plugin hooks, comment reply helpers and the anti-spam script.
+     * Keep that output and suppress only the duplicate meta/canonical tags.
+     */
+    public static function register(): void
+    {
+        \TTDF\Hooks\Hooks::removeAction(
+            'theme.head',
+            [\TTDF\Theme\ArchiveLayout::class, 'renderHeader']
+        );
+        \TTDF\Hooks\Hooks::addAction('theme.head', [self::class, 'renderTypechoHeader'], 1);
+    }
+
+    public static function renderTypechoHeader(mixed ...$args): void
+    {
+        foreach ($args as $arg) {
+            if (!is_object($arg) || !is_callable([$arg, 'header'])) {
+                continue;
+            }
+
+            ob_start();
+            try {
+                $arg->header('description=&keywords=&social=0');
+            } finally {
+                $header = (string) ob_get_clean();
+            }
+
+            $header = (string) preg_replace(
+                '#\s*<link\s+rel="canonical"[^>]*>\s*#i',
+                "\n",
+                $header
+            );
+            echo $header;
+
+            return;
+        }
+    }
+
+    /**
+     * Global title separator used by both server-rendered titles and the React
+     * document-title contract.
+     */
+    public static function separator(): string
+    {
+        $values = \TTDF\Theme\Settings::values();
+
+        return self::normalizeSeparator(self::str($values['Seo_Title_Separator'] ?? ''));
+    }
+
+    public static function documentTitle(string $pageTitle, string $siteTitle, string $siteSubtitle = ''): string
+    {
+        $pageTitle = trim($pageTitle);
+        $siteTitle = trim($siteTitle);
+        $siteSubtitle = trim($siteSubtitle);
+        $separator = self::separator();
+
+        $siteHeading = $siteTitle;
+        if ($siteSubtitle !== '') {
+            $siteHeading = $siteTitle !== ''
+                ? $siteTitle . ' ' . $separator . ' ' . $siteSubtitle
+                : $siteSubtitle;
+        }
+
+        if ($pageTitle === '') {
+            return $siteHeading;
+        }
+
+        if ($siteTitle === '' || $pageTitle === $siteTitle || $pageTitle === $siteHeading) {
+            return $siteHeading !== '' ? $siteHeading : $pageTitle;
+        }
+
+        return $pageTitle . ' ' . $separator . ' ' . $siteTitle;
+    }
+
+    /**
+     * One canonical source for title, description, social cards and robots.
+     *
+     * @param array<string, mixed> $viewData
+     * @return array{
+     *     title: string,
+     *     siteName: string,
+     *     description: string,
+     *     canonical: string,
+     *     robots: string,
+     *     type: string,
+     *     locale: string,
+     *     image: string,
+     *     publishedTime: string,
+     *     modifiedTime: string
+     * }
+     */
+    public static function pageMeta(array $viewData, ?Archive $archive): array
+    {
+        $options = \TTDF\Compat\Typecho::options();
+        $values = \TTDF\Theme\Settings::values();
+        $siteTitle = trim((string) ($options?->title ?? ''));
+        $siteDescription = trim((string) ($options?->description ?? ''));
+        $siteSubtitle = self::str($values['SubTitle'] ?? '');
+
+        $pageTitle = self::str($viewData['title'] ?? '');
+        if ($pageTitle === '' && $archive !== null && is_callable([$archive, 'is'])) {
+            if ($archive->is('single')) {
+                $pageTitle = self::str($archive->title ?? '');
+            } elseif (is_callable([$archive, 'getArchiveTitle'])) {
+                $pageTitle = self::str($archive->getArchiveTitle());
+            }
+        }
+
+        $isSingle = $archive !== null
+            && is_callable([$archive, 'is'])
+            && $archive->is('single');
+        $isSearch = $archive !== null
+            && is_callable([$archive, 'is'])
+            && $archive->is('search');
+        $isNotFound = $archive !== null
+            && is_callable([$archive, 'is'])
+            && $archive->is('404');
+
+        $description = self::description($viewData, $archive, $siteDescription, $siteSubtitle);
+        if (
+            $archive !== null
+            && is_callable([$archive, 'setArchiveDescription'])
+            && $description !== ''
+        ) {
+            $archive->setArchiveDescription($description);
+        }
+
+        $robots = self::str($viewData['robots'] ?? '');
+        if ($robots === '') {
+            $noindex = ($viewData['noindex'] ?? false) === true || $isSearch || $isNotFound;
+            $robots = $noindex ? 'noindex,follow' : 'index,follow';
+        }
+
+        return [
+            'title' => self::documentTitle($pageTitle, $siteTitle, $siteSubtitle),
+            'siteName' => $siteTitle,
+            'description' => $description,
+            'canonical' => self::canonical($viewData, $archive),
+            'robots' => $robots,
+            'type' => $isSingle ? 'article' : 'website',
+            'locale' => 'zh_CN',
+            'image' => self::image($archive),
+            'publishedTime' => $isSingle && $archive !== null
+                ? self::timestamp((int) ($archive->created ?? 0))
+                : '',
+            'modifiedTime' => $isSingle && $archive !== null
+                ? self::timestamp((int) ($archive->modified ?? 0))
+                : '',
+        ];
+    }
+
+    private static function normalizeSeparator(string $value): string
+    {
+        $value = strip_tags($value);
+        $value = preg_replace('/[\x00-\x1F\x7F]+/u', '', $value) ?? '';
+        $value = trim($value);
+        if ($value === '') {
+            return self::DEFAULT_TITLE_SEPARATOR;
+        }
+
+        if (function_exists('mb_substr')) {
+            return mb_substr($value, 0, 8, 'UTF-8');
+        }
+
+        return substr($value, 0, 24);
+    }
+
+    /**
+     * @param array<string, mixed> $viewData
+     */
+    private static function description(
+        array $viewData,
+        ?Archive $archive,
+        string $siteDescription,
+        string $siteSubtitle
+    ): string {
+        $explicit = self::normalizeDescription(self::str($viewData['description'] ?? ''));
+        if ($explicit !== '') {
+            return $explicit;
+        }
+
+        if (
+            $archive !== null
+            && is_callable([$archive, 'is'])
+            && $archive->is('single')
+        ) {
+            $excerpt = self::normalizeDescription(
+                ContentGate::redact(self::str($archive->excerpt ?? ''))
+            );
+            if ($excerpt !== '') {
+                return $excerpt;
+            }
+        }
+
+        $description = self::normalizeDescription($siteDescription);
+        if ($description !== '') {
+            return $description;
+        }
+
+        return self::normalizeDescription($siteSubtitle);
+    }
+
+    private static function normalizeDescription(string $value): string
+    {
+        $value = strip_tags($value);
+        $value = preg_replace('/\s+/u', ' ', $value) ?? '';
+        $value = trim($value);
+        if ($value === '') {
+            return '';
+        }
+
+        if (class_exists('Typecho\\Common')) {
+            return (string) \Typecho\Common::subStr($value, 0, self::DESCRIPTION_LIMIT, '…');
+        }
+
+        if (function_exists('mb_substr')) {
+            return mb_strlen($value, 'UTF-8') > self::DESCRIPTION_LIMIT
+                ? mb_substr($value, 0, self::DESCRIPTION_LIMIT, 'UTF-8') . '…'
+                : $value;
+        }
+
+        return strlen($value) > self::DESCRIPTION_LIMIT
+            ? substr($value, 0, self::DESCRIPTION_LIMIT) . '…'
+            : $value;
+    }
+
+    /**
+     * @param array<string, mixed> $viewData
+     */
+    private static function canonical(array $viewData, ?Archive $archive): string
+    {
+        $canonical = self::str($viewData['canonical'] ?? '');
+        if ($canonical !== '') {
+            return $canonical;
+        }
+
+        if ($archive !== null && is_callable([$archive, 'is'])) {
+            if ($archive->is('single')) {
+                $permalink = self::str($archive->permalink ?? '');
+                if ($permalink !== '') {
+                    return $permalink;
+                }
+            } elseif (
+                !$archive->is('index')
+                && !$archive->is('search')
+                && !$archive->is('404')
+            ) {
+                $archiveUrl = is_callable([$archive, 'getArchiveUrl'])
+                    ? self::str($archive->getArchiveUrl())
+                    : '';
+                if ($archiveUrl !== '') {
+                    return $archiveUrl;
+                }
+
+                $permalink = self::str($archive->permalink ?? '');
+                if ($permalink !== '') {
+                    return $permalink;
+                }
+            }
+        }
+
+        if ($archive === null) {
+            return self::requestUrl();
+        }
+
+        return \TTDF\Compat\Typecho::siteUrl();
+    }
+
+    private static function requestUrl(): string
+    {
+        $site = \TTDF\Compat\Typecho::siteUrl();
+        $requestPath = parse_url((string) ($_SERVER['REQUEST_URI'] ?? ''), PHP_URL_PATH);
+        if (!is_string($requestPath) || $requestPath === '') {
+            return $site;
+        }
+
+        $parts = parse_url($site);
+        if (!is_array($parts) || !isset($parts['host'])) {
+            return $site;
+        }
+
+        $scheme = isset($parts['scheme']) && $parts['scheme'] !== '' ? $parts['scheme'] : 'https';
+        $origin = $scheme . '://' . $parts['host'];
+        if (isset($parts['port'])) {
+            $origin .= ':' . $parts['port'];
+        }
+
+        return $origin . $requestPath;
+    }
+
+    private static function image(?Archive $archive): string
+    {
+        if (
+            $archive === null
+            || !is_callable([$archive, 'is'])
+            || !$archive->is('single')
+        ) {
+            return '';
+        }
+
+        $text = self::str($archive->text ?? '');
+        if ($text === '' || preg_match('/<img\b[^>]*\bsrc\s*=\s*(?:"([^"]+)"|\'([^\']+)\')/i', $text, $matches) !== 1) {
+            return '';
+        }
+
+        $src = html_entity_decode(
+            trim(($matches[1] ?? '') !== '' ? $matches[1] : ($matches[2] ?? '')),
+            ENT_QUOTES | ENT_HTML5,
+            'UTF-8'
+        );
+        if ($src === '') {
+            return '';
+        }
+
+        if (str_starts_with($src, '//')) {
+            $scheme = (string) (parse_url(\TTDF\Compat\Typecho::siteUrl(), PHP_URL_SCHEME) ?: 'https');
+
+            return $scheme . ':' . $src;
+        }
+
+        if (preg_match('#^https?://#i', $src) === 1) {
+            return $src;
+        }
+
+        if (preg_match('#^[a-z][a-z0-9+.-]*:#i', $src) === 1) {
+            return '';
+        }
+
+        $site = rtrim(\TTDF\Compat\Typecho::siteUrl(), '/');
+        if ($site === '') {
+            return '';
+        }
+
+        return str_starts_with($src, '/')
+            ? $site . $src
+            : $site . '/' . ltrim($src, '/');
+    }
+
+    private static function timestamp(int $value): string
+    {
+        return $value > 0 ? date('c', $value) : '';
+    }
+
     /**
      * @param array<string, mixed> $data
      */
@@ -495,11 +843,17 @@ final class Seo
      *
      * @return array<string, mixed>
      */
-    public static function structuredData(?Archive $archive, string $title, string $description): array
+    public static function structuredData(
+        ?Archive $archive,
+        string $title,
+        string $description,
+        string $siteName = '',
+        string $canonical = ''
+    ): array
     {
         $siteUrl = \TTDF\Compat\Typecho::siteUrl();
         $type = 'WebPage';
-        $permalink = $siteUrl;
+        $permalink = $canonical !== '' ? $canonical : $siteUrl;
 
         if ($archive !== null && is_callable([$archive, 'is']) && $archive->is('single')) {
             $type = 'Article';
@@ -518,7 +872,7 @@ final class Seo
             'inLanguage' => 'zh-Hans',
             'isPartOf' => [
                 '@type' => 'WebSite',
-                'name' => $title,
+                'name' => $siteName !== '' ? $siteName : $title,
                 'url' => $siteUrl,
             ],
         ];
@@ -528,9 +882,16 @@ final class Seo
         }
 
         if ($type === 'Article' && $archive !== null) {
+            $data['headline'] = $title;
+
             $created = (int) ($archive->created ?? 0);
             if ($created > 0) {
                 $data['datePublished'] = date('c', $created);
+            }
+
+            $modified = (int) ($archive->modified ?? 0);
+            if ($modified > 0) {
+                $data['dateModified'] = date('c', $modified);
             }
 
             $authorWidget = $archive->author ?? null;
