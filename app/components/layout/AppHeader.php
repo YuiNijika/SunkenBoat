@@ -111,10 +111,12 @@ $structuredData = \SunkenBoat\Support\Seo::structuredData(
     </script>
     <link rel="icon" href="<?php echo Escaper::url(Assets::url('img/favicon.svg')); ?>" type="image/svg+xml">
     <link rel="stylesheet" href="<?php echo Escaper::url(Assets::url('style.css')); ?>">
+    <noscript><style>#ttdf-loader{display:none}</style></noscript>
     <?php Components::render(\TTDF\Framework::root(), 'layout/ThemeColors'); ?>
     <?php Hooks::doAction('theme.head', $archive); ?>
 </head>
 <body class="min-h-dvh bg-bg text-ink">
+<?php echo \SunkenBoat\Support\Loader::render(); ?>
 <a class="skip-link" href="#main">跳到正文</a>
 <noscript>
     <p class="container-page py-10 text-sm text-ink-mute">

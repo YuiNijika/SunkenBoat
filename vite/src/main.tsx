@@ -21,6 +21,8 @@ if (mount && initial) {
             <ThemeRouter initial={initial} />
         </StrictMode>
     );
-
+} else {
+    // Without a mount point or payload React cannot take over; reveal the
+    // server-rendered fallback instead of leaving the boot screen up.
     document.documentElement.dataset.ttdfApp = 'ready';
 }

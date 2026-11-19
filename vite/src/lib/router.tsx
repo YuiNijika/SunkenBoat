@@ -558,7 +558,26 @@ function RouteShell() {
     );
 }
 
+function dismissBootScreen(): void {
+    const root = document.documentElement;
+    const loader = document.getElementById('ttdf-loader');
+
+    root.dataset.ttdfApp = 'ready';
+    if (loader) {
+        window.setTimeout(() => loader.remove(), 420);
+    }
+}
+
 export function ThemeRouter({ initial }: { initial: RoutePayload }) {
+    useEffect(() => {
+        let frame = 0;
+        frame = window.requestAnimationFrame(() => {
+            frame = window.requestAnimationFrame(dismissBootScreen);
+        });
+
+        return () => window.cancelAnimationFrame(frame);
+    }, []);
+
     const router = createBrowserRouter(
         [
             {
