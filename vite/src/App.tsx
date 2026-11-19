@@ -265,6 +265,7 @@ function SiteApp({ data, appStyle }: { data: PageData; appStyle: CSSProperties }
                             {forumLeft.length > 0 ? (
                                 <aside
                                     className="order-2 grid content-start gap-[15px] lg:sticky lg:top-[88px] lg:order-1 lg:self-start"
+                                    data-block-slot="left"
                                     data-forum-slot="left"
                                 >
                                     {forumLeft.map(renderForumBlock)}
@@ -272,6 +273,7 @@ function SiteApp({ data, appStyle }: { data: PageData; appStyle: CSSProperties }
                             ) : null}
                             <div
                                 className="order-1 grid min-w-0 content-start gap-[15px] lg:order-2"
+                                data-block-slot="main"
                                 data-forum-slot="main"
                             >
                                 {contentBlocks.map(({ block, index }) => renderBlock(block, index))}
@@ -279,6 +281,7 @@ function SiteApp({ data, appStyle }: { data: PageData; appStyle: CSSProperties }
                             {forumRight.length > 0 ? (
                                 <aside
                                     className="order-3 grid content-start gap-[15px] lg:sticky lg:top-[88px] lg:self-start"
+                                    data-block-slot="right"
                                     data-forum-slot="right"
                                 >
                                     {forumRight.map(renderForumBlock)}

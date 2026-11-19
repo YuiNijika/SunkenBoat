@@ -68,6 +68,9 @@ final class Forum
 
     public static function register(): void
     {
+        Hooks::addFilter('customizer.block_fields', [self::class, 'customizerBlockFields']);
+        Hooks::addFilter('customizer.preview_urls', [self::class, 'customizerPreviewUrls']);
+
         Endpoint::register('forum-topic-create', [self::class, 'handleTopicCreate'], [
             'auth' => 'user',
             'method' => 'POST',
@@ -107,6 +110,61 @@ final class Forum
 
         Hooks::addAction('rest.request', [self::class, 'restRequest']);
         Hooks::addFilter('rest.response', [self::class, 'restResponse']);
+    }
+
+    /**
+     * Expose the forum layout fields to the TTDF customizer. The preview
+     * route is resolved lazily so a fresh circle slug is picked after the
+     * first circle is created.
+     *
+     * @param array<string, mixed> $fields
+     * @return array<string, mixed>
+     */
+    public static function customizerBlockFields(mixed $fields): array
+    {
+        $map = is_array($fields) ? $fields : [];
+        $map['Forum_Home_Blocks'] = ['kind' => 'forum-home', 'slot' => 'main'];
+        $map['Forum_Home_Left_Blocks'] = ['kind' => 'forum-home', 'slot' => 'left'];
+        $map['Forum_Home_Right_Blocks'] = ['kind' => 'forum-home', 'slot' => 'right'];
+        $map['Forum_Circle_Blocks'] = ['kind' => 'forum-circle', 'slot' => 'main'];
+        $map['Forum_Circle_Left_Blocks'] = ['kind' => 'forum-circle', 'slot' => 'left'];
+        $map['Forum_Circle_Right_Blocks'] = ['kind' => 'forum-circle', 'slot' => 'right'];
+
+        return $map;
+    }
+
+    /**
+     * @param array<string, string> $urls
+     * @return array<string, string>
+     */
+    public static function customizerPreviewUrls(mixed $urls): array
+    {
+        $map = is_array($urls) ? $urls : [];
+        if (!self::enabled()) {
+            return $map;
+        }
+
+        $map['forum-home'] = self::homeUrl();
+
+        try {
+            $db = Db::get();
+            $row = $db->fetchRow(
+                $db->select('slug')->from('table.forum_circles')
+                    ->where('status = ?', 'publish')
+                    ->order('sort', Db::SORT_DESC)
+                    ->order('id', Db::SORT_ASC)
+                    ->limit(1)
+            );
+        } catch (\Throwable) {
+            $row = null;
+        }
+
+        $slug = is_array($row) ? trim((string) ($row['slug'] ?? '')) : '';
+        if ($slug !== '') {
+            $map['forum-circle'] = self::circleUrl(['slug' => $slug]);
+        }
+
+        return $map;
     }
 
     public static function enabled(): bool
