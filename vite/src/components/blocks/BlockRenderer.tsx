@@ -32,6 +32,36 @@ import {
 import MediaGridBlock from './MediaGridBlock';
 import PricingBlock from './PricingBlock';
 import UserSpaceBlock from './UserSpaceBlock';
+import BreadcrumbsBlock from './BreadcrumbsBlock';
+import {
+    AuthorGridBlock,
+    ButtonGroupBlock,
+    HeadingBlock,
+    InfoCardsBlock,
+    LogoCloudBlock,
+    MediaSplitBlock,
+    PartnerScrollBlock,
+    PostAuthorBlock,
+    PostTabsBlock,
+    ProductGridBlock,
+    PromoGridBlock,
+} from './ShowcaseBlocks';
+import { ForumCircleBlock, ForumHomeBlock, ForumTopicBlock } from './ForumBlocks';
+import {
+    ForumAuthors,
+    ForumCircleGrid,
+    ForumCircleHero,
+    ForumCircleInfo,
+    ForumCircleList,
+    ForumCreate,
+    ForumHomeHeader,
+    ForumHotCircles,
+    ForumHotTopics,
+    ForumJoinGate,
+    ForumNotice,
+    ForumStats,
+    ForumTopicList,
+} from './ForumModules';
 import type { Block } from '../../types';
 
 interface Props {
@@ -87,9 +117,17 @@ export default function BlockRenderer({ block }: Props) {
                 />
             );
         case 'archive-header':
-            return <ArchiveHeaderBlock title={block.title} description={block.description} count={block.count} />;
+            return (
+                <ArchiveHeaderBlock
+                    title={block.title}
+                    description={block.description}
+                    count={block.count}
+                    searchLabel={block.searchLabel}
+                    searchScope={block.searchScope}
+                />
+            );
         case 'post-header':
-            return <PostHeaderBlock title={block.title} meta={block.meta} />;
+            return <PostHeaderBlock title={block.title} meta={block.meta} share={block.share} />;
         case 'page-header':
             return <PageHeaderBlock variant={block.variant} eyebrow={block.eyebrow} title={block.title} />;
         case 'prose':
@@ -97,6 +135,8 @@ export default function BlockRenderer({ block }: Props) {
                 <ProseBlock
                     title={block.title}
                     meta={block.meta}
+                    share={block.share}
+                    layout={block.layout}
                     html={block.html}
                     codeCopy={block.codeCopy}
                 />
@@ -105,6 +145,8 @@ export default function BlockRenderer({ block }: Props) {
             return <TagsBlock title={block.title} items={block.items} />;
         case 'post-nav':
             return <PostNavBlock previousHtml={block.previousHtml} nextHtml={block.nextHtml} />;
+        case 'breadcrumbs':
+            return <BreadcrumbsBlock items={block.items} />;
         case 'comments':
             return <CommentsBlock data={block.data} />;
         case 'notfound':
@@ -246,6 +288,123 @@ export default function BlockRenderer({ block }: Props) {
                     items={block.items}
                 />
             );
+        case 'promo-grid':
+            return (
+                <PromoGridBlock
+                    type="promo-grid"
+                    variant={block.variant}
+                    title={block.title}
+                    text={block.text}
+                    items={block.items}
+                />
+            );
+        case 'post-tabs':
+            return (
+                <PostTabsBlock
+                    type="post-tabs"
+                    title={block.title}
+                    text={block.text}
+                    columns={block.columns}
+                    tabs={block.tabs}
+                />
+            );
+        case 'author-grid':
+            return (
+                <AuthorGridBlock
+                    type="author-grid"
+                    title={block.title}
+                    text={block.text}
+                    columns={block.columns}
+                    items={block.items}
+                />
+            );
+        case 'product-grid':
+            return (
+                <ProductGridBlock
+                    type="product-grid"
+                    title={block.title}
+                    text={block.text}
+                    columns={block.columns}
+                    items={block.items}
+                />
+            );
+        case 'logo-cloud':
+            return (
+                <LogoCloudBlock
+                    type="logo-cloud"
+                    title={block.title}
+                    text={block.text}
+                    columns={block.columns}
+                    items={block.items}
+                />
+            );
+        case 'heading':
+            return (
+                <HeadingBlock
+                    type="heading"
+                    variant={block.variant}
+                    eyebrow={block.eyebrow}
+                    title={block.title}
+                    text={block.text}
+                />
+            );
+        case 'button-group':
+            return (
+                <ButtonGroupBlock
+                    type="button-group"
+                    variant={block.variant}
+                    title={block.title}
+                    text={block.text}
+                    items={block.items}
+                />
+            );
+        case 'info-cards':
+            return (
+                <InfoCardsBlock
+                    type="info-cards"
+                    title={block.title}
+                    text={block.text}
+                    columns={block.columns}
+                    items={block.items}
+                />
+            );
+        case 'partner-scroll':
+            return (
+                <PartnerScrollBlock
+                    type="partner-scroll"
+                    variant={block.variant}
+                    title={block.title}
+                    text={block.text}
+                    columns={block.columns}
+                    speed={block.speed}
+                    items={block.items}
+                />
+            );
+        case 'media-split':
+            return (
+                <MediaSplitBlock
+                    type="media-split"
+                    title={block.title}
+                    text={block.text}
+                    kind={block.kind}
+                    media={block.media}
+                    poster={block.poster}
+                    slides={block.slides}
+                    columns={block.columns}
+                    items={block.items}
+                />
+            );
+        case 'post-author':
+            return (
+                <PostAuthorBlock
+                    type="post-author"
+                    title={block.title}
+                    showAuthor={block.showAuthor}
+                    showPosts={block.showPosts}
+                    author={block.author}
+                    posts={block.posts}
+                />
+            );
         case 'pricing':
             return (
                 <PricingBlock
@@ -256,7 +415,46 @@ export default function BlockRenderer({ block }: Props) {
                 />
             );
         case 'user-space':
-            return <UserSpaceBlock profile={block.profile} />;
+            return (
+                <UserSpaceBlock
+                    profile={block.profile}
+                    posts={block.posts}
+                    comments={block.comments}
+                    circles={block.circles}
+                />
+            );
+        case 'forum-home':
+            return <ForumHomeBlock {...block} />;
+        case 'forum-circle':
+            return <ForumCircleBlock {...block} />;
+        case 'forum-topic':
+            return <ForumTopicBlock {...block} />;
+        case 'forum-home-header':
+            return <ForumHomeHeader {...block} />;
+        case 'forum-circle-grid':
+            return <ForumCircleGrid {...block} />;
+        case 'forum-topic-list':
+            return <ForumTopicList {...block} />;
+        case 'forum-create':
+            return <ForumCreate {...block} />;
+        case 'forum-circle-list':
+            return <ForumCircleList {...block} />;
+        case 'forum-notice':
+            return <ForumNotice {...block} />;
+        case 'forum-authors':
+            return <ForumAuthors {...block} />;
+        case 'forum-circle-info':
+            return <ForumCircleInfo {...block} />;
+        case 'forum-join-gate':
+            return <ForumJoinGate {...block} />;
+        case 'forum-circle-hero':
+            return <ForumCircleHero {...block} />;
+        case 'forum-stats':
+            return <ForumStats {...block} />;
+        case 'forum-hot-circles':
+            return <ForumHotCircles {...block} />;
+        case 'forum-hot-topics':
+            return <ForumHotTopics {...block} />;
         case 'author-card':
             return (
                 <AuthorCardBlock

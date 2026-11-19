@@ -36,7 +36,8 @@ import type { MediaItem, UserApiEndpoints } from '../../types';
 interface Props {
     open: boolean;
     onOpenChange: (open: boolean) => void;
-    api: UserApiEndpoints;
+    api?: UserApiEndpoints;
+    mediaEndpoint?: string;
     onSelect: (item: MediaItem) => void;
 }
 
@@ -73,7 +74,7 @@ function formatBytes(value: number): string {
     return `${(value / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-export default function MediaLibrary({ open, onOpenChange, api, onSelect }: Props) {
+export default function MediaLibrary({ open, onOpenChange, api, mediaEndpoint, onSelect }: Props) {
     const [items, setItems] = useState<MediaItem[]>([]);
     const [total, setTotal] = useState(0);
     const [page, setPage] = useState(1);
@@ -87,6 +88,7 @@ export default function MediaLibrary({ open, onOpenChange, api, onSelect }: Prop
     const [copied, setCopied] = useState<number | null>(null);
     const fileInput = useRef<HTMLInputElement>(null);
     const requestId = useRef(0);
+    const endpointUrl = mediaEndpoint ?? api?.content.media ?? '';
 
     const load = useCallback(
         async (nextPage: number, search: string) => {
@@ -95,7 +97,11 @@ export default function MediaLibrary({ open, onOpenChange, api, onSelect }: Prop
             setError('');
 
             try {
-                const endpoint = new URL(api.content.media, window.location.href);
+                if (endpointUrl === '') {
+                    throw new Error('媒体库接口未启用');
+                }
+
+                const endpoint = new URL(endpointUrl, window.location.href);
                 endpoint.searchParams.set('page', String(Math.max(1, nextPage)));
                 endpoint.searchParams.set('pageSize', '24');
                 if (search.trim() !== '') {
@@ -129,7 +135,7 @@ export default function MediaLibrary({ open, onOpenChange, api, onSelect }: Prop
                 }
             }
         },
-        [api.content.media]
+        [endpointUrl]
     );
 
     useEffect(() => {
@@ -157,7 +163,7 @@ export default function MediaLibrary({ open, onOpenChange, api, onSelect }: Prop
             for (const file of images) {
                 const body = new FormData();
                 body.append('file', file);
-                const response = await fetch(api.content.media, {
+                const response = await fetch(endpointUrl, {
                     method: 'POST',
                     credentials: 'same-origin',
                     headers: { Accept: 'application/json' },
@@ -189,7 +195,7 @@ export default function MediaLibrary({ open, onOpenChange, api, onSelect }: Prop
         setError('');
 
         try {
-            const response = await fetch(`${api.content.media}/${deleteTarget.id}`, {
+            const response = await fetch(`${endpointUrl}/${deleteTarget.id}`, {
                 method: 'DELETE',
                 credentials: 'same-origin',
                 headers: { Accept: 'application/json' },

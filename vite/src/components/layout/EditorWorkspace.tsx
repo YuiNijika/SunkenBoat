@@ -52,13 +52,6 @@ export default function EditorWorkspace({ api, cid, fields }: Props) {
                     current = profileFrom(await readPayload(detail)) ?? current;
                 }
 
-                if (
-                    current.canWrite !== true &&
-                    (current.group === 'administrator' || current.group === 'editor')
-                ) {
-                    current = { ...current, canWrite: true };
-                }
-
                 if (active) {
                     setProfile(current);
                     setStatus('ready');
@@ -114,11 +107,11 @@ export default function EditorWorkspace({ api, cid, fields }: Props) {
         );
     }
 
-    if (!profile.canWrite) {
+    if (!api.content.permitted) {
         return (
             <div className="editor-gate">
                 <p className="editor-gate-title">当前账号没有发布权限</p>
-                <p className="editor-gate-text">只有管理员与编辑可以进入内容编辑器。</p>
+                <p className="editor-gate-text">站点限制了前台文章发布权限，请联系管理员调整用户组或主题设置。</p>
                 <a className="editor-gate-link" href={api.pages.content}>
                     返回内容管理
                 </a>

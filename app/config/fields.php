@@ -20,6 +20,18 @@ return [
         'description' => '填写图片地址或从媒体库选择；留空时按主题设置使用正文首图或默认缩略图。',
     ],
     [
+        'type' => 'Select',
+        'name' => 'Display_Layout',
+        'value' => 'default',
+        'label' => '正文布局',
+        'description' => '标准沿用默认宽度；宽屏占满内容区；窄屏适合长文阅读。',
+        'options' => [
+            'default' => '标准',
+            'wide' => '宽屏',
+            'narrow' => '窄屏',
+        ],
+    ],
+    [
         'type' => 'Text',
         'name' => 'TTDF_Fields_Text',
         'value' => '',

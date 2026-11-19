@@ -5,8 +5,13 @@ declare(strict_types=1);
 namespace SunkenBoat\Support\OAuth;
 
 use InvalidArgumentException;
+use SunkenBoat\Support\OAuth\Providers\AppleProvider;
 use SunkenBoat\Support\OAuth\Providers\CaiHongProvider;
+use SunkenBoat\Support\OAuth\Providers\DouyinProvider;
+use SunkenBoat\Support\OAuth\Providers\FacebookProvider;
 use SunkenBoat\Support\OAuth\Providers\QQProvider;
+use SunkenBoat\Support\OAuth\Providers\TwitterProvider;
+use SunkenBoat\Support\OAuth\Providers\WeChatMpProvider;
 use SunkenBoat\Support\OAuth\Providers\WeChatProvider;
 use SunkenBoat\Support\OAuth\Providers\WeiboProvider;
 use SunkenBoat\Support\OAuth\Providers\ZibllProvider;
@@ -154,7 +159,12 @@ final class ProviderRegistry
     {
         $this->register(new QQProvider());
         $this->register(new WeChatProvider());
+        $this->register(new WeChatMpProvider());
         $this->register(new WeiboProvider());
+        $this->register(new DouyinProvider());
+        $this->register(new FacebookProvider());
+        $this->register(new TwitterProvider());
+        $this->register(new AppleProvider());
 
         $this->register(new GenericProvider(
             identifier: 'github',

@@ -1,13 +1,22 @@
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { ChevronDown, Menu, Moon, Search, Sun, X } from 'lucide-react';
+import { Check, ChevronDown, Languages, Menu, Moon, Search, Sun, X } from 'lucide-react';
 import { useLocation } from 'react-router-dom';
 import { useTheme } from '../../lib/theme';
 import { onSearchOpen } from '../../lib/search';
+import { changeTranslation, prepareTranslation } from '../../lib/translate';
 import { Button } from '../ui/button';
+import {
+    DropdownMenu,
+    DropdownMenuContent,
+    DropdownMenuItem,
+    DropdownMenuLabel,
+    DropdownMenuSeparator,
+    DropdownMenuTrigger,
+} from '../ui/dropdown-menu';
 import SearchPanel from './SearchPanel';
 import UserCenter from './UserCenter';
-import type { ApiEndpoints, NavItem, SiteInfo, WidgetsData } from '../../types';
+import type { ApiEndpoints, NavItem, SearchScope, SiteInfo, WidgetsData } from '../../types';
 
 interface Props {
     site: SiteInfo;
@@ -32,14 +41,46 @@ export default function SiteHeader({ site, colorMode, widgets, api, showUserCent
     const headerRef = useRef<HTMLElement>(null);
     const [menuOpen, setMenuOpen] = useState(false);
     const [searchOpen, setSearchOpen] = useState(false);
+    const [searchScope, setSearchScope] = useState<SearchScope | null>(null);
+    const [language, setLanguage] = useState('');
     const title = site.title || 'SunkenBoat';
     const showTitle = site.showTitle !== false || !site.logo;
 
-    useEffect(() => onSearchOpen(() => setSearchOpen(true)), []);
+    useEffect(
+        () =>
+            onSearchOpen((scope) => {
+                setSearchScope(scope);
+                setSearchOpen(true);
+            }),
+        []
+    );
+
+    useEffect(() => {
+        if (!site.translate.enabled) {
+            return;
+        }
+
+        let active = true;
+        void prepareTranslation(site.translate).then(() => {
+            if (!active) {
+                return;
+            }
+            try {
+                setLanguage(window.localStorage.getItem('ttdf:translate-language') ?? '');
+            } catch {
+                setLanguage('');
+            }
+        });
+
+        return () => {
+            active = false;
+        };
+    }, [site.translate]);
 
     useEffect(() => {
         setMenuOpen(false);
         setSearchOpen(false);
+        setSearchScope(null);
     }, [location.pathname, location.search]);
 
     useEffect(() => {
@@ -178,6 +219,72 @@ export default function SiteHeader({ site, colorMode, widgets, api, showUserCent
                 </nav>
 
                 <div className="ml-auto flex items-center gap-1">
+                    {site.translate.enabled ? (
+                        <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                                <Button
+                                    type="button"
+                                    variant="ghost"
+                                    size="icon"
+                                    className="size-8 rounded-[4px] text-ink-mute hover:bg-[rgba(136,136,136,0.1)] hover:text-ink-soft"
+                                    aria-label="切换页面语言"
+                                    title="切换页面语言"
+                                >
+                                    <Languages strokeWidth={1.8} aria-hidden="true" />
+                                </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent
+                                align="end"
+                                sideOffset={8}
+                                className="w-44 border-line bg-surface p-1.5"
+                            >
+                                <DropdownMenuLabel className="px-2 py-1 text-[11px] font-normal text-ink-faint">
+                                    页面语言
+                                </DropdownMenuLabel>
+                                <DropdownMenuSeparator className="bg-line" />
+                                <DropdownMenuItem
+                                    className="cursor-pointer px-2 py-1.5 text-[12px]"
+                                    onSelect={() => {
+                                        setLanguage('');
+                                        try {
+                                            window.localStorage.removeItem('ttdf:translate-language');
+                                        } catch {
+                                            // Translation still works without storage.
+                                        }
+                                        changeTranslation(site.translate.local);
+                                    }}
+                                >
+                                    <span className="flex-1">原文</span>
+                                    {language === '' ? (
+                                        <Check className="size-3.5 text-brand" strokeWidth={2} />
+                                    ) : null}
+                                </DropdownMenuItem>
+                                {site.translate.languages.map((item) => (
+                                    <DropdownMenuItem
+                                        key={item.code}
+                                        className="cursor-pointer px-2 py-1.5 text-[12px]"
+                                        onSelect={() => {
+                                            setLanguage(item.code);
+                                            try {
+                                                window.localStorage.setItem(
+                                                    'ttdf:translate-language',
+                                                    item.code
+                                                );
+                                            } catch {
+                                                // Translation still works without storage.
+                                            }
+                                            changeTranslation(item.code);
+                                        }}
+                                    >
+                                        <span className="flex-1">{item.label}</span>
+                                        {language === item.code ? (
+                                            <Check className="size-3.5 text-brand" strokeWidth={2} />
+                                        ) : null}
+                                    </DropdownMenuItem>
+                                ))}
+                            </DropdownMenuContent>
+                        </DropdownMenu>
+                    ) : null}
                     <Button
                         type="button"
                         variant="ghost"
@@ -186,7 +293,10 @@ export default function SiteHeader({ site, colorMode, widgets, api, showUserCent
                         aria-label={searchOpen ? '关闭搜索' : '打开搜索'}
                         aria-expanded={searchOpen}
                         aria-controls="ttdf-search-panel"
-                        onClick={() => setSearchOpen((open) => !open)}
+                        onClick={() => {
+                            setSearchScope(null);
+                            setSearchOpen((open) => !open);
+                        }}
                     >
                         <Search strokeWidth={1.8} aria-hidden="true" />
                     </Button>
@@ -309,6 +419,7 @@ export default function SiteHeader({ site, colorMode, widgets, api, showUserCent
                 <SearchPanel
                     site={site}
                     widgets={widgets}
+                    scope={searchScope}
                     onClose={() => setSearchOpen(false)}
                 />
             ) : null}

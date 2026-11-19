@@ -3,6 +3,7 @@ import type { FormEvent } from 'react';
 import { ChevronDown, ChevronUp, MessageCircle, Reply } from 'lucide-react';
 import type { CommentsData } from '../../types';
 import MarkdownToolbar from '../content/MarkdownToolbar';
+import MediaLibrary from '../content/MediaLibrary';
 import { Button } from '../ui/button';
 import { Card } from '../ui/card';
 import { Input } from '../ui/input';
@@ -25,6 +26,23 @@ interface ApiComment {
 
 interface Props {
     data: CommentsData;
+}
+
+function EmptyComments({ image, text }: { image: string; text: string }) {
+    return (
+        <div className="comments-empty">
+            {image !== '' ? (
+                <img
+                    className="comments-empty-image"
+                    src={image}
+                    alt=""
+                    loading="lazy"
+                    decoding="async"
+                />
+            ) : null}
+            <p>{text}</p>
+        </div>
+    );
 }
 
 function highlightIn(root: HTMLElement | null): void {
@@ -55,6 +73,30 @@ function formatCommentTime(value: string): string {
         minute: '2-digit',
         hour12: false,
     }).format(date);
+}
+
+function insertMediaMarkdown(
+    textarea: HTMLTextAreaElement | null,
+    setText: (value: string) => void,
+    title: string,
+    url: string
+) {
+    const alt = title.replace(/[[\]]/g, '').trim();
+    const snippet = `\n![${alt}](${url})\n`;
+    if (!textarea) {
+        setText(snippet);
+        return;
+    }
+
+    const start = textarea.selectionStart ?? textarea.value.length;
+    const end = textarea.selectionEnd ?? start;
+    const next = textarea.value.slice(0, start) + snippet + textarea.value.slice(end);
+    setText(next);
+    window.requestAnimationFrame(() => {
+        textarea.focus();
+        const cursor = start + snippet.length;
+        textarea.setSelectionRange(cursor, cursor);
+    });
 }
 
 function Avatar({ comment }: { comment: ApiComment }) {
@@ -161,6 +203,7 @@ function CommentItem({
 function LegacyComments({ data }: Props) {
     const textareaRef = useRef<HTMLTextAreaElement>(null);
     const [text, setText] = useState('');
+    const [mediaOpen, setMediaOpen] = useState(false);
     const [expanded, setExpanded] = useState(!data.collapsed);
     const listRef = useRef<HTMLDivElement>(null);
     const rootCount = useMemo(() => {
@@ -215,7 +258,7 @@ function LegacyComments({ data }: Props) {
                     ) : null}
                 </>
             ) : (
-                <p className="comments-empty">暂时没有评论，欢迎在下方留言。</p>
+                <EmptyComments image={data.nullImage} text="暂时没有评论，欢迎在上方留言。" />
             )}
 
             {data.paginationHtml ? (
@@ -244,7 +287,11 @@ function LegacyComments({ data }: Props) {
                                 </span>
                             </div>
                             <div className="markdown-editor">
-                                <MarkdownToolbar target={textareaRef} onChange={setText} />
+                                <MarkdownToolbar
+                                    target={textareaRef}
+                                    onChange={setText}
+                                    onImage={data.mediaEnabled ? () => setMediaOpen(true) : undefined}
+                                />
                                 <Textarea
                                     ref={textareaRef}
                                     id="comment-text"
@@ -309,6 +356,15 @@ function LegacyComments({ data }: Props) {
                             <Button type="submit">提交评论</Button>
                         </div>
                     </form>
+                    <MediaLibrary
+                        open={mediaOpen}
+                        onOpenChange={setMediaOpen}
+                        mediaEndpoint={data.mediaEndpoint}
+                        onSelect={(item) => {
+                            insertMediaMarkdown(textareaRef.current, setText, item.title, item.url);
+                            setMediaOpen(false);
+                        }}
+                    />
                 </div>
             ) : null}
         </>
@@ -325,6 +381,7 @@ export default function CommentsBlock({ data }: Props) {
     const [parent, setParent] = useState(0);
     const [parentTarget, setParentTarget] = useState('');
     const [text, setText] = useState('');
+    const [mediaOpen, setMediaOpen] = useState(false);
     const [author, setAuthor] = useState(data.remember.author);
     const [mail, setMail] = useState(data.remember.mail);
     const [url, setUrl] = useState(data.remember.url);
@@ -527,6 +584,7 @@ export default function CommentsBlock({ data }: Props) {
                                 <MarkdownToolbar
                                     target={textareaRef}
                                     onChange={setText}
+                                    onImage={data.mediaEnabled ? () => setMediaOpen(true) : undefined}
                                     disabled={submitting}
                                 />
                                 <Textarea
@@ -591,6 +649,15 @@ export default function CommentsBlock({ data }: Props) {
                             </Button>
                         </div>
                     </form>
+                    <MediaLibrary
+                        open={mediaOpen}
+                        onOpenChange={setMediaOpen}
+                        mediaEndpoint={data.mediaEndpoint}
+                        onSelect={(item) => {
+                            insertMediaMarkdown(textareaRef.current, setText, item.title, item.url);
+                            setMediaOpen(false);
+                        }}
+                    />
 
                     {apiError ? (
                         <p className="comment-alert comment-alert-error" role="alert">
@@ -642,7 +709,7 @@ export default function CommentsBlock({ data }: Props) {
                             ))}
                         </ol>
                     ) : (
-                        <p className="comments-empty">暂时没有评论，欢迎在上方留言。</p>
+                        <EmptyComments image={data.nullImage} text="暂时没有评论，欢迎在上方留言。" />
                     )}
 
                     {threads.roots.length > previewCount ? (

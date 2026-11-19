@@ -15,6 +15,7 @@ use TTDF\Theme\Options;
 use TTDF\Theme\Settings;
 use TTDF\Theme\ThemeConfig;
 use TTDF\View\Components;
+use Typecho\Date;
 use Widget\Archive;
 
 if (!defined('__TYPECHO_ROOT_DIR__')) {
@@ -200,6 +201,34 @@ final class PageData
     }
 
     /**
+     * Editor shell used by the forum-topic route.
+     *
+     * @param array<string, mixed> $editor
+     * @return array<string, mixed>
+     */
+    public static function editorPage(string $title, array $editor): array
+    {
+        $site = self::site(null);
+        $documentTitle = $site['title'] !== '' ? $title . ' · ' . $site['title'] : $title;
+
+        return [
+            'kind' => 'editor',
+            'userSection' => 'content',
+            'userMode' => 'editor',
+            'editorMode' => (string) ($editor['mode'] ?? 'forum-topic'),
+            'forumEditor' => $editor,
+            'site' => $site,
+            'theme' => self::theme(),
+            'api' => self::api(),
+            'blocks' => [],
+            'widgets' => self::widgets(),
+            'title' => $title,
+            'documentTitle' => $documentTitle,
+            'fields' => [],
+        ];
+    }
+
+    /**
      * Public profile space at `/users/{uid}`.
      *
      * @return array<string, mixed>
@@ -224,6 +253,8 @@ final class PageData
         }
         $title = $name . ' 的空间';
         $posts = self::spacePosts((int) ($profile['uid'] ?? 0), 12);
+        $comments = self::spaceComments((int) ($profile['uid'] ?? 0), 12);
+        $circles = Forum::userCircles((int) ($profile['uid'] ?? 0), 12);
 
         return [
             'kind' => 'user-space',
@@ -234,19 +265,9 @@ final class PageData
                 [
                     'type' => 'user-space',
                     'profile' => $profile,
-                ],
-                [
-                    'type' => 'post-list',
-                    'variant' => 'grid',
-                    'title' => 'TA 的文章',
-                    'anchor' => 'user-space-posts',
-                    'category' => '',
-                    'limit' => 12,
-                    'columns' => 3,
-                    'showPagination' => false,
                     'posts' => $posts,
-                    'paginationHtml' => '',
-                    'empty' => '这个用户还没有发布文章。',
+                    'comments' => $comments,
+                    'circles' => $circles,
                 ],
             ],
             'widgets' => self::widgets(),
@@ -349,6 +370,68 @@ final class PageData
     }
 
     /**
+     * Approved comments written by one user on public posts.
+     *
+     * @return list<array<string, mixed>>
+     */
+    private static function spaceComments(int $uid, int $limit): array
+    {
+        if ($uid <= 0 || !class_exists('Typecho\\Db')) {
+            return [];
+        }
+
+        try {
+            $db = \Typecho\Db::get();
+            $options = Typecho::options();
+            $now = (int) ($options?->time ?? time());
+            $rows = $db->fetchAll(
+                $db->select(
+                    'table.comments.coid',
+                    'table.comments.cid',
+                    'table.comments.created',
+                    'table.comments.text',
+                    'table.contents.title',
+                    'table.contents.slug'
+                )
+                    ->from('table.comments')
+                    ->join('table.contents', 'table.contents.cid = table.comments.cid')
+                    ->where('table.comments.authorId = ?', $uid)
+                    ->where('table.comments.status = ?', 'approved')
+                    ->where('table.comments.type = ?', 'comment')
+                    ->where('table.contents.type = ?', 'post')
+                    ->where('table.contents.status = ?', 'publish')
+                    ->where('table.contents.created < ?', $now)
+                    ->where('(table.contents.password IS NULL OR table.contents.password = ?)', '')
+                    ->order('table.comments.created', \Typecho\Db::SORT_DESC)
+                    ->limit(max(1, min(30, $limit)))
+            );
+        } catch (\Throwable) {
+            return [];
+        }
+
+        $items = [];
+        foreach ($rows as $row) {
+            if (!is_array($row)) {
+                continue;
+            }
+
+            $coid = (int) ($row['coid'] ?? 0);
+            $postUrl = self::postUrl($row);
+            $items[] = [
+                'coid' => $coid,
+                'postTitle' => trim((string) ($row['title'] ?? '')),
+                'postUrl' => $postUrl,
+                'url' => $postUrl . '#comment-' . $coid,
+                'excerpt' => self::clip(self::plainText((string) ($row['text'] ?? '')), 160),
+                'date' => self::postDate(['created' => (int) ($row['created'] ?? 0)], 'Y-m-d H:i'),
+                'dateIso' => self::postDate(['created' => (int) ($row['created'] ?? 0)], 'c'),
+            ];
+        }
+
+        return $items;
+    }
+
+    /**
      * Page data for a custom TTDF route.
      *
      * @param list<array<string, mixed>> $blocks
@@ -366,6 +449,53 @@ final class PageData
             'title' => $title,
             'documentTitle' => $documentTitle !== '' ? $documentTitle : $title,
         ];
+    }
+
+    /**
+     * Page payload for the built-in forum routes. Keeping the kind explicit
+     * lets the React shell render the forum without adding a second sidebar.
+     *
+     * @param list<array<string, mixed>> $blocks
+     * @return array<string, mixed>
+     */
+    public static function forumPage(
+        string $kind,
+        string $title,
+        array $blocks,
+        string $documentTitle = '',
+        string $canonical = '',
+        string $description = '',
+        array $leftBlocks = [],
+        array $rightBlocks = []
+    ): array {
+        $site = self::site(null);
+        $documentTitle = $documentTitle !== '' ? $documentTitle : $title;
+
+        if ($documentTitle !== '' && $site['title'] !== '') {
+            $documentTitle .= ' · ' . $site['title'];
+        }
+
+        $data = [
+            'kind' => $kind,
+            'site' => $site,
+            'theme' => self::theme(),
+            'api' => self::api(),
+            'blocks' => array_values(array_filter($blocks, 'is_array')),
+            'widgets' => self::widgets(),
+            'title' => $title,
+            'documentTitle' => $documentTitle,
+            'canonical' => $canonical !== '' ? $canonical : $site['url'],
+            'description' => $description,
+        ];
+
+        if ($leftBlocks !== [] || $rightBlocks !== []) {
+            $data['forumLayout'] = [
+                'left' => array_values(array_filter($leftBlocks, 'is_array')),
+                'right' => array_values(array_filter($rightBlocks, 'is_array')),
+            ];
+        }
+
+        return $data;
     }
 
     /**
@@ -427,6 +557,129 @@ final class PageData
     }
 
     /**
+     * Scoped search used by category and tag archive headers. The native
+     * Typecho search route cannot carry a taxonomy filter, so the React search
+     * panel reads this endpoint when it is opened from an archive header.
+     *
+     * @return list<array<string, mixed>>
+     */
+    public static function searchData(): array
+    {
+        $query = isset($_GET['q']) && is_scalar($_GET['q'])
+            ? trim((string) $_GET['q'])
+            : '';
+        if ($query === '') {
+            return [];
+        }
+
+        $category = isset($_GET['category']) && is_scalar($_GET['category'])
+            ? trim((string) $_GET['category'])
+            : '';
+        $tag = isset($_GET['tag']) && is_scalar($_GET['tag'])
+            ? trim((string) $_GET['tag'])
+            : '';
+
+        return self::searchSummaries($query, $category, $tag);
+    }
+
+    /**
+     * @return list<array<string, mixed>>
+     */
+    private static function searchSummaries(string $query, string $category, string $tag): array
+    {
+        if (!class_exists('Typecho\\Db')) {
+            return [];
+        }
+
+        try {
+            $db = \Typecho\Db::get();
+            $options = Typecho::options();
+            $like = '%' . str_replace(' ', '%', $query) . '%';
+            $select = $db->select(
+                'table.contents.cid',
+                'table.contents.title',
+                'table.contents.slug',
+                'table.contents.created',
+                'table.contents.text',
+                'table.contents.commentsNum',
+                'table.contents.authorId'
+            )
+                ->from('table.contents')
+                ->where('table.contents.type = ?', 'post')
+                ->where('table.contents.status = ?', 'publish')
+                ->where('table.contents.created < ?', (int) ($options?->time ?? time()))
+                ->where('(table.contents.password IS NULL OR table.contents.password = ?)', '')
+                ->where(
+                    '(table.contents.title LIKE ? OR table.contents.text LIKE ?)',
+                    $like,
+                    $like
+                );
+
+            $term = $category !== '' ? $category : $tag;
+            $termType = $category !== '' ? 'category' : 'tag';
+            if ($term !== '') {
+                $meta = $db->fetchRow(
+                    $db->select('mid')
+                        ->from('table.metas')
+                        ->where('type = ?', $termType)
+                        ->where('slug = ?', $term)
+                        ->limit(1)
+                );
+                $mid = is_array($meta) ? (int) ($meta['mid'] ?? 0) : 0;
+                if ($mid <= 0) {
+                    return [];
+                }
+
+                $select->join(
+                    'table.relationships',
+                    'table.relationships.cid = table.contents.cid'
+                )->where('table.relationships.mid = ?', $mid);
+            }
+
+            $rows = $db->fetchAll(
+                $select->order('table.contents.created', \Typecho\Db::SORT_DESC)->limit(12)
+            );
+        } catch (\Throwable $exception) {
+            error_log('SunkenBoat scoped search failed: ' . $exception->getMessage());
+
+            return [];
+        }
+
+        $siteUrl = Typecho::siteUrl();
+        $cids = array_map(
+            static fn (mixed $row): int => is_array($row) ? (int) ($row['cid'] ?? 0) : 0,
+            $rows
+        );
+        $views = ArticleViews::counts($cids);
+        self::primeThumbnailFields($cids);
+
+        $items = [];
+        foreach ($rows as $row) {
+            if (!is_array($row)) {
+                continue;
+            }
+
+            $cid = (int) ($row['cid'] ?? 0);
+            $text = (string) ($row['text'] ?? '');
+            $items[] = [
+                'title' => trim((string) ($row['title'] ?? '')),
+                'url' => self::postUrl($row),
+                'excerpt' => self::excerpt($row, $text, 120),
+                'date' => self::postDate($row, 'Y-m-d'),
+                'dateIso' => self::postDate($row, 'c'),
+                'thumb' => self::thumbnail($cid, $text, $siteUrl),
+                'author' => self::authorName((int) ($row['authorId'] ?? 0)),
+                'comments' => (int) ($row['commentsNum'] ?? 0),
+                'views' => $views[$cid] ?? 0,
+                'categories' => self::termsOfCid($cid, 'category'),
+                'tags' => self::termsOfCid($cid, 'tag'),
+            ];
+        }
+
+        return $items;
+    }
+
+    /**
      * @return array<string, mixed>
      */
     private static function buildPage(string $kind, Archive $archive): array
@@ -455,7 +708,11 @@ final class PageData
     {
         $values = Settings::values();
         $defaults = self::defaultBlocks($kind);
-        $specs = self::normalizeSpecs($values[self::settingKey($kind)] ?? null, $defaults);
+        $saved = $values[self::settingKey($kind)] ?? null;
+        if (self::isLegacyBlockLayout($saved, $kind)) {
+            $saved = array_merge(['breadcrumbs'], $saved);
+        }
+        $specs = self::normalizeSpecs($saved, $defaults);
         $cache = [];
         $blocks = [];
 
@@ -475,6 +732,42 @@ final class PageData
         }
 
         return $blocks;
+    }
+
+    /**
+     * Before breadcrumbs existed, a saved layout could still be exactly the
+     * built-in default. Upgrade only that untouched shape so custom orders are
+     * never rewritten.
+     *
+     * @param mixed $saved
+     */
+    private static function isLegacyBlockLayout(mixed $saved, string $kind): bool
+    {
+        if (!is_array($saved) || $saved === []) {
+            return false;
+        }
+
+        $legacy = match ($kind) {
+            'post' => ['prose', 'tags', 'post-nav', 'comments'],
+            'page' => ['page-header', 'prose', 'comments'],
+            default => [],
+        };
+        if ($legacy === []) {
+            return false;
+        }
+
+        $names = [];
+        foreach ($saved as $item) {
+            if (is_string($item)) {
+                $names[] = trim(explode(':', trim($item), 2)[0]);
+            } elseif (is_array($item)) {
+                $names[] = trim((string) ($item['name'] ?? ($item['block'] ?? '')));
+            } else {
+                return false;
+            }
+        }
+
+        return $names === $legacy;
     }
 
     private static function settingKey(string $kind): string
@@ -497,8 +790,8 @@ final class PageData
         return match ($kind) {
             'home' => ['hero', 'carousel', 'post-list:list', 'categories'],
             'archive' => ['archive-header', 'post-list:list'],
-            'post' => ['prose', 'tags', 'post-nav', 'comments'],
-            'page' => ['page-header', 'prose', 'comments'],
+            'post' => ['breadcrumbs', 'prose', 'tags', 'post-nav', 'comments'],
+            'page' => ['breadcrumbs', 'page-header', 'prose', 'comments'],
             '404' => ['notfound'],
             default => ['page-header', 'prose'],
         };
@@ -581,6 +874,7 @@ final class PageData
             'post-list' => self::postListBlock($kind, $archive, $variant, $cache, $data),
             'categories' => self::categoriesBlock($variant, $cache, $data),
             'archive-header' => self::archiveHeaderBlock($archive, $data),
+            'breadcrumbs' => self::breadcrumbsBlock($archive, $data),
             'post-header' => null,
             'page-header' => self::pageHeaderBlock($archive, $variant, $data),
             'prose' => self::proseBlock($archive, $cache, $data, $kind),
@@ -601,6 +895,17 @@ final class PageData
             'gallery' => self::galleryBlock($variant, $data),
             'table' => self::tableBlock($data),
             'media-grid' => self::mediaGridBlock($data),
+            'promo-grid' => self::promoGridBlock($variant, $data),
+            'post-tabs' => self::postTabsBlock($archive, $variant, $data, $cache),
+            'author-grid' => self::authorGridBlock($data),
+            'product-grid' => self::productGridBlock($data),
+            'logo-cloud' => self::logoCloudBlock($data),
+            'heading' => self::headingBlock($variant, $data),
+            'button-group' => self::buttonGroupBlock($variant, $data),
+            'info-cards' => self::infoCardsBlock($data),
+            'partner-scroll' => self::partnerScrollBlock($variant, $data),
+            'media-split' => self::mediaSplitBlock($variant, $data),
+            'post-author' => self::postAuthorBlock($archive, $data),
             'pricing' => self::pricingBlock($data),
             'author-card' => self::authorCardBlock($archive, $data),
             'subscribe' => self::subscribeBlock($archive, $data),
@@ -675,32 +980,83 @@ final class PageData
     private static function postListBlock(string $kind, Archive $archive, string $variant, array &$cache, array $data = []): array
     {
         $category = trim((string) ($data['category'] ?? ''));
+        $source = (string) ($data['source'] ?? 'articles');
+        $source = in_array($source, ['articles', 'forum', 'mixed'], true) ? $source : 'articles';
+        $forumCircle = trim((string) ($data['forum_circle'] ?? ''));
         $cacheKey = $category === '' ? 'posts' : 'posts:' . $category;
         $paginationKey = $category === '' ? 'pagination' : 'pagination:' . $category;
         $limit = is_numeric($data['limit'] ?? null) ? (int) $data['limit'] : 0;
         $columns = is_numeric($data['columns'] ?? null) ? (int) $data['columns'] : 0;
         $showPagination = !isset($data['show_pagination']) || (string) $data['show_pagination'] !== '0';
-
-        return [
-            'type' => 'post-list',
-            'variant' => $variant !== '' ? $variant : 'list',
-            'title' => self::text($data, 'title', $kind === 'home' ? '最新文章' : ''),
-            'category' => $category,
-            'limit' => max(0, min(30, $limit)),
-            'columns' => max(0, min(5, $columns)),
-            'showPagination' => $showPagination,
-            'posts' => self::cached(
+        $fetchLimit = $limit > 0 ? min(30, $limit) : 30;
+        $articles = $source === 'forum'
+            ? []
+            : self::cached(
                 $cache,
                 $cacheKey,
                 static fn (): array => $category !== ''
                     ? self::postSummariesByCategory($category)
                     : self::postSummaries($archive)
+            );
+        $forumPosts = $source === 'articles'
+            ? []
+            : self::cached(
+                $cache,
+                'forum:' . $forumCircle . ':' . $fetchLimit,
+                static fn (): array => Forum::feedSummaries($fetchLimit, $forumCircle)
+            );
+        $posts = match ($source) {
+            'forum' => $forumPosts,
+            'mixed' => self::mergeContentFeeds($articles, $forumPosts),
+            default => $articles,
+        };
+
+        return [
+            'type' => 'post-list',
+            'variant' => $variant !== '' ? $variant : 'list',
+            'title' => self::text(
+                $data,
+                'title',
+                $kind === 'home' ? ($source === 'forum' ? '最新帖子' : '最新文章') : ''
             ),
-            'paginationHtml' => $category !== '' || !$showPagination
+            'category' => $category,
+            'source' => $source,
+            'limit' => max(0, min(30, $limit)),
+            'columns' => max(0, min(5, $columns)),
+            'showPagination' => $showPagination,
+            'posts' => $posts,
+            'paginationHtml' => $source !== 'articles' || $category !== '' || !$showPagination
                 ? ''
                 : self::cached($cache, $paginationKey, static fn (): string => self::pagination($archive)),
-            'empty' => self::text($data, 'empty', $kind === 'home' ? '这里还没有文章。' : '没有找到内容。'),
+            'empty' => self::text(
+                $data,
+                'empty',
+                $kind === 'home'
+                    ? ($source === 'forum' ? '这里还没有帖子。' : '这里还没有文章。')
+                    : '没有找到内容。'
+            ),
         ];
+    }
+
+    /**
+     * Merge article and forum summaries in reverse chronological order. Cards
+     * use the same shape, so the mixed feed stays renderer-agnostic.
+     *
+     * @param list<array<string, mixed>> $articles
+     * @param list<array<string, mixed>> $forum
+     * @return list<array<string, mixed>>
+     */
+    private static function mergeContentFeeds(array $articles, array $forum): array
+    {
+        $merged = array_merge($articles, $forum);
+        usort($merged, static function (array $left, array $right): int {
+            $leftDate = (string) ($left['dateIso'] ?? '');
+            $rightDate = (string) ($right['dateIso'] ?? '');
+
+            return strcmp($rightDate, $leftDate);
+        });
+
+        return $merged;
     }
 
     /**
@@ -762,12 +1118,65 @@ final class PageData
     private static function archiveHeaderBlock(Archive $archive, array $data = []): array
     {
         $title = self::archiveTitle($archive);
+        $scope = null;
+        if (is_callable([$archive, 'is'])) {
+            if ($archive->is('category')) {
+                $scope = [
+                    'type' => 'category',
+                    'slug' => (string) ($archive->getArchiveSlug() ?? ''),
+                    'label' => $title,
+                ];
+            } elseif ($archive->is('tag')) {
+                $scope = [
+                    'type' => 'tag',
+                    'slug' => (string) ($archive->getArchiveSlug() ?? ''),
+                    'label' => $title,
+                ];
+            }
+        }
 
         return [
             'type' => 'archive-header',
             'title' => self::text($data, 'title', $title !== '' ? $title : '归档'),
             'description' => self::text($data, 'description', self::archiveDescription($archive)),
             'count' => is_callable([$archive, 'getTotal']) ? (int) $archive->getTotal() : 0,
+            'searchLabel' => self::text($data, 'search_label', '搜索当前分类'),
+            'searchScope' => $scope,
+        ];
+    }
+
+    /**
+     * Breadcrumb trail for a single post or page.
+     *
+     * @return array<string, mixed>
+     */
+    private static function breadcrumbsBlock(Archive $archive, array $data = []): array
+    {
+        $site = self::site($archive);
+        $items = [[
+            'label' => self::text($data, 'home_label', '首页'),
+            'url' => $site['url'],
+        ]];
+
+        $categories = self::categoriesOf($archive);
+        if ($categories !== []) {
+            $first = $categories[0];
+            if ((string) ($first['url'] ?? '') !== '') {
+                $items[] = [
+                    'label' => (string) ($first['label'] ?? ''),
+                    'url' => (string) $first['url'],
+                ];
+            }
+        }
+
+        $title = trim((string) ($archive->title ?? ''));
+        if ($title !== '') {
+            $items[] = ['label' => $title];
+        }
+
+        return [
+            'type' => 'breadcrumbs',
+            'items' => $items,
         ];
     }
 
@@ -781,6 +1190,7 @@ final class PageData
             'type' => 'post-header',
             'title' => (string) ($archive->title ?? ''),
             'meta' => self::cached($cache, 'postMeta', static fn (): array => self::postMeta($archive)),
+            'share' => self::shareConfig(),
         ];
     }
 
@@ -812,6 +1222,8 @@ final class PageData
             'type' => 'prose',
             'title' => $kind === 'post' ? (string) ($archive->title ?? '') : '',
             'meta' => $meta,
+            'share' => self::shareConfig(),
+            'layout' => self::contentLayout($archive),
             'html' => self::cached($cache, 'content', static function () use ($archive): string {
                 $html = self::content($archive);
                 $cid = (int) ($archive->cid ?? 0);
@@ -1247,6 +1659,596 @@ final class PageData
     /**
      * @return array<string, mixed>|null
      */
+    private static function promoGridBlock(string $variant, array $data = []): ?array
+    {
+        $rows = self::pipeRows(
+            $data['items'] ?? null,
+            ['title', 'text', 'image', 'url', 'badge'],
+            8
+        );
+        $items = [];
+
+        foreach ($rows as $row) {
+            $image = Media::url($row['image']);
+            if ($row['title'] === '' && $row['text'] === '' && $image === '') {
+                continue;
+            }
+
+            $items[] = [
+                'title' => $row['title'],
+                'text' => $row['text'],
+                'image' => $image,
+                'url' => self::safeUrl($row['url']),
+                'badge' => $row['badge'],
+            ];
+        }
+
+        if ($items === []) {
+            return null;
+        }
+
+        return [
+            'type' => 'promo-grid',
+            'variant' => self::blockVariant($variant, ['feature', 'duo', 'trio'], 'feature'),
+            'title' => self::text($data, 'title', ''),
+            'text' => self::text($data, 'text', ''),
+            'items' => $items,
+        ];
+    }
+
+    /**
+     * @param array<string, mixed> $cache
+     * @return array<string, mixed>|null
+     */
+    private static function postTabsBlock(Archive $archive, string $variant, array $data, array &$cache): ?array
+    {
+        unset($variant);
+
+        $limit = is_numeric($data['limit'] ?? null) ? (int) $data['limit'] : 6;
+        $limit = max(1, min(12, $limit));
+        $columns = is_numeric($data['columns'] ?? null) ? (int) $data['columns'] : 3;
+        $columns = max(2, min(4, $columns));
+        $rows = self::pipeRows($data['tabs'] ?? null, ['label', 'category', 'url'], 8);
+
+        if ($rows === []) {
+            $rows = [[
+                'label' => '最新',
+                'category' => '',
+                'url' => '',
+            ]];
+
+            $categories = self::cached($cache, 'categories', static fn (): array => self::categories());
+            foreach ($categories as $category) {
+                $slug = trim((string) ($category['slug'] ?? ''));
+                if ($slug === '' || (int) ($category['count'] ?? 0) <= 0) {
+                    continue;
+                }
+
+                $rows[] = [
+                    'label' => (string) ($category['label'] ?? ''),
+                    'category' => $slug,
+                    'url' => (string) ($category['url'] ?? ''),
+                ];
+
+                if (count($rows) >= 4) {
+                    break;
+                }
+            }
+        }
+
+        $tabs = [];
+        foreach ($rows as $row) {
+            $label = $row['label'] !== '' ? $row['label'] : '内容';
+            $category = trim($row['category']);
+            $posts = $category === ''
+                ? self::cached($cache, 'posts', static fn (): array => self::postSummaries($archive))
+                : self::cached(
+                    $cache,
+                    'post-tab:' . $category,
+                    static fn (): array => self::postSummariesByCategory($category)
+                );
+            $posts = array_slice($posts, 0, $limit);
+
+            if ($posts === []) {
+                continue;
+            }
+
+            $tabs[] = [
+                'label' => $label,
+                'url' => self::safeUrl($row['url']),
+                'posts' => $posts,
+            ];
+        }
+
+        if ($tabs === []) {
+            return null;
+        }
+
+        return [
+            'type' => 'post-tabs',
+            'title' => self::text($data, 'title', ''),
+            'text' => self::text($data, 'text', ''),
+            'columns' => $columns,
+            'tabs' => $tabs,
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    private static function authorGridBlock(array $data = []): ?array
+    {
+        $limit = is_numeric($data['limit'] ?? null) ? (int) $data['limit'] : 8;
+        $limit = max(1, min(12, $limit));
+        $columns = is_numeric($data['columns'] ?? null) ? (int) $data['columns'] : 3;
+        $columns = max(1, min(4, $columns));
+        $rows = self::pipeRows($data['items'] ?? null, ['name', 'avatar', 'bio', 'url', 'badge'], 12);
+        $items = [];
+
+        foreach ($rows as $row) {
+            if ($row['name'] === '') {
+                continue;
+            }
+
+            $items[] = [
+                'name' => $row['name'],
+                'avatar' => Media::url($row['avatar']),
+                'bio' => $row['bio'],
+                'url' => self::safeUrl($row['url']),
+                'badge' => $row['badge'],
+                'posts' => 0,
+                'comments' => 0,
+            ];
+        }
+
+        if ($items === []) {
+            $items = self::siteAuthors($limit);
+        }
+
+        if ($items === []) {
+            return null;
+        }
+
+        return [
+            'type' => 'author-grid',
+            'title' => self::text($data, 'title', ''),
+            'text' => self::text($data, 'text', ''),
+            'columns' => $columns,
+            'items' => $items,
+        ];
+    }
+
+    /**
+     * @return list<array{name: string, avatar: string, bio: string, url: string, badge: string, posts: int, comments: int}>
+     */
+    private static function siteAuthors(int $limit): array
+    {
+        if (!class_exists('Typecho\\Db')) {
+            return [];
+        }
+
+        try {
+            $db = \Typecho\Db::get();
+            $users = $db->fetchAll(
+                $db->select('uid', 'name', 'screenName', 'mail', 'url', 'group')
+                    ->from('table.users')
+                    ->order('uid', \Typecho\Db::SORT_ASC)
+                    ->limit($limit)
+            );
+            if (!is_array($users) || $users === []) {
+                return [];
+            }
+
+            $postCounts = [];
+            $postRows = $db->fetchAll(
+                $db->select('authorId')
+                    ->from('table.contents')
+                    ->where('type = ?', 'post')
+                    ->where('status = ?', 'publish')
+            );
+            foreach (is_array($postRows) ? $postRows : [] as $postRow) {
+                $uid = (int) ($postRow['authorId'] ?? 0);
+                if ($uid > 0) {
+                    $postCounts[$uid] = ($postCounts[$uid] ?? 0) + 1;
+                }
+            }
+
+            $commentCounts = [];
+            $commentRows = $db->fetchAll(
+                $db->select('authorId')
+                    ->from('table.comments')
+                    ->where('status = ?', 'approved')
+            );
+            foreach (is_array($commentRows) ? $commentRows : [] as $commentRow) {
+                $uid = (int) ($commentRow['authorId'] ?? 0);
+                if ($uid > 0) {
+                    $commentCounts[$uid] = ($commentCounts[$uid] ?? 0) + 1;
+                }
+            }
+
+            $items = [];
+            foreach ($users as $user) {
+                if (!is_array($user)) {
+                    continue;
+                }
+
+                $uid = (int) ($user['uid'] ?? 0);
+                $name = trim((string) ($user['screenName'] ?? ''));
+                if ($name === '') {
+                    $name = trim((string) ($user['name'] ?? ''));
+                }
+                if ($uid <= 0 || $name === '') {
+                    continue;
+                }
+
+                $group = (string) ($user['group'] ?? '');
+                $badge = match ($group) {
+                    'administrator' => '管理员',
+                    'editor' => '编辑',
+                    'contributor' => '贡献者',
+                    'subscriber' => '订阅者',
+                    default => $group !== '' ? $group : '作者',
+                };
+                $items[] = [
+                    'name' => $name,
+                    'avatar' => Avatar::url((string) ($user['mail'] ?? ''), 120),
+                    'bio' => trim((string) ($user['url'] ?? '')),
+                    'url' => self::authorUrl($uid),
+                    'badge' => $badge,
+                    'posts' => (int) ($postCounts[$uid] ?? 0),
+                    'comments' => (int) ($commentCounts[$uid] ?? 0),
+                ];
+            }
+
+            return $items;
+        } catch (\Throwable $exception) {
+            error_log('TTDF author grid lookup failed: ' . $exception->getMessage());
+
+            return [];
+        }
+    }
+
+    private static function authorUrl(int $uid): string
+    {
+        try {
+            $path = (string) \Typecho\Router::url('author', ['uid' => $uid]);
+            $options = Typecho::options();
+            $index = is_scalar($options?->index ?? null) ? (string) $options->index : '';
+
+            return \Typecho\Common::url($path, $index);
+        } catch (\Throwable) {
+            return '';
+        }
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    private static function productGridBlock(array $data = []): ?array
+    {
+        $rows = self::pipeRows(
+            $data['items'] ?? null,
+            ['title', 'image', 'price', 'original_price', 'url', 'badge', 'text'],
+            16
+        );
+        $items = [];
+
+        foreach ($rows as $row) {
+            $image = Media::url($row['image']);
+            if ($row['title'] === '' && $image === '') {
+                continue;
+            }
+
+            $items[] = [
+                'title' => $row['title'],
+                'text' => $row['text'],
+                'image' => $image,
+                'price' => $row['price'],
+                'originalPrice' => $row['original_price'],
+                'badge' => $row['badge'],
+                'url' => self::safeUrl($row['url']),
+            ];
+        }
+
+        if ($items === []) {
+            return null;
+        }
+
+        $columns = is_numeric($data['columns'] ?? null) ? (int) $data['columns'] : 4;
+
+        return [
+            'type' => 'product-grid',
+            'title' => self::text($data, 'title', ''),
+            'text' => self::text($data, 'text', ''),
+            'columns' => max(2, min(5, $columns)),
+            'items' => $items,
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    private static function logoCloudBlock(array $data = []): ?array
+    {
+        $rows = self::pipeRows($data['items'] ?? null, ['name', 'image', 'url'], 24);
+        $items = [];
+
+        foreach ($rows as $row) {
+            $image = Media::url($row['image']);
+            if ($row['name'] === '' && $image === '') {
+                continue;
+            }
+
+            $items[] = [
+                'name' => $row['name'],
+                'image' => $image,
+                'url' => self::safeUrl($row['url']),
+            ];
+        }
+
+        if ($items === []) {
+            return null;
+        }
+
+        $columns = is_numeric($data['columns'] ?? null) ? (int) $data['columns'] : 4;
+
+        return [
+            'type' => 'logo-cloud',
+            'title' => self::text($data, 'title', ''),
+            'text' => self::text($data, 'text', ''),
+            'columns' => max(2, min(6, $columns)),
+            'items' => $items,
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    private static function headingBlock(string $variant, array $data = []): ?array
+    {
+        $title = self::text($data, 'title', '');
+        $text = self::text($data, 'text', '');
+        $eyebrow = self::text($data, 'eyebrow', '');
+        if ($title === '' && $text === '' && $eyebrow === '') {
+            return null;
+        }
+
+        return [
+            'type' => 'heading',
+            'variant' => self::blockVariant($variant, ['plain', 'bar', 'center', 'boxed'], 'plain'),
+            'eyebrow' => $eyebrow,
+            'title' => $title,
+            'text' => $text,
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    private static function buttonGroupBlock(string $variant, array $data = []): ?array
+    {
+        $items = [];
+        foreach (self::pipeRows($data['items'] ?? null, ['label', 'url', 'style', 'icon'], 8) as $row) {
+            $url = self::safeUrl($row['url']);
+            if ($row['label'] === '' || $url === '') {
+                continue;
+            }
+
+            $items[] = [
+                'label' => $row['label'],
+                'url' => $url,
+                'style' => in_array($row['style'], ['primary', 'outline', 'ghost'], true)
+                    ? $row['style']
+                    : 'primary',
+                'icon' => in_array($row['icon'], ['arrow', 'plus', 'download', 'external'], true)
+                    ? $row['icon']
+                    : '',
+            ];
+        }
+
+        if ($items === []) {
+            return null;
+        }
+
+        return [
+            'type' => 'button-group',
+            'variant' => self::blockVariant($variant, ['inline', 'center', 'stack'], 'inline'),
+            'title' => self::text($data, 'title', ''),
+            'text' => self::text($data, 'text', ''),
+            'items' => $items,
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    private static function infoCardsBlock(array $data = []): ?array
+    {
+        $items = [];
+        foreach (self::pipeRows($data['items'] ?? null, ['icon', 'title', 'tag', 'text', 'url'], 12) as $row) {
+            if ($row['title'] === '' && $row['text'] === '') {
+                continue;
+            }
+
+            $items[] = [
+                'icon' => in_array(
+                    $row['icon'],
+                    ['sparkles', 'shield', 'zap', 'book', 'users', 'message', 'star', 'globe', 'layers'],
+                    true
+                ) ? $row['icon'] : 'sparkles',
+                'title' => $row['title'],
+                'tag' => $row['tag'],
+                'text' => $row['text'],
+                'url' => self::safeUrl($row['url']),
+            ];
+        }
+
+        if ($items === []) {
+            return null;
+        }
+
+        $columns = is_numeric($data['columns'] ?? null) ? (int) $data['columns'] : 3;
+
+        return [
+            'type' => 'info-cards',
+            'title' => self::text($data, 'title', ''),
+            'text' => self::text($data, 'text', ''),
+            'columns' => max(2, min(4, $columns)),
+            'items' => $items,
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    private static function partnerScrollBlock(string $variant, array $data = []): ?array
+    {
+        $items = [];
+        foreach (self::pipeRows($data['items'] ?? null, ['name', 'image', 'url'], 30) as $row) {
+            $image = Media::url($row['image']);
+            if ($row['name'] === '' && $image === '') {
+                continue;
+            }
+
+            $items[] = [
+                'name' => $row['name'],
+                'image' => $image,
+                'url' => self::safeUrl($row['url']),
+            ];
+        }
+
+        if ($items === []) {
+            return null;
+        }
+
+        $columns = is_numeric($data['columns'] ?? null) ? (int) $data['columns'] : 4;
+        $speed = is_numeric($data['speed'] ?? null) ? (int) $data['speed'] : 32;
+
+        return [
+            'type' => 'partner-scroll',
+            'variant' => self::blockVariant($variant, ['marquee', 'grid', 'plain'], 'marquee'),
+            'title' => self::text($data, 'title', ''),
+            'text' => self::text($data, 'text', ''),
+            'columns' => max(2, min(6, $columns)),
+            'speed' => max(8, min(120, $speed)),
+            'items' => $items,
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    private static function mediaSplitBlock(string $variant, array $data = []): ?array
+    {
+        $kind = (string) ($data['media_kind'] ?? 'image');
+        $kind = in_array($kind, ['image', 'video', 'slides'], true) ? $kind : 'image';
+        $media = Media::url($data['media'] ?? '');
+        $slides = [];
+
+        foreach ((array) ($data['slides'] ?? []) as $slide) {
+            if (!is_array($slide)) {
+                continue;
+            }
+
+            $image = Media::url($slide['image'] ?? '');
+            $title = trim((string) ($slide['title'] ?? ''));
+            $description = trim((string) ($slide['description'] ?? ''));
+            if ($image === '' && $title === '' && $description === '') {
+                continue;
+            }
+
+            $slides[] = [
+                'image' => $image,
+                'title' => $title,
+                'description' => $description,
+                'url' => self::safeUrl($slide['url'] ?? ''),
+            ];
+        }
+
+        $items = [];
+        foreach (self::pipeRows(
+            $data['items'] ?? null,
+            ['kind', 'title', 'text', 'media', 'url'],
+            8
+        ) as $row) {
+            $itemKind = $row['kind'] === 'video' ? 'video' : 'image';
+            $itemMedia = Media::url($row['media']);
+            if ($row['title'] === '' && $itemMedia === '') {
+                continue;
+            }
+
+            $items[] = [
+                'kind' => $itemKind,
+                'title' => $row['title'],
+                'text' => $row['text'],
+                'media' => $itemMedia,
+                'poster' => '',
+                'url' => self::safeUrl($row['url']),
+            ];
+        }
+
+        if ($media === '' && $slides === [] && $items === []) {
+            return null;
+        }
+
+        $columns = is_numeric($data['columns'] ?? null) ? (int) $data['columns'] : 2;
+
+        return [
+            'type' => 'media-split',
+            'variant' => self::blockVariant($variant, ['split'], 'split'),
+            'title' => self::text($data, 'title', ''),
+            'text' => self::text($data, 'text', ''),
+            'kind' => $kind,
+            'media' => $media,
+            'poster' => Media::url($data['poster'] ?? ''),
+            'slides' => $slides,
+            'columns' => max(2, min(3, $columns)),
+            'items' => $items,
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private static function postAuthorBlock(Archive $archive, array $data = []): array
+    {
+        $author = isset($archive->author) ? $archive->author : null;
+        $uid = is_object($author)
+            ? (int) ($author->uid ?? 0)
+            : (int) ($archive->authorId ?? 0);
+        $name = self::capture(static fn (): string => (string) $archive->author());
+        $mail = is_object($author) ? (string) ($author->mail ?? '') : '';
+        $url = is_object($author) ? (string) ($author->permalink ?? '') : '';
+        if ($url === '' && $uid > 0) {
+            $url = self::authorUrl($uid);
+        }
+
+        $showPosts = !isset($data['show_posts']) || (string) $data['show_posts'] !== '0';
+        $limit = is_numeric($data['limit'] ?? null) ? (int) $data['limit'] : 4;
+        $limit = max(1, min(8, $limit));
+        $posts = $showPosts && $uid > 0 ? self::postSummariesByAuthor($uid, $limit) : [];
+
+        return [
+            'type' => 'post-author',
+            'title' => self::text($data, 'title', '作者的其他文章'),
+            'showAuthor' => !isset($data['show_author']) || (string) $data['show_author'] !== '0',
+            'showPosts' => $showPosts,
+            'author' => [
+                'name' => $name !== '' ? $name : '作者',
+                'avatar' => Avatar::url($mail, 120),
+                'bio' => '',
+                'url' => $url,
+                'badge' => '作者',
+                'posts' => count($posts),
+                'comments' => 0,
+            ],
+            'posts' => $posts,
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
     private static function pricingBlock(array $data = []): ?array
     {
         $rows = self::pipeRows(
@@ -1626,6 +2628,7 @@ final class PageData
             'title' => trim((string) ($options?->title ?? '')),
             'description' => trim((string) ($options?->description ?? '')),
             'url' => $siteUrl,
+            'apiBase' => self::apiBase($siteUrl),
             'feedUrl' => trim((string) ($options?->feedUrl ?? '')),
             'logo' => Media::url((string) Options::instance()->get('Logo', '')),
             'subtitle' => trim((string) ($values['SubTitle'] ?? '')),
@@ -1635,6 +2638,88 @@ final class PageData
             'year' => (int) date('Y'),
             'frameworkVersion' => Framework::VERSION,
             'themeVersion' => Typecho::themeVersion(),
+            'translate' => self::translateConfig($values),
+        ];
+    }
+
+    private static function apiBase(string $siteUrl): string
+    {
+        $index = rtrim(Typecho::indexUrl(), '/');
+        if ($index === '') {
+            $index = rtrim($siteUrl, '/');
+        }
+
+        return $index . '/ttdf/sunken';
+    }
+
+    /**
+     * @param array<string, mixed> $values
+     * @return array{enabled: bool, script: string, local: string, service: string, languages: list<array{code: string, label: string}>}
+     */
+    private static function translateConfig(array $values): array
+    {
+        $labels = [
+            'english' => 'English',
+            'chinese_simplified' => '简体中文',
+            'chinese_traditional' => '繁體中文',
+            'japanese' => '日本語',
+            'korean' => '한국어',
+            'french' => 'Français',
+            'german' => 'Deutsch',
+            'spanish' => 'Español',
+            'russian' => 'Русский',
+            'portuguese' => 'Português',
+            'italian' => 'Italiano',
+            'arabic' => 'العربية',
+            'thai' => 'ไทย',
+            'vietnamese' => 'Tiếng Việt',
+            'indonesian' => 'Bahasa Indonesia',
+            'turkish' => 'Türkçe',
+        ];
+        $raw = $values['Translate_Languages'] ?? [];
+        $codes = is_array($raw) ? $raw : [$raw];
+        $languages = [];
+        $seen = [];
+
+        foreach ($codes as $value) {
+            if (!is_scalar($value)) {
+                continue;
+            }
+            $code = strtolower(trim((string) $value));
+            if ($code === '' || preg_match('/^[a-z0-9_]+$/', $code) !== 1 || isset($seen[$code])) {
+                continue;
+            }
+            $seen[$code] = true;
+            $languages[] = [
+                'code' => $code,
+                'label' => $labels[$code] ?? $code,
+            ];
+            if (count($languages) >= 16) {
+                break;
+            }
+        }
+
+        $script = trim((string) ($values['Translate_Script'] ?? ''));
+        if (filter_var($script, FILTER_VALIDATE_URL) === false) {
+            $script = 'https://res.zvo.cn/translate/translate.js';
+        }
+
+        $local = strtolower(trim((string) ($values['Translate_Local'] ?? 'chinese_simplified')));
+        if (preg_match('/^[a-z0-9_]+$/', $local) !== 1) {
+            $local = 'chinese_simplified';
+        }
+
+        $service = strtolower(trim((string) ($values['Translate_Service'] ?? 'client.edge')));
+        if (!in_array($service, ['client.edge', 'translate.service'], true)) {
+            $service = 'client.edge';
+        }
+
+        return [
+            'enabled' => ($values['Translate_Enabled'] ?? false) === true && $languages !== [],
+            'script' => $script,
+            'local' => $local,
+            'service' => $service,
+            'languages' => $languages,
         ];
     }
 
@@ -1672,7 +2757,11 @@ final class PageData
         $urlPath = (string) parse_url($url, PHP_URL_PATH);
         $currentPath = (string) parse_url($currentUrl, PHP_URL_PATH);
         if ($urlPath !== '' && $currentPath !== '') {
-            return rtrim($urlPath, '/') === rtrim($currentPath, '/');
+            $urlPath = rtrim($urlPath, '/');
+            $currentPath = rtrim($currentPath, '/');
+
+            return $urlPath === $currentPath
+                || ($urlPath !== '' && str_starts_with($currentPath, $urlPath . '/'));
         }
 
         return rtrim($url, '/') === rtrim($currentUrl, '/');
@@ -1706,8 +2795,59 @@ final class PageData
             'footerShowTags' => ($values['Footer_Show_Tags'] ?? true) === true,
             'footerModules' => self::footerModules($values['Footer_Blocks'] ?? null),
             'layoutModules' => self::layoutModules($values['Layout_Modules'] ?? null),
+            'blockAnimations' => ($values['Block_Animations'] ?? true) === true,
+            'blockAnimationEffect' => self::blockAnimationEffect($values['Block_Animation_Effect'] ?? null),
+            'shareEnabled' => ($values['Share_Enabled'] ?? true) === true,
+            'shareItems' => self::shareItems($values['Share_Items'] ?? null),
+            'sharePosterBrand' => trim((string) ($values['Share_Poster_Brand'] ?? '')),
             'pageWidth' => self::pageWidth($values['Page_Width'] ?? null),
         ];
+    }
+
+    /**
+     * @return list<string>
+     */
+    private static function shareItems(mixed $value): array
+    {
+        $allowed = ['qzone', 'weibo', 'qq', 'x', 'reddit', 'facebook', 'telegram', 'copy', 'native', 'poster'];
+        $items = is_array($value) ? $value : [];
+        $result = [];
+        foreach ($items as $item) {
+            $item = is_scalar($item) ? strtolower(trim((string) $item)) : '';
+            if ($item === '' || !in_array($item, $allowed, true) || in_array($item, $result, true)) {
+                continue;
+            }
+            $result[] = $item;
+        }
+
+        return $result === [] ? ['copy'] : $result;
+    }
+
+    /**
+     * Sharing settings are reused by articles and forum topics.
+     *
+     * @return array{enabled: bool, items: list<string>, brand: string}
+     */
+    public static function shareConfig(): array
+    {
+        $values = Settings::values();
+
+        return [
+            'enabled' => ($values['Share_Enabled'] ?? true) === true,
+            'items' => self::shareItems($values['Share_Items'] ?? null),
+            'brand' => trim((string) ($values['Share_Poster_Brand'] ?? '')),
+        ];
+    }
+
+    private static function blockAnimationEffect(mixed $value): string
+    {
+        $effect = is_scalar($value) ? trim((string) $value) : 'fade-up';
+
+        return in_array(
+            $effect,
+            ['fade-up', 'fade', 'zoom', 'slide-left', 'slide-right'],
+            true
+        ) ? $effect : 'fade-up';
     }
 
     private static function blockWidth(array $data): string
@@ -1879,7 +3019,7 @@ final class PageData
      *
      * @return array<string, mixed>
      */
-    private static function api(): array
+    public static function api(): array
     {
         $index = Typecho::indexUrl();
         if ($index === '') {
@@ -1890,7 +3030,9 @@ final class PageData
         $v2Base = rtrim($index, '/') . '/' . Prefixes::v2();
         $values = Settings::values();
         $mailConfigured = Mailer::configured();
+        $smsConfigured = Sms::configured();
         $registerVerify = ($values['Mail_Verify_Register'] ?? false) === true;
+        $smsRegisterVerify = ($values['Sms_Verify_Register'] ?? false) === true;
         $resetVerify = ($values['Mail_Verify_Reset'] ?? false) === true;
         $emailVerify = ($values['Mail_Verify_Email'] ?? false) === true;
         $allowRegister = (bool) (Typecho::options()?->allowRegister ?? false);
@@ -1909,8 +3051,12 @@ final class PageData
                 'session' => $v2Base . '/auth/session',
                 'login' => $v2Base . '/auth/login',
                 'register' => $v2Base . '/auth/register',
-                'registerEnabled' => $allowRegister && (!$registerVerify || $mailConfigured),
+                'registerEnabled' => $allowRegister
+                    && (!$registerVerify || $mailConfigured)
+                    && (!$smsRegisterVerify || $smsConfigured),
                 'registerVerify' => $registerVerify,
+                'smsVerify' => $smsRegisterVerify && $smsConfigured,
+                'smsCode' => Endpoint::url('sms-code'),
                 'emailCode' => $v2Base . '/auth/email-code',
                 'resetPassword' => $v2Base . '/auth/reset-password',
                 'resetEnabled' => $resetVerify && $mailConfigured,
@@ -1932,16 +3078,45 @@ final class PageData
                 ],
                 'content' => [
                     'enabled' => ThemeConfig::restV2Enabled() && UserProfile::canWrite(),
+                    'permitted' => UserProfile::canWrite(),
                     'contents' => $v2Base . '/admin/contents',
                     'item' => $v2Base . '/admin/contents',
                     'posts' => $v2Base . '/admin/posts',
                     'categories' => $v2Base . '/admin/categories',
                     'comments' => $v2Base . '/me/comments',
                     'media' => $v2Base . '/media',
+                    'batch' => Endpoint::url('article-batch'),
                 ],
+                'forum' => self::userForumApi(),
                 'mailConfigured' => $mailConfigured,
                 'oauth' => OAuth::client(),
             ],
+        ];
+    }
+
+    /**
+     * Forum capabilities for the account panel. The content endpoint uses the
+     * theme AJAX entry because it is an authenticated read of the viewer's own
+     * topics and circles, not a public REST resource.
+     *
+     * @return array<string, mixed>
+     */
+    private static function userForumApi(): array
+    {
+        $context = Forum::viewerContext();
+        $permissions = $context['permissions'];
+
+        return [
+            'enabled' => (bool) $context['enabled'],
+            'content' => Endpoint::url('forum-user-content'),
+            'moderation' => Endpoint::url('forum-moderation'),
+            'nonce' => Typecho::securityToken(),
+            'home' => Forum::homeUrl(),
+            'editor' => Forum::editorUrl(),
+            'canPost' => (bool) ($permissions['createTopic'] ?? false),
+            'canCreateCircle' => (bool) ($permissions['createCircle'] ?? false),
+            'canModerate' => (bool) ($permissions['moderate'] ?? false),
+            'kinds' => Forum::topicKindOptions(Settings::values()),
         ];
     }
 
@@ -2406,6 +3581,74 @@ final class PageData
     }
 
     /**
+     * @return list<array<string, mixed>>
+     */
+    private static function postSummariesByAuthor(int $uid, int $limit = 4): array
+    {
+        if ($uid <= 0 || !class_exists('Typecho\\Db')) {
+            return [];
+        }
+
+        try {
+            $db = \Typecho\Db::get();
+            $options = Typecho::options();
+            $now = (int) ($options?->time ?? time());
+            $rows = $db->fetchAll(
+                $db->select('cid', 'title', 'slug', 'created', 'text', 'commentsNum', 'authorId')
+                    ->from('table.contents')
+                    ->where('type = ?', 'post')
+                    ->where('status = ?', 'publish')
+                    ->where('authorId = ?', $uid)
+                    ->where('created < ?', $now)
+                    ->where('(table.contents.password IS NULL OR table.contents.password = ?)', '')
+                    ->order('created', \Typecho\Db::SORT_DESC)
+                    ->limit(max(1, min(12, $limit)))
+            );
+
+            $siteUrl = Typecho::siteUrl();
+            $rows = is_array($rows) ? $rows : [];
+            $items = [];
+            $views = ArticleViews::counts(array_map(
+                static fn (array $row): int => (int) ($row['cid'] ?? 0),
+                array_values(array_filter($rows, 'is_array'))
+            ));
+            self::primeThumbnailFields(array_map(
+                static fn (array $row): int => (int) ($row['cid'] ?? 0),
+                array_values(array_filter($rows, 'is_array'))
+            ));
+
+            foreach ($rows as $row) {
+                if (!is_array($row)) {
+                    continue;
+                }
+
+                $text = (string) ($row['text'] ?? '');
+                $cid = (int) ($row['cid'] ?? 0);
+                $items[] = [
+                    'title' => trim((string) ($row['title'] ?? '')),
+                    'url' => self::postUrl($row),
+                    'excerpt' => self::excerpt($row, $text, 120),
+                    'date' => self::postDate($row, 'Y-m-d'),
+                    'dateIso' => self::postDate($row, 'c'),
+                    'thumb' => self::thumbnail($cid, $text, $siteUrl),
+                    'author' => self::authorName((int) ($row['authorId'] ?? 0)),
+                    'comments' => (int) ($row['commentsNum'] ?? 0),
+                    'readingTime' => self::readingMinutes($text),
+                    'categories' => self::termsOfCid($cid, 'category'),
+                    'tags' => self::termsOfCid($cid, 'tag'),
+                    'views' => $views[$cid] ?? 0,
+                ];
+            }
+
+            return $items;
+        } catch (\Throwable $exception) {
+            error_log('TTDF author post lookup failed: ' . $exception->getMessage());
+
+            return [];
+        }
+    }
+
+    /**
      * @return list<array{label: string, url: string}>
      */
     private static function termsOfCid(int $cid, string $type): array
@@ -2731,6 +3974,33 @@ final class PageData
         };
     }
 
+    private static function fieldString(int $cid, string $name): string
+    {
+        if ($cid <= 0 || $name === '' || !class_exists('Typecho\\Db')) {
+            return '';
+        }
+
+        try {
+            $db = \Typecho\Db::get();
+            $row = $db->fetchRow(
+                $db->select('type', 'str_value', 'int_value', 'float_value')
+                    ->from('table.fields')
+                    ->where('cid = ?', $cid)
+                    ->where('name = ?', $name)
+                    ->limit(1)
+            );
+        } catch (\Throwable) {
+            return '';
+        }
+
+        return is_array($row) ? self::fieldValue($row) : '';
+    }
+
+    private static function fieldInt(int $cid, string $name): int
+    {
+        return max(0, (int) self::fieldString($cid, $name));
+    }
+
     /**
      * List widgets that only select a subset of columns do not expose `text`;
      * reading it must not blow up the whole page.
@@ -2758,6 +4028,7 @@ final class PageData
             $items[] = [
                 'label' => (string) $rows->name,
                 'url' => (string) $rows->permalink,
+                'slug' => (string) $rows->slug,
                 'count' => (int) $rows->count,
             ];
         }
@@ -2818,10 +4089,19 @@ final class PageData
     {
         $cid = (int) ($archive->cid ?? 0);
         $views = self::$postViews > 0 ? self::$postViews : ArticleViews::count($cid);
+        $likes = self::fieldInt($cid, 'likesNum');
+        $timeMode = (string) (Settings::values()['Post_Time_Mode'] ?? 'published');
+        $updated = (int) ($archive->modified ?? 0);
+        $useUpdated = $timeMode === 'updated' && $updated > 0;
+        $updatedDate = $useUpdated ? new Date($updated) : null;
 
         return [
-            'date' => self::capture(static fn () => $archive->date('Y-m-d')),
-            'dateIso' => self::capture(static fn () => $archive->date('c')),
+            'date' => $useUpdated && $updatedDate !== null
+                ? '更新于 ' . $updatedDate->format('Y-m-d')
+                : self::capture(static fn () => $archive->date('Y-m-d')),
+            'dateIso' => $useUpdated && $updatedDate !== null
+                ? $updatedDate->format('c')
+                : self::capture(static fn () => $archive->date('c')),
             'author' => self::capture(static fn () => $archive->author()),
             'commentsText' => self::capture(static fn () => $archive->commentsNum(
                 '暂无评论',
@@ -2831,7 +4111,16 @@ final class PageData
             'categories' => self::categoriesOf($archive),
             'views' => $views,
             'viewsText' => $views > 0 ? (string) $views : '0',
+            'likes' => $likes,
+            'likesText' => $likes > 0 ? (string) $likes : '0',
         ];
+    }
+
+    private static function contentLayout(Archive $archive): string
+    {
+        $layout = self::fieldString((int) ($archive->cid ?? 0), 'Display_Layout');
+
+        return in_array($layout, ['default', 'wide', 'narrow'], true) ? $layout : 'default';
     }
 
     /**
@@ -2878,6 +4167,8 @@ final class PageData
         $data['cid'] = (int) ($archive->cid ?? 0);
         $data['apiUrl'] = rtrim($indexUrl, '/') . '/' . Prefixes::v2() . '/comments';
         $data['apiEnabled'] = ThemeConfig::restEnabled() && ThemeConfig::restV2Enabled();
+        $data['mediaEndpoint'] = rtrim($indexUrl, '/') . '/' . Prefixes::v2() . '/media';
+        $data['mediaEnabled'] = ThemeConfig::restV2Enabled() && UserProfile::canWrite();
         $data['pageSize'] = 20;
         $data['collapsed'] = (Settings::values()['Comments_Collapsed'] ?? true) === true;
 

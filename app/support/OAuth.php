@@ -44,6 +44,10 @@ final class OAuth
 
     public const PENDING_TTL = 900;
 
+    private const RATE_PREFIX = 'oauthr_';
+
+    private const RATE_WINDOW = 1800;
+
     /** @var array<string, string> */
     private const SETTING_PREFIXES = [
         'qq' => 'OAuth_QQ',
@@ -56,6 +60,11 @@ final class OAuth
         'microsoft' => 'OAuth_Microsoft',
         'huawei' => 'OAuth_Huawei',
         'xiaomi' => 'OAuth_Xiaomi',
+        'facebook' => 'OAuth_Facebook',
+        'twitter' => 'OAuth_Twitter',
+        'apple' => 'OAuth_Apple',
+        'douyin' => 'OAuth_Douyin',
+        'wechatmp' => 'OAuth_WeChatMp',
         'blogsclub' => 'OAuth_BlogsClub',
         'moe' => 'OAuth_Moe',
         'caihong' => 'OAuth_CaiHong',
@@ -78,14 +87,20 @@ final class OAuth
      */
     public static function handle(array $params): void
     {
-        if (strtoupper((string) ($_SERVER['REQUEST_METHOD'] ?? 'GET')) !== 'GET') {
+        $method = strtoupper((string) ($_SERVER['REQUEST_METHOD'] ?? 'GET'));
+        $step = (string) ($params['step'] ?? '');
+        if ($step === 'start' && $method !== 'GET') {
             http_response_code(405);
             header('Allow: GET');
             exit;
         }
 
         $provider = (string) ($params['provider'] ?? '');
-        $step = (string) ($params['step'] ?? '');
+        if ($step === 'callback' && !in_array($method, ['GET', 'POST'], true)) {
+            http_response_code(405);
+            header('Allow: GET, POST');
+            exit;
+        }
 
         if ($step === 'start') {
             self::start($provider);
@@ -329,26 +344,38 @@ final class OAuth
 
     private static function callback(string $provider): never
     {
-        if (isset($_GET['error'])) {
+        $source = strtoupper((string) ($_SERVER['REQUEST_METHOD'] ?? 'GET')) === 'POST'
+            ? $_POST
+            : $_GET;
+
+        if (self::rateLimited($provider)) {
+            self::fail('oauth_rate_limited');
+        }
+
+        if (isset($source['error'])) {
+            self::recordRateFailure($provider);
             self::fail('oauth_denied');
         }
 
-        $state = is_string($_GET['state'] ?? null) ? (string) $_GET['state'] : '';
-        $code = is_string($_GET['code'] ?? null) ? (string) $_GET['code'] : '';
+        $state = is_string($source['state'] ?? null) ? (string) $source['state'] : '';
+        $code = is_string($source['code'] ?? null) ? (string) $source['code'] : '';
         $result = self::flow()->callback($provider, $code, $state);
 
         if ($result->status === CallbackResult::BOUND) {
+            self::clearRateFailures($provider);
             self::redirect(
                 self::userUrl('social') . '?oauth=bound&provider=' . rawurlencode($result->provider)
             );
         }
 
         if ($result->status === CallbackResult::LOGIN) {
+            self::clearRateFailures($provider);
             self::login($result->boundUid);
             self::redirect(self::userUrl('profile') . '?oauth=login');
         }
 
         if ($result->status === CallbackResult::UNBOUND) {
+            self::clearRateFailures($provider);
             $identity = $result->identity;
             if ($identity === null) {
                 self::fail('oauth_failed');
@@ -376,6 +403,7 @@ final class OAuth
             self::redirect(self::userUrl('profile') . '?oauth=login');
         }
 
+        self::recordRateFailure($provider);
         self::fail($result->error !== '' ? $result->error : 'oauth_failed');
     }
 
@@ -416,6 +444,8 @@ final class OAuth
                 'scope' => trim((string) ($values[$prefix . '_Scope'] ?? '')),
                 'apiUrl' => $apiUrl,
                 'type' => $registry->variantType($id),
+                'teamId' => trim((string) ($values[$prefix . '_Team_ID'] ?? '')),
+                'keyId' => trim((string) ($values[$prefix . '_Key_ID'] ?? '')),
             ];
         }
 
@@ -890,5 +920,116 @@ final class OAuth
         } catch (\Throwable) {
             return 0;
         }
+    }
+
+    private static function rateLimited(string $provider): bool
+    {
+        $record = self::readRate($provider);
+        $blockedUntil = (int) ($record['blockedUntil'] ?? 0);
+
+        return $blockedUntil > time();
+    }
+
+    private static function recordRateFailure(string $provider): void
+    {
+        $now = time();
+        $record = self::readRate($provider);
+        $lastAt = (int) ($record['lastAt'] ?? 0);
+        $failures = $now > $lastAt + self::RATE_WINDOW
+            ? 0
+            : (int) ($record['failures'] ?? 0);
+        $failures++;
+
+        $blockedUntil = 0;
+        if ($failures >= 10) {
+            $blockedUntil = $now + 180;
+        } elseif ($failures >= 5) {
+            $blockedUntil = $now + 30;
+        }
+
+        self::writeRate($provider, [
+            'failures' => $failures,
+            'lastAt' => $now,
+            'blockedUntil' => $blockedUntil,
+        ], $record !== null);
+    }
+
+    private static function clearRateFailures(string $provider): void
+    {
+        if (self::readRate($provider) === null) {
+            return;
+        }
+
+        self::writeRate($provider, [
+            'failures' => 0,
+            'lastAt' => 0,
+            'blockedUntil' => 0,
+        ], true);
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    private static function readRate(string $provider): ?array
+    {
+        try {
+            $db = Db::get();
+            $row = $db->fetchRow(
+                $db->select('value')
+                    ->from('table.options')
+                    ->where('name = ?', self::rateKey($provider))
+                    ->where('user = ?', 0)
+                    ->limit(1)
+            );
+            if (!is_array($row)) {
+                return null;
+            }
+
+            $decoded = json_decode((string) ($row['value'] ?? ''), true);
+
+            return is_array($decoded) ? $decoded : null;
+        } catch (\Throwable) {
+            return null;
+        }
+    }
+
+    /**
+     * @param array<string, mixed> $record
+     */
+    private static function writeRate(string $provider, array $record, bool $exists): void
+    {
+        try {
+            $db = Db::get();
+            $value = json_encode($record, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+            if (!is_string($value)) {
+                return;
+            }
+
+            if ($exists) {
+                $db->query(
+                    $db->update('table.options')
+                        ->rows(['value' => $value])
+                        ->where('name = ?', self::rateKey($provider))
+                        ->where('user = ?', 0)
+                );
+                return;
+            }
+
+            $db->query($db->insert('table.options')->rows([
+                'name' => self::rateKey($provider),
+                'user' => 0,
+                'value' => $value,
+            ]));
+        } catch (\Throwable) {
+            // Rate limiting must not break the authorization callback.
+        }
+    }
+
+    private static function rateKey(string $provider): string
+    {
+        $ip = (string) ($_SERVER['REMOTE_ADDR'] ?? '');
+        $seed = hash('sha256', 'oauth|' . $provider . '|' . $ip);
+
+        return self::RATE_PREFIX . substr($seed, 0, 20);
     }
 }

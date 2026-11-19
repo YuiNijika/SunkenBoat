@@ -24,6 +24,14 @@ if (!defined('__TYPECHO_ROOT_DIR__')) {
  */
 final class UserProfile
 {
+    private const GROUP_RANK = [
+        'visitor' => 0,
+        'subscriber' => 1,
+        'contributor' => 2,
+        'editor' => 3,
+        'administrator' => 4,
+    ];
+
     public const OPTION_NAME = '_ttdf_user_profile';
 
     private const TEXT_FIELDS = [
@@ -111,7 +119,7 @@ final class UserProfile
         $customAvatar = self::enabled() ? ($extra['avatar'] ?? '') : '';
         unset($extra['avatar']);
 
-        return array_merge([
+        $profile = array_merge([
             'uid' => (int) ($row['uid'] ?? 0),
             'name' => (string) ($row['name'] ?? ''),
             'screenName' => (string) ($row['screenName'] ?? ''),
@@ -125,6 +133,15 @@ final class UserProfile
             'comments' => self::countComments($uid),
             'canWrite' => self::canWriteGroup((string) ($row['group'] ?? '')),
         ], $extra);
+
+        $circles = Forum::userCircleCounts($uid);
+        if ($circles['enabled']) {
+            $profile['circles'] = $circles['joined'] + $circles['created'];
+            $profile['joinedCircles'] = $circles['joined'];
+            $profile['createdCircles'] = $circles['created'];
+        }
+
+        return $profile;
     }
 
     public static function viewerUid(): int
@@ -182,7 +199,7 @@ final class UserProfile
         $customAvatar = $enabled ? (string) ($extra['avatar'] ?? '') : '';
         $created = is_numeric($row['created'] ?? null) ? (int) $row['created'] : 0;
 
-        return [
+        $profile = [
             'uid' => (int) ($row['uid'] ?? 0),
             'name' => (string) ($row['name'] ?? ''),
             'screenName' => (string) ($row['screenName'] ?? ''),
@@ -201,6 +218,15 @@ final class UserProfile
             'gender' => $detailsVisible ? (string) ($extra['gender'] ?? 'secret') : '',
             'location' => $detailsVisible ? (string) ($extra['location'] ?? '') : '',
         ];
+
+        $circles = Forum::userCircleCounts($uid);
+        if ($circles['enabled']) {
+            $profile['circles'] = $circles['joined'] + $circles['created'];
+            $profile['joinedCircles'] = $circles['joined'];
+            $profile['createdCircles'] = $circles['created'];
+        }
+
+        return $profile;
     }
 
     /**
@@ -213,7 +239,12 @@ final class UserProfile
 
     public static function canWriteGroup(string $group): bool
     {
-        return in_array($group, ['administrator', 'editor'], true);
+        $minimum = (string) (Settings::values()['User_Article_Group'] ?? 'editor');
+        if (!isset(self::GROUP_RANK[$minimum])) {
+            $minimum = 'editor';
+        }
+
+        return (self::GROUP_RANK[$group] ?? 0) >= self::GROUP_RANK[$minimum];
     }
 
     /**

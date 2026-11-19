@@ -73,6 +73,7 @@ final class API
                 'posts' => PageData::recentPostsData(),
                 'tags' => PageData::tagsData(),
                 'stats' => PageData::statsData(),
+                'search' => PageData::searchData(),
                 default => null,
             };
         } catch (\Throwable $exception) {

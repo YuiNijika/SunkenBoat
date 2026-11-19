@@ -29,7 +29,7 @@ export default function ActionRail({ colorMode }: Props) {
                 className="rail-btn"
                 aria-label="搜索"
                 title="搜索文章"
-                onClick={openSearch}
+                onClick={() => openSearch()}
             >
                 <Search className="size-4" strokeWidth={1.8} />
             </button>

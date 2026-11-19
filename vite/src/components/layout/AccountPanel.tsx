@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import type { FormEvent, ReactNode } from 'react';
 import { useLocation } from 'react-router-dom';
 import {
+    CircleDot,
     ExternalLink,
     FileText,
     KeyRound,
@@ -84,6 +85,7 @@ const OAUTH_ERRORS: Record<string, string> = {
     oauth_denied: '你取消了社交账号授权。',
     oauth_state: '授权状态已过期，请重新发起登录。',
     oauth_failed: '社交账号授权失败，请稍后重试。',
+    oauth_rate_limited: '授权失败次数过多，请稍后再试。',
     oauth_bound: '该社交账号已绑定到其他用户。',
     oauth_unbound: '该社交账号尚未绑定，请先登录后到用户中心绑定。',
 };
@@ -803,7 +805,7 @@ export default function AccountPanel({ api, section = 'profile' }: Props) {
         });
     }
 
-    if (profile.canWrite) {
+    if (profile.canWrite || api.forum?.canPost || api.forum?.canCreateCircle) {
         navItems.push({
             id: 'content',
             href: pageUrls.content,
@@ -828,7 +830,7 @@ export default function AccountPanel({ api, section = 'profile' }: Props) {
         },
         content: {
             title: '内容管理',
-            description: '在站点前台撰写、保存草稿并发布文章；只有管理员与编辑可以使用。',
+            description: '统一管理文章、论坛帖子、圈子与历史评论，数据会随页面一起加载。',
         },
     };
 
@@ -860,6 +862,15 @@ export default function AccountPanel({ api, section = 'profile' }: Props) {
                                         <MessageSquare className="size-3.5" strokeWidth={1.8} aria-hidden="true" />
                                         评论 {profile.comments ?? 0}
                                     </span>
+                                    {typeof profile.circles === 'number' ? (
+                                        <span
+                                            className="chip"
+                                            title={`加入 ${profile.joinedCircles ?? 0} · 创建 ${profile.createdCircles ?? 0}`}
+                                        >
+                                            <CircleDot className="size-3.5" strokeWidth={1.8} aria-hidden="true" />
+                                            圈子 {profile.circles}
+                                        </span>
+                                    ) : null}
                                 </div>
                                 <p className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-[12px] text-ink-mute">
                                     <span>@{profile.name}</span>

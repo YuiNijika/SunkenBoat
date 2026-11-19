@@ -46,6 +46,10 @@ $documentTitle = $resolvedTitle !== '' && $resolvedTitle !== $siteTitle
 
 $isSingle = is_object($archive) && is_callable([$archive, 'is']) && $archive->is('single');
 $description = $siteDescription !== '' ? $siteDescription : $siteSubtitle;
+$viewDescription = trim((string) ($viewData['description'] ?? ''));
+if ($viewDescription !== '') {
+    $description = $viewDescription;
+}
 if ($isSingle) {
     $excerpt = trim((string) preg_replace(
         '/\s+/u',
@@ -61,11 +65,14 @@ if (is_object($archive) && is_callable([$archive, 'setArchiveDescription'])) {
     $archive->setArchiveDescription($description);
 }
 
-$canonicalUrl = Typecho::siteUrl();
-if (is_object($archive) && is_callable([$archive, 'is']) && $archive->is('single')) {
-    $candidate = trim((string) ($archive->permalink ?? ''));
-    if ($candidate !== '') {
-        $canonicalUrl = $candidate;
+$canonicalUrl = trim((string) ($viewData['canonical'] ?? ''));
+if ($canonicalUrl === '') {
+    $canonicalUrl = Typecho::siteUrl();
+    if (is_object($archive) && is_callable([$archive, 'is']) && $archive->is('single')) {
+        $candidate = trim((string) ($archive->permalink ?? ''));
+        if ($candidate !== '') {
+            $canonicalUrl = $candidate;
+        }
     }
 }
 

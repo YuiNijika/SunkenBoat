@@ -11,6 +11,7 @@ export interface SiteInfo {
     title: string;
     description: string;
     url: string;
+    apiBase: string;
     feedUrl: string;
     logo: string;
     subtitle: string;
@@ -20,6 +21,13 @@ export interface SiteInfo {
     year: number;
     frameworkVersion: string;
     themeVersion: string;
+    translate: {
+        enabled: boolean;
+        script: string;
+        local: string;
+        service: string;
+        languages: Array<{ code: string; label: string }>;
+    };
 }
 
 export interface ThemeOptions {
@@ -37,7 +45,18 @@ export interface ThemeOptions {
     footerShowTags: boolean;
     footerModules: FooterModule[];
     layoutModules: string[];
+    blockAnimations: boolean;
+    blockAnimationEffect: string;
+    shareEnabled: boolean;
+    shareItems: string[];
+    sharePosterBrand: string;
     pageWidth: number;
+}
+
+export interface ShareConfig {
+    enabled: boolean;
+    items: string[];
+    brand: string;
 }
 
 export interface FooterModule {
@@ -67,6 +86,19 @@ export interface OAuthEndpoints {
     nullImage: string;
 }
 
+export interface UserForumEndpoints {
+    enabled: boolean;
+    content: string;
+    moderation: string;
+    nonce: string;
+    home: string;
+    editor: string;
+    canPost: boolean;
+    canCreateCircle: boolean;
+    canModerate: boolean;
+    kinds: ForumTopicKind[];
+}
+
 export interface UserApiEndpoints {
     enabled: boolean;
     session: string;
@@ -74,6 +106,8 @@ export interface UserApiEndpoints {
     register: string;
     registerEnabled: boolean;
     registerVerify: boolean;
+    smsVerify: boolean;
+    smsCode: string;
     emailCode: string;
     resetPassword: string;
     resetEnabled: boolean;
@@ -95,15 +129,32 @@ export interface UserApiEndpoints {
     };
     content: {
         enabled: boolean;
+        permitted: boolean;
         contents: string;
         item: string;
         posts: string;
         categories: string;
         comments: string;
         media: string;
+        batch: string;
     };
+    forum: UserForumEndpoints;
     mailConfigured: boolean;
     oauth: OAuthEndpoints;
+}
+
+export interface UserForumContent {
+    topics: ForumTopic[];
+    circles: {
+        joined: ForumCircle[];
+        created: ForumCircle[];
+    };
+    stats: {
+        topics: number;
+        replies: number;
+        joinedCircles: number;
+        createdCircles: number;
+    };
 }
 
 export interface UserProfile {
@@ -122,6 +173,9 @@ export interface UserProfile {
     location?: string;
     posts?: number;
     comments?: number;
+    circles?: number;
+    joinedCircles?: number;
+    createdCircles?: number;
     canWrite?: boolean;
 }
 
@@ -175,6 +229,7 @@ export interface CategoryItem {
     label: string;
     url: string;
     count: number;
+    slug?: string;
 }
 
 export interface WidgetPost {
@@ -208,8 +263,11 @@ export interface LinkItem {
 
 export interface CommentsData {
     allow: boolean;
+    nullImage: string;
     apiEnabled: boolean;
     apiUrl: string;
+    mediaEnabled: boolean;
+    mediaEndpoint: string;
     cid: number;
     pageSize: number;
     collapsed: boolean;
@@ -276,6 +334,7 @@ export interface PostListBlock extends BlockBase {
     title: string;
     anchor?: string;
     category: string;
+    source: 'articles' | 'forum' | 'mixed';
     limit: number;
     columns: number;
     showPagination: boolean;
@@ -297,6 +356,14 @@ export interface ArchiveHeaderBlock extends BlockBase {
     title: string;
     description: string;
     count: number;
+    searchLabel: string;
+    searchScope: SearchScope | null;
+}
+
+export interface SearchScope {
+    type: 'category' | 'tag';
+    slug: string;
+    label: string;
 }
 
 export interface PostHeaderBlock extends BlockBase {
@@ -309,8 +376,11 @@ export interface PostHeaderBlock extends BlockBase {
         commentsText: string;
         views: number;
         viewsText: string;
+        likes: number;
+        likesText: string;
         categories: PostCategory[];
     };
+    share?: ShareConfig;
 }
 
 export interface PageHeaderBlock extends BlockBase {
@@ -323,6 +393,8 @@ export interface ProseBlock extends BlockBase {
     type: 'prose';
     title: string;
     meta: PostHeaderBlock['meta'] | null;
+    share?: ShareConfig;
+    layout: 'default' | 'wide' | 'narrow' | string;
     html: string;
     toc: boolean;
     tocTitle: string;
@@ -353,6 +425,16 @@ export interface PostNavBlock extends BlockBase {
     type: 'post-nav';
     previousHtml: string;
     nextHtml: string;
+}
+
+export interface BreadcrumbItem {
+    label: string;
+    url?: string;
+}
+
+export interface BreadcrumbsBlock extends BlockBase {
+    type: 'breadcrumbs';
+    items: BreadcrumbItem[];
 }
 
 export interface CommentsBlock extends BlockBase {
@@ -508,6 +590,161 @@ export interface MediaGridBlock extends BlockBase {
     items: MediaGridItem[];
 }
 
+export interface PromoGridItem {
+    title: string;
+    text: string;
+    image: string;
+    url: string;
+    badge: string;
+}
+
+export interface PromoGridBlock extends BlockBase {
+    type: 'promo-grid';
+    title: string;
+    text: string;
+    items: PromoGridItem[];
+}
+
+export interface PostTabsItem {
+    label: string;
+    url: string;
+    posts: PostSummary[];
+}
+
+export interface PostTabsBlock extends BlockBase {
+    type: 'post-tabs';
+    title: string;
+    text: string;
+    columns: number;
+    tabs: PostTabsItem[];
+}
+
+export interface AuthorGridItem {
+    name: string;
+    avatar: string;
+    bio: string;
+    url: string;
+    badge: string;
+    posts: number;
+    comments: number;
+}
+
+export interface AuthorGridBlock extends BlockBase {
+    type: 'author-grid';
+    title: string;
+    text: string;
+    columns: number;
+    items: AuthorGridItem[];
+}
+
+export interface ProductGridItem {
+    title: string;
+    text: string;
+    image: string;
+    price: string;
+    originalPrice: string;
+    badge: string;
+    url: string;
+}
+
+export interface ProductGridBlock extends BlockBase {
+    type: 'product-grid';
+    title: string;
+    text: string;
+    columns: number;
+    items: ProductGridItem[];
+}
+
+export interface LogoCloudItem {
+    name: string;
+    image: string;
+    url: string;
+}
+
+export interface LogoCloudBlock extends BlockBase {
+    type: 'logo-cloud';
+    title: string;
+    text: string;
+    columns: number;
+    items: LogoCloudItem[];
+}
+
+export interface HeadingBlock extends BlockBase {
+    type: 'heading';
+    eyebrow: string;
+    title: string;
+    text: string;
+}
+
+export interface ButtonGroupItem {
+    label: string;
+    url: string;
+    style: string;
+    icon: string;
+}
+
+export interface ButtonGroupBlock extends BlockBase {
+    type: 'button-group';
+    title: string;
+    text: string;
+    items: ButtonGroupItem[];
+}
+
+export interface InfoCardItem {
+    icon: string;
+    title: string;
+    tag: string;
+    text: string;
+    url: string;
+}
+
+export interface InfoCardsBlock extends BlockBase {
+    type: 'info-cards';
+    title: string;
+    text: string;
+    columns: number;
+    items: InfoCardItem[];
+}
+
+export interface PartnerScrollBlock extends BlockBase {
+    type: 'partner-scroll';
+    title: string;
+    text: string;
+    columns: number;
+    speed: number;
+    items: LogoCloudItem[];
+}
+
+export interface MediaSplitItem {
+    kind: 'image' | 'video';
+    title: string;
+    text: string;
+    media: string;
+    poster: string;
+    url: string;
+}
+
+export interface MediaSplitBlock extends BlockBase {
+    type: 'media-split';
+    title: string;
+    text: string;
+    kind: 'image' | 'video' | 'slides';
+    media: string;
+    poster: string;
+    slides: CarouselSlide[];
+    columns: number;
+    items: MediaSplitItem[];
+}
+
+export interface PostAuthorBlock extends BlockBase {
+    type: 'post-author';
+    title: string;
+    showAuthor: boolean;
+    showPosts: boolean;
+    author: AuthorGridItem;
+    posts: PostSummary[];
+}
+
 export interface PricingPlan {
     name: string;
     price: string;
@@ -536,6 +773,9 @@ export interface UserSpaceProfile {
     created: string;
     posts: number;
     comments: number;
+    circles?: number;
+    joinedCircles?: number;
+    createdCircles?: number;
     canWrite: boolean;
     isSelf: boolean;
     privacy: string;
@@ -546,9 +786,378 @@ export interface UserSpaceProfile {
     editUrl?: string;
 }
 
+export interface UserSpaceComment {
+    coid: number;
+    postTitle: string;
+    postUrl: string;
+    url: string;
+    excerpt: string;
+    date: string;
+    dateIso: string;
+}
+
 export interface UserSpaceBlock extends BlockBase {
     type: 'user-space';
     profile: UserSpaceProfile;
+    posts: PostSummary[];
+    comments: UserSpaceComment[];
+    circles: {
+        joined: ForumCircle[];
+        created: ForumCircle[];
+    };
+}
+
+export interface ForumViewer {
+    uid: number;
+    loggedIn: boolean;
+    name: string;
+    screenName: string;
+    avatar: string;
+    group: string;
+    groupLabel: string;
+    url?: string;
+}
+
+export interface ForumPermissions {
+    createCircle: boolean;
+    createTopic: boolean;
+    reply: boolean;
+    join: boolean;
+    react: boolean;
+    moderate: boolean;
+}
+
+export interface ForumEndpoints {
+    circleCreate: string;
+    topicCreate: string;
+    replyCreate: string;
+    join: string;
+    react: string;
+    rate: string;
+}
+
+export interface ForumTopicKind {
+    value: string;
+    label: string;
+}
+
+export interface ForumQuickReply {
+    enabled: boolean;
+    items: string[];
+}
+
+export interface ForumCreateCopy {
+    title: string;
+    text: string;
+    hint: string;
+    action: string;
+}
+
+export interface ForumConfig {
+    title: string;
+    displayName: string;
+    description: string;
+    notice: string;
+    copy: {
+        create: ForumCreateCopy;
+    };
+    share: ShareConfig;
+    followLabel: string;
+    joinToView: boolean;
+    joinToPost: boolean;
+    quickPost: boolean;
+    urlMode: 'slug' | 'id';
+    homeUrl: string;
+    editorUrl: string;
+    nonce: string;
+    endpoints: ForumEndpoints;
+    viewer: ForumViewer;
+    permissions: ForumPermissions;
+    topicKinds: ForumTopicKind[];
+    quickReply: ForumQuickReply;
+    canUseMedia: boolean;
+    mediaEndpoint: string;
+    nullImage: string;
+    reportEmail: string;
+    postPerPage: number;
+}
+
+export interface ForumCircle {
+    id: number;
+    name: string;
+    slug: string;
+    description: string;
+    icon: string;
+    url: string;
+    topicCount: number;
+    memberCount: number;
+    ownerId: number;
+    joined: boolean;
+}
+
+export interface ForumCircleRef {
+    id: number;
+    name: string;
+    slug: string;
+    url: string;
+}
+
+export interface ForumTopic {
+    id: number;
+    slug: string;
+    title: string;
+    status: 'publish' | 'waiting' | 'rejected' | string;
+    url: string;
+    excerpt: string;
+    thumbnail: string;
+    kind: string;
+    kindLabel: string;
+    tags: string[];
+    pinned: boolean;
+    featured: boolean;
+    views: number;
+    likes: number;
+    favorites: number;
+    comments: number;
+    ratingScore: number;
+    ratingAverage: number;
+    ratingCount: number;
+    ratingMine: number;
+    ratingUsers?: ForumRater[];
+    created: number;
+    createdText: string;
+    lastReplyText: string;
+    circle: ForumCircleRef | null;
+    author: ForumViewer;
+    liked: boolean;
+    favorited: boolean;
+}
+
+export interface ForumRater {
+    uid: number;
+    name: string;
+    screenName: string;
+    avatar: string;
+    url: string;
+    value: number;
+}
+
+export interface ForumReply {
+    id: number;
+    parentId: number;
+    contentHtml: string;
+    created: number;
+    createdText: string;
+    author: ForumViewer;
+    children: ForumReply[];
+}
+
+export interface ForumPager {
+    page: number;
+    perPage: number;
+    total: number;
+    hasMore: boolean;
+    nextUrl: string;
+}
+
+export interface ForumStats {
+    circles: number;
+    topics: number;
+    replies: number;
+    members: number;
+    todayTopics: number;
+}
+
+export interface ForumAuthorRank {
+    user: ForumViewer;
+    topics: number;
+}
+
+export interface ForumHomeBlock extends BlockBase {
+    type: 'forum-home';
+    forum: ForumConfig;
+    circles: ForumCircle[];
+    topics: ForumTopic[];
+    pager: ForumPager;
+    hotCircles: ForumCircle[];
+    hotTopics: ForumTopic[];
+    stats: ForumStats;
+    authors: ForumAuthorRank[];
+}
+
+export interface ForumCircleBlock extends BlockBase {
+    type: 'forum-circle';
+    forum: ForumConfig;
+    circle: ForumCircle;
+    topics: ForumTopic[];
+    pager: ForumPager;
+    hotCircles: ForumCircle[];
+    hotTopics: ForumTopic[];
+    stats: ForumStats;
+}
+
+export interface ForumTopicBlock extends BlockBase {
+    type: 'forum-topic';
+    forum: ForumConfig;
+    topic: ForumTopic;
+    breadcrumbs: BreadcrumbItem[];
+    contentHtml: string;
+    replies: ForumReply[];
+    replyCount: number;
+    showAuthor: boolean;
+    showAuthorTopics: boolean;
+    authorTopics: ForumTopic[];
+    hotCircles: ForumCircle[];
+    hotTopics: ForumTopic[];
+}
+
+export interface ForumHomeHeaderBlock extends BlockBase {
+    type: 'forum-home-header';
+    title: string;
+    showStats: boolean;
+    showCreate: boolean;
+    forum: ForumConfig;
+    stats: ForumStats;
+}
+
+export interface ForumCircleGridBlock extends BlockBase {
+    type: 'forum-circle-grid';
+    title: string;
+    limit: number;
+    circles: ForumCircle[];
+}
+
+export interface ForumTopicListBlock extends BlockBase {
+    type: 'forum-topic-list';
+    title: string;
+    emptyTitle: string;
+    emptyText: string;
+    showFilters: boolean;
+    showSearch: boolean;
+    limit: number;
+    forum: ForumConfig;
+    circle: ForumCircle | null;
+    circles: ForumCircle[];
+    topics: ForumTopic[];
+    pager: ForumPager;
+    stats: ForumStats;
+}
+
+export interface ForumCreateBlock extends BlockBase {
+    type: 'forum-create';
+    title: string;
+    text: string;
+    forum: ForumConfig;
+}
+
+export interface ForumCircleListBlock extends BlockBase {
+    type: 'forum-circle-list';
+    title: string;
+    limit: number;
+    circles: ForumCircle[];
+}
+
+export interface ForumNoticeBlock extends BlockBase {
+    type: 'forum-notice';
+    title: string;
+    forum: ForumConfig;
+}
+
+export interface ForumAuthorsBlock extends BlockBase {
+    type: 'forum-authors';
+    title: string;
+    limit: number;
+    authors: ForumAuthorRank[];
+}
+
+export interface ForumCircleInfoBlock extends BlockBase {
+    type: 'forum-circle-info';
+    title: string;
+    forum: ForumConfig;
+    circle: ForumCircle;
+}
+
+export interface ForumJoinGateBlock extends BlockBase {
+    type: 'forum-join-gate';
+    variant: 'view' | 'post';
+    forum: ForumConfig;
+    circle: ForumCircle;
+    title: string;
+    text: string;
+}
+
+export interface ForumCircleHeroBlock extends BlockBase {
+    type: 'forum-circle-hero';
+    forum: ForumConfig;
+    circle: ForumCircle;
+    pager: ForumPager;
+}
+
+export interface ForumStatsBlock extends BlockBase {
+    type: 'forum-stats';
+    title: string;
+    showCircle: boolean;
+    stats: ForumStats;
+    circle: ForumCircle | null;
+}
+
+export interface ForumHotCirclesBlock extends BlockBase {
+    type: 'forum-hot-circles';
+    title: string;
+    limit: number;
+    circles: ForumCircle[];
+}
+
+export interface ForumHotTopicsBlock extends BlockBase {
+    type: 'forum-hot-topics';
+    title: string;
+    limit: number;
+    topics: ForumTopic[];
+}
+
+export interface ForumLayout {
+    left: Block[];
+    right: Block[];
+}
+
+export interface ForumEditorCircle {
+    id: number;
+    name: string;
+    slug: string;
+    url: string;
+    icon: string;
+    description: string;
+}
+
+export interface ForumEditorGate {
+    type: 'login' | 'denied' | 'no-circle';
+    title: string;
+    text: string;
+}
+
+export interface ForumEditorData {
+    gate: ForumEditorGate | null;
+    circle: ForumEditorCircle | null;
+    circles: ForumEditorCircle[];
+    topicKinds: ForumTopicKind[];
+    tagSuggestions: string[];
+    showTagInput: boolean;
+    requiresReview: boolean;
+    displayName: string;
+    maxLength: number;
+    maxTitleLength: number;
+    maxSlugLength: number;
+    nonce: string;
+    homeUrl: string;
+    contentUrl: string;
+    canCreateCircle: boolean;
+    viewer: ForumViewer;
+    permissions: ForumPermissions;
+    canUseMedia: boolean;
+    mediaEndpoint: string;
+    endpoints: {
+        topicCreate: string;
+    };
 }
 
 export type Block =
@@ -560,6 +1169,7 @@ export type Block =
     | PostHeaderBlock
     | PageHeaderBlock
     | ProseBlock
+    | BreadcrumbsBlock
     | TagsBlock
     | PostNavBlock
     | CommentsBlock
@@ -578,8 +1188,35 @@ export type Block =
     | GalleryBlock
     | TableBlock
     | MediaGridBlock
+    | PromoGridBlock
+    | PostTabsBlock
+    | AuthorGridBlock
+    | ProductGridBlock
+    | LogoCloudBlock
+    | HeadingBlock
+    | ButtonGroupBlock
+    | InfoCardsBlock
+    | PartnerScrollBlock
+    | MediaSplitBlock
+    | PostAuthorBlock
     | PricingBlock
     | UserSpaceBlock
+    | ForumHomeBlock
+    | ForumCircleBlock
+    | ForumTopicBlock
+    | ForumHomeHeaderBlock
+    | ForumCircleGridBlock
+    | ForumTopicListBlock
+    | ForumCreateBlock
+    | ForumCircleListBlock
+    | ForumNoticeBlock
+    | ForumAuthorsBlock
+    | ForumCircleInfoBlock
+    | ForumJoinGateBlock
+    | ForumCircleHeroBlock
+    | ForumStatsBlock
+    | ForumHotCirclesBlock
+    | ForumHotTopicsBlock
     | AuthorCardBlock
     | SubscribeBlock
     | DividerBlock
@@ -595,9 +1232,15 @@ export interface PageData {
         | 'custom'
         | 'account'
         | 'editor'
-        | 'user-space';
+        | 'user-space'
+        | 'forum-home'
+        | 'forum-circle'
+        | 'forum-topic';
     userSection?: 'profile' | 'security' | 'social' | 'content';
     userMode?: 'list' | 'editor';
+    editorMode?: 'article' | 'forum-topic';
+    forumEditor?: ForumEditorData;
+    forumLayout?: ForumLayout;
     site: SiteInfo;
     theme: ThemeOptions;
     api?: ApiEndpoints;
@@ -606,6 +1249,8 @@ export interface PageData {
     allowComment?: boolean;
     title?: string;
     documentTitle?: string;
+    canonical?: string;
+    description?: string;
     fields?: ArticleField[];
 }
 

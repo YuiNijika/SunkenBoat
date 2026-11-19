@@ -15,6 +15,7 @@ import {
     profileFrom,
     readPayload,
     requestEmailCode,
+    requestSmsCode,
 } from '../../lib/user';
 import type { UserApiEndpoints, UserProfile } from '../../types';
 
@@ -45,6 +46,10 @@ export default function AuthDialog({
     const [submitting, setSubmitting] = useState(false);
     const [sendingCode, setSendingCode] = useState(false);
     const [cooldown, setCooldown] = useState(0);
+    const [phone, setPhone] = useState('');
+    const [phoneCode, setPhoneCode] = useState('');
+    const [sendingSms, setSendingSms] = useState(false);
+    const [smsCooldown, setSmsCooldown] = useState(0);
     const [error, setError] = useState('');
     const [notice, setNotice] = useState('');
 
@@ -57,12 +62,15 @@ export default function AuthDialog({
         setName('');
         setMail('');
         setCode('');
+        setPhone('');
+        setPhoneCode('');
         setPassword('');
         setConfirm('');
         setRemember(false);
         setError('');
         setNotice('');
         setCooldown(0);
+        setSmsCooldown(0);
     }, [open]);
 
     useEffect(() => {
@@ -76,6 +84,18 @@ export default function AuthDialog({
 
         return () => window.clearTimeout(timer);
     }, [cooldown]);
+
+    useEffect(() => {
+        if (smsCooldown <= 0) {
+            return;
+        }
+
+        const timer = window.setTimeout(() => {
+            setSmsCooldown((seconds) => Math.max(0, seconds - 1));
+        }, 1000);
+
+        return () => window.clearTimeout(timer);
+    }, [smsCooldown]);
 
     useEffect(() => {
         if (!api.registerEnabled && mode === 'register') {
@@ -96,6 +116,7 @@ export default function AuthDialog({
         setPassword('');
         setConfirm('');
         setCode('');
+        setPhoneCode('');
         setMode((current) => (current === 'login' ? 'register' : 'login'));
     };
 
@@ -104,6 +125,7 @@ export default function AuthDialog({
         setPassword('');
         setConfirm('');
         setCode('');
+        setPhoneCode('');
         setMode('reset');
     };
 
@@ -112,6 +134,7 @@ export default function AuthDialog({
         setPassword('');
         setConfirm('');
         setCode('');
+        setPhoneCode('');
         setMode('login');
     };
 
@@ -144,6 +167,30 @@ export default function AuthDialog({
         }
     };
 
+    const sendSmsCode = async () => {
+        if (sendingSms || smsCooldown > 0) {
+            return;
+        }
+        if (phone.trim() === '') {
+            setError('请先填写手机号');
+            return;
+        }
+
+        setSendingSms(true);
+        setError('');
+        setNotice('');
+
+        try {
+            const result = await requestSmsCode(api.smsCode, phone);
+            setSmsCooldown(result.cooldown);
+            setNotice(`短信验证码已发送，${Math.max(1, Math.ceil(result.expiresIn / 60))} 分钟内有效。`);
+        } catch (reason) {
+            setError(reason instanceof Error ? reason.message : '短信验证码发送失败，请稍后再试');
+        } finally {
+            setSendingSms(false);
+        }
+    };
+
     const submit = async (event: FormEvent<HTMLFormElement>) => {
         event.preventDefault();
         if (submitting || checking) {
@@ -162,6 +209,12 @@ export default function AuthDialog({
                 if (api.registerVerify && code.trim() === '') {
                     throw new Error('请输入邮箱验证码');
                 }
+                if (api.smsVerify && phone.trim() === '') {
+                    throw new Error('请输入手机号');
+                }
+                if (api.smsVerify && phoneCode.trim() === '') {
+                    throw new Error('请输入短信验证码');
+                }
 
                 const response = await fetch(api.register, {
                     method: 'POST',
@@ -175,6 +228,9 @@ export default function AuthDialog({
                         mail: mail.trim(),
                         password,
                         ...(api.registerVerify ? { code: code.trim() } : {}),
+                        ...(api.smsVerify
+                            ? { phone: phone.trim(), phoneCode: phoneCode.trim() }
+                            : {}),
                     }),
                 });
                 const payload = await readPayload(response);
@@ -343,6 +399,53 @@ export default function AuthDialog({
                                         required
                                     />
                                 </label>
+                            ) : null}
+
+                            {mode === 'register' && api.smsVerify ? (
+                                <label className="grid gap-1.5">
+                                    <span className="text-[12px] font-medium text-ink-soft">手机号</span>
+                                    <Input
+                                        className="h-10"
+                                        type="tel"
+                                        value={phone}
+                                        onChange={(event) => setPhone(event.target.value)}
+                                        autoComplete="tel"
+                                        maxLength={24}
+                                        placeholder="+86 13800000000"
+                                        required
+                                    />
+                                </label>
+                            ) : null}
+
+                            {mode === 'register' && api.smsVerify ? (
+                                <div className="grid gap-1.5">
+                                    <span className="text-[12px] font-medium text-ink-soft">短信验证码</span>
+                                    <div className="flex gap-2">
+                                        <Input
+                                            className="h-10 min-w-0 flex-1"
+                                            value={phoneCode}
+                                            onChange={(event) => setPhoneCode(event.target.value)}
+                                            inputMode="numeric"
+                                            pattern="[0-9]*"
+                                            maxLength={6}
+                                            autoComplete="one-time-code"
+                                            required
+                                        />
+                                        <Button
+                                            type="button"
+                                            variant="outline"
+                                            className="h-10 shrink-0 px-3 text-[12px]"
+                                            disabled={sendingSms || smsCooldown > 0 || phone.trim() === ''}
+                                            onClick={() => void sendSmsCode()}
+                                        >
+                                            {smsCooldown > 0
+                                                ? `${smsCooldown}s 后重发`
+                                                : sendingSms
+                                                  ? '发送中…'
+                                                  : '发送短信'}
+                                        </Button>
+                                    </div>
+                                </div>
                             ) : null}
 
                             {mode === 'register' && api.registerVerify ? (

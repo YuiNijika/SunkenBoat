@@ -1,9 +1,10 @@
-import { Fragment, useMemo } from 'react';
+import { Fragment, useEffect, useMemo } from 'react';
 import type { CSSProperties, ReactNode } from 'react';
 import BlockRenderer from './components/blocks/BlockRenderer';
 import AccountPanel from './components/layout/AccountPanel';
 import ActionRail from './components/layout/ActionRail';
 import EditorWorkspace from './components/layout/EditorWorkspace';
+import ForumTopicEditor from './components/layout/ForumTopicEditor';
 import ReadingProgress from './components/layout/ReadingProgress';
 import SiteFooter from './components/layout/SiteFooter';
 import SiteHeader from './components/layout/SiteHeader';
@@ -70,6 +71,47 @@ interface Props {
     data: PageData;
 }
 
+function useBlockEntrance(enabled: boolean, effect: string) {
+    useEffect(() => {
+        if (!enabled || typeof IntersectionObserver === 'undefined') {
+            return;
+        }
+
+        if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+            return;
+        }
+
+        const safeEffect = ['fade-up', 'fade', 'zoom', 'slide-left', 'slide-right'].includes(effect)
+            ? effect
+            : 'fade-up';
+        const nodes = Array.from(document.querySelectorAll<HTMLElement>('[data-block]'));
+        if (nodes.length === 0) {
+            return;
+        }
+
+        const observer = new IntersectionObserver(
+            (entries) => {
+                entries.forEach((entry) => {
+                    if (!entry.isIntersecting) {
+                        return;
+                    }
+
+                    entry.target.classList.add('is-visible');
+                    observer.unobserve(entry.target);
+                });
+            },
+            { threshold: 0.08, rootMargin: '0px 0px -40px 0px' }
+        );
+
+        nodes.forEach((node) => {
+            node.classList.add('block-animate', `block-animate-${safeEffect}`);
+            observer.observe(node);
+        });
+
+        return () => observer.disconnect();
+    }, [enabled, effect]);
+}
+
 export default function App({ data }: Props) {
     const pageWidth = Number.isFinite(data.theme.pageWidth) ? data.theme.pageWidth : 1300;
     const appStyle = { '--page-max': `${pageWidth}px` } as CSSProperties;
@@ -101,7 +143,9 @@ function EditorApp({ data, appStyle }: { data: PageData; appStyle: CSSProperties
             />
             <main id="main" className="flex-1 focus:outline-none" tabIndex={-1}>
                 <div className="editor-root">
-                    {userApi ? (
+                    {data.editorMode === 'forum-topic' && data.forumEditor ? (
+                        <ForumTopicEditor data={data} />
+                    ) : userApi ? (
                         <EditorWorkspace api={userApi} cid={cid} fields={data.fields ?? []} />
                     ) : (
                         <div className="editor-gate">
@@ -125,6 +169,7 @@ function EditorApp({ data, appStyle }: { data: PageData; appStyle: CSSProperties
 
 function SiteApp({ data, appStyle }: { data: PageData; appStyle: CSSProperties }) {
     const { site: sidebarSite, widgets } = useSidebarData(data);
+    useBlockEntrance(data.theme.blockAnimations, data.theme.blockAnimationEffect);
     const showProgress =
         data.theme.showReadingProgress && (data.kind === 'post' || data.kind === 'page');
     const prose = data.blocks.find((block): block is ProseBlock => block.type === 'prose');
@@ -136,8 +181,20 @@ function SiteApp({ data, appStyle }: { data: PageData; appStyle: CSSProperties }
     const sidebarPages = Array.isArray(data.theme.sidebarPages)
         ? data.theme.sidebarPages
         : ['home', 'archive', 'post', 'page'];
+    const forumLeft = data.forumLayout?.left ?? [];
+    const forumRight = data.forumLayout?.right ?? [];
+    const hasForumLayout = forumLeft.length > 0 || forumRight.length > 0;
+    const forumColumns =
+        forumLeft.length > 0 && forumRight.length > 0
+            ? 'lg:grid-cols-[230px_minmax(0,1fr)_270px]'
+            : forumLeft.length > 0
+              ? 'lg:grid-cols-[230px_minmax(0,1fr)]'
+              : forumRight.length > 0
+                ? 'lg:grid-cols-[minmax(0,1fr)_270px]'
+                : '';
     const twoColumn =
         data.kind !== 'account' &&
+        !hasForumLayout &&
         data.theme.showSidebar &&
         sidebarPages.includes(data.kind);
     const sidebarFirst = data.theme.sidebarPosition === 'left';
@@ -194,7 +251,32 @@ function SiteApp({ data, appStyle }: { data: PageData; appStyle: CSSProperties }
                         'container-page pb-5 ' + (wideBlocks.length > 0 ? 'pt-0' : 'pt-[15px]')
                     }
                 >
-                    {twoColumn ? (
+                    {hasForumLayout ? (
+                        <div className={'grid grid-cols-[minmax(0,1fr)] gap-[15px] ' + forumColumns}>
+                            {forumLeft.length > 0 ? (
+                                <aside
+                                    className="order-2 grid content-start gap-[15px] lg:sticky lg:top-[88px] lg:order-1 lg:self-start"
+                                    data-forum-slot="left"
+                                >
+                                    {forumLeft.map(renderBlock)}
+                                </aside>
+                            ) : null}
+                            <div
+                                className="order-1 grid min-w-0 content-start gap-[15px] lg:order-2"
+                                data-forum-slot="main"
+                            >
+                                {contentBlocks.map(renderBlock)}
+                            </div>
+                            {forumRight.length > 0 ? (
+                                <aside
+                                    className="order-3 grid content-start gap-[15px] lg:sticky lg:top-[88px] lg:self-start"
+                                    data-forum-slot="right"
+                                >
+                                    {forumRight.map(renderBlock)}
+                                </aside>
+                            ) : null}
+                        </div>
+                    ) : twoColumn ? (
                         <div className="grid grid-cols-[minmax(0,1fr)] gap-[15px]">
                             <div
                                 className={
@@ -261,7 +343,10 @@ function SiteApp({ data, appStyle }: { data: PageData; appStyle: CSSProperties }
                 showTags={data.theme.footerShowTags}
             />
         ),
-        'action-rail': <ActionRail colorMode={data.theme.colorMode} />,
+        'action-rail':
+            ['forum-home', 'forum-circle', 'forum-topic'].includes(data.kind) ? null : (
+                <ActionRail colorMode={data.theme.colorMode} />
+            ),
     };
 
     return (

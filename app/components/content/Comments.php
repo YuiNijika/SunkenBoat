@@ -115,6 +115,7 @@ $commentUrl = (string) $archive->commentUrl;
 
 $payload = [
     'allow' => (bool) $archive->allow('comment'),
+    'nullImage' => \TTDF\Theme\Assets::url('img/null.svg'),
     'countText' => $countText,
     'listHtml' => $listHtml,
     'paginationHtml' => $paginationHtml,

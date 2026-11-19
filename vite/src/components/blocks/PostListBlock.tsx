@@ -2,6 +2,7 @@ import { CalendarDays, Eye, MessageCircle } from 'lucide-react';
 import Pagination from '../content/Pagination';
 import PostCard from '../content/PostCard';
 import SectionHeading from '../content/SectionHeading';
+import type { CSSProperties } from 'react';
 import type { PostSummary } from '../../types';
 
 interface Props {
@@ -197,6 +198,23 @@ export default function PostListBlock({
                 <div className="post-compact-layout">
                     {items.map((post) => (
                         <CompactRow key={post.url} post={post} />
+                    ))}
+                </div>
+            );
+        }
+
+        if (mode === 'masonry') {
+            return (
+                <div
+                    className="post-masonry-layout"
+                    style={
+                        columns >= 2 && columns <= 4
+                            ? ({ '--masonry-cols': columns } as CSSProperties)
+                            : undefined
+                    }
+                >
+                    {items.map((post) => (
+                        <PostCard key={post.url} post={post} variant="grid" />
                     ))}
                 </div>
             );

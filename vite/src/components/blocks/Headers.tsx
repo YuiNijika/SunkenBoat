@@ -1,15 +1,27 @@
+import { Search } from 'lucide-react';
 import PostMeta from '../content/PostMeta';
+import { ShareButton } from '../content/ShareSheet';
 import { Badge } from '../ui/badge';
+import { Button } from '../ui/button';
 import { Card } from '../ui/card';
-import type { PostCategory } from '../../types';
+import { openSearch } from '../../lib/search';
+import type { PostCategory, SearchScope, ShareConfig } from '../../types';
 
 interface ArchiveHeaderProps {
     title: string;
     description: string;
     count: number;
+    searchLabel: string;
+    searchScope: SearchScope | null;
 }
 
-export function ArchiveHeaderBlock({ title, description, count }: ArchiveHeaderProps) {
+export function ArchiveHeaderBlock({
+    title,
+    description,
+    count,
+    searchLabel,
+    searchScope,
+}: ArchiveHeaderProps) {
     return (
         <Card className="surface-card gap-0 p-5">
             <div className="flex flex-wrap items-end justify-between gap-5">
@@ -23,12 +35,26 @@ export function ArchiveHeaderBlock({ title, description, count }: ArchiveHeaderP
                     ) : null}
                 </div>
 
-                {count > 0 ? (
-                    <div className="rounded-[4px] bg-[rgba(136,136,136,0.1)] px-[9px] py-[4.5px] text-right">
-                        <p className="text-[15px] font-medium leading-[1.44] text-ink">{count}</p>
-                        <p className="text-[11px] leading-[1.44] text-ink-faint">篇文章</p>
-                    </div>
-                ) : null}
+                <div className="flex items-center gap-2">
+                    {searchScope !== null && searchScope.slug !== '' ? (
+                        <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            className="h-8 rounded-[4px]"
+                            onClick={() => openSearch(searchScope)}
+                        >
+                            <Search className="size-3.5" strokeWidth={1.8} aria-hidden="true" />
+                            {searchLabel || '搜索当前分类'}
+                        </Button>
+                    ) : null}
+                    {count > 0 ? (
+                        <div className="rounded-[4px] bg-[rgba(136,136,136,0.1)] px-[9px] py-[4.5px] text-right">
+                            <p className="text-[15px] font-medium leading-[1.44] text-ink">{count}</p>
+                            <p className="text-[11px] leading-[1.44] text-ink-faint">篇文章</p>
+                        </div>
+                    ) : null}
+                </div>
             </div>
         </Card>
     );
@@ -36,6 +62,7 @@ export function ArchiveHeaderBlock({ title, description, count }: ArchiveHeaderP
 
 interface PostHeaderProps {
     title: string;
+    share?: ShareConfig;
     meta: {
         date: string;
         dateIso: string;
@@ -43,11 +70,13 @@ interface PostHeaderProps {
         commentsText: string;
         views: number;
         viewsText: string;
+        likes: number;
+        likesText: string;
         categories: PostCategory[];
     };
 }
 
-export function PostHeaderBlock({ title, meta }: PostHeaderProps) {
+export function PostHeaderBlock({ title, meta, share }: PostHeaderProps) {
     return (
         <Card className="surface-card gap-0 p-5">
             <Badge
@@ -59,16 +88,21 @@ export function PostHeaderBlock({ title, meta }: PostHeaderProps) {
             <h1 className="mt-3 text-[24px] font-medium leading-[1.4] text-ink sm:text-[28px]">
                 {title}
             </h1>
-            <div className="mt-3 border-t border-line pt-3">
-                <PostMeta
-                    date={meta.date}
-                    dateIso={meta.dateIso}
-                    author={meta.author}
-                    commentsText={meta.commentsText}
-                    views={meta.views}
-                    viewsText={meta.viewsText}
-                    categories={meta.categories}
-                />
+            <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-line pt-3">
+                <div className="min-w-0">
+                    <PostMeta
+                        date={meta.date}
+                        dateIso={meta.dateIso}
+                        author={meta.author}
+                        commentsText={meta.commentsText}
+                        views={meta.views}
+                        viewsText={meta.viewsText}
+                        likes={meta.likes}
+                        likesText={meta.likesText}
+                        categories={meta.categories}
+                    />
+                </div>
+                <ShareButton config={share} title={title} />
             </div>
         </Card>
     );

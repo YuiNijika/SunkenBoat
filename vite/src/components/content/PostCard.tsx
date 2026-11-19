@@ -115,14 +115,14 @@ export default function PostCard({ post, variant }: Props) {
                 <div className="flex flex-1 flex-col px-2.5 pt-2.5 pb-1">
                     <Badges post={post} compact />
 
-                    <h2 className="line-clamp-2 text-[14px] font-medium leading-[1.4] text-ink">
+                    <h2 className="line-clamp-1 text-[14px] font-medium leading-[1.4] text-ink">
                         <a className="transition-colors hover:text-brand" href={post.url}>
                             {post.title}
                         </a>
                     </h2>
 
                     {post.excerpt ? (
-                        <p className="mt-1.5 line-clamp-2 text-[14px] leading-5 text-ink-mute">{post.excerpt}</p>
+                        <p className="mt-1.5 line-clamp-1 text-[14px] leading-5 text-ink-mute">{post.excerpt}</p>
                     ) : null}
 
                     <Metrics post={post} compact />
@@ -140,7 +140,7 @@ export default function PostCard({ post, variant }: Props) {
             <div className={'flex min-w-0 flex-1 flex-col ' + (hasThumb ? 'sm:ml-5' : '')}>
                 <Badges post={post} />
 
-                <h2 className="mb-[5px] line-clamp-2 text-[18px] font-medium leading-[1.4] text-ink">
+                <h2 className="mb-[5px] line-clamp-1 text-[18px] font-medium leading-[1.4] text-ink">
                     <a className="transition-colors hover:text-brand" href={post.url}>
                         {post.title}
                     </a>

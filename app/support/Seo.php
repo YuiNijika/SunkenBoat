@@ -115,8 +115,114 @@ final class Seo
             'search' => self::search($block, $site),
             'cta' => self::cta($block),
             'link-list' => self::linkList($block['title'] ?? '', self::items($block['items'] ?? [], 'label', true)),
+            'forum-home' => self::forumHome($block),
+            'forum-circle' => self::forumCircle($block),
+            'forum-topic' => self::forumTopic($block),
             default => '',
         };
+    }
+
+    /**
+     * @param array<string, mixed> $block
+     */
+    private static function forumHome(array $block): string
+    {
+        $forum = is_array($block['forum'] ?? null) ? $block['forum'] : [];
+        $html = self::heading($forum['title'] ?? '', $forum['description'] ?? '', 1);
+        $circles = is_array($block['circles'] ?? null) ? $block['circles'] : [];
+        $topics = is_array($block['topics'] ?? null) ? $block['topics'] : [];
+
+        if ($circles !== []) {
+            $html .= self::heading('圈子', '', 2) . '<ul>';
+            foreach (array_slice($circles, 0, 12) as $circle) {
+                if (is_array($circle)) {
+                    $html .= '<li><a href="' . Escaper::url(self::str($circle['url'] ?? '')) . '">'
+                        . Escaper::html(self::str($circle['name'] ?? '')) . '</a></li>';
+                }
+            }
+            $html .= '</ul>' . PHP_EOL;
+        }
+
+        return $html . self::forumTopics('最新帖子', $topics);
+    }
+
+    /**
+     * @param array<string, mixed> $block
+     */
+    private static function forumCircle(array $block): string
+    {
+        $circle = is_array($block['circle'] ?? null) ? $block['circle'] : [];
+        $html = self::heading($circle['name'] ?? '', $circle['description'] ?? '', 1);
+        $topics = is_array($block['topics'] ?? null) ? $block['topics'] : [];
+
+        return $html . self::forumTopics('圈子里的帖子', $topics);
+    }
+
+    /**
+     * @param array<string, mixed> $block
+     */
+    private static function forumTopic(array $block): string
+    {
+        $topic = is_array($block['topic'] ?? null) ? $block['topic'] : [];
+        $author = is_array($topic['author'] ?? null) ? $topic['author'] : [];
+        $html = self::heading($topic['title'] ?? '', '', 1);
+        $meta = array_filter([
+            self::str($author['screenName'] ?? ''),
+            self::str($topic['createdText'] ?? ''),
+            self::str($topic['views'] ?? '') !== '' ? self::str($topic['views']) . ' 次浏览' : '',
+        ]);
+
+        if ($meta !== []) {
+            $html .= '<p class="ttdf-seo-meta">' . Escaper::html(implode(' · ', $meta)) . '</p>';
+        }
+
+        $html .= '<article class="ttdf-seo-prose">' . (string) ($block['contentHtml'] ?? '') . '</article>';
+        $replies = is_array($block['replies'] ?? null) ? $block['replies'] : [];
+
+        if ($replies !== []) {
+            $html .= self::heading('回复', '', 2) . '<ol class="ttdf-seo-comments">';
+            foreach ($replies as $reply) {
+                if (!is_array($reply)) {
+                    continue;
+                }
+
+                $replyAuthor = is_array($reply['author'] ?? null) ? $reply['author'] : [];
+                $html .= '<li><p>' . Escaper::html(self::str($replyAuthor['screenName'] ?? ''))
+                    . ' · ' . Escaper::html(self::str($reply['createdText'] ?? '')) . '</p>'
+                    . '<div>' . (string) ($reply['contentHtml'] ?? '') . '</div></li>';
+            }
+            $html .= '</ol>' . PHP_EOL;
+        }
+
+        return $html;
+    }
+
+    /**
+     * @param list<mixed> $topics
+     */
+    private static function forumTopics(string $title, array $topics): string
+    {
+        if ($topics === []) {
+            return self::heading($title, '', 2);
+        }
+
+        $html = self::heading($title, '', 2) . '<ul>';
+        foreach (array_slice($topics, 0, 20) as $topic) {
+            if (!is_array($topic)) {
+                continue;
+            }
+
+            $topicTitle = self::str($topic['title'] ?? '');
+            $html .= '<li><a href="' . Escaper::url(self::str($topic['url'] ?? '')) . '">'
+                . Escaper::html($topicTitle) . '</a>';
+            $excerpt = self::str($topic['excerpt'] ?? '');
+            if ($excerpt !== '') {
+                $html .= ' <span>' . Escaper::html($excerpt) . '</span>';
+            }
+            $html .= '</li>';
+        }
+
+        return $html . '</ul>' . PHP_EOL;
     }
 
     private static function heading(mixed $title, mixed $lead, int $level): string

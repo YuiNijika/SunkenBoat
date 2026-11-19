@@ -10,11 +10,14 @@ const MESSAGES: Record<string, string> = {
     'Authentication required': '请先登录',
     'Endpoint not found': '接口不存在',
     'Email delivery is unavailable': '邮件服务尚未配置，请联系站点管理员',
+    'SMS delivery is unavailable': '短信服务尚未配置，请联系站点管理员',
     'Invalid credentials': '用户名或密码无效',
     'Invalid email address': '电子邮箱格式错误',
     'Invalid password': '密码不符合要求',
     'Invalid request body': '请检查填写的内容',
     'Invalid verification code': '验证码无效或已过期',
+    'Invalid SMS verification code': '短信验证码无效或已过期',
+    'Invalid phone number': '手机号格式无效',
     'Invalid user name': '用户名不符合要求',
     'Method not allowed': '请求方式不受支持',
     'Password reset is disabled': '本站尚未开放邮箱找回密码',
@@ -23,6 +26,7 @@ const MESSAGES: Record<string, string> = {
     'Registration is disabled': '站点未开放注册',
     'The last administrator cannot be removed or demoted': '不能删除或降级最后一个管理员',
     'Unable to deliver mail': '验证码邮件发送失败，请检查邮件服务配置',
+    'Unable to send SMS verification code': '短信验证码发送失败，请检查短信服务配置',
     'Unable to create the user': '注册失败，请稍后再试',
     'Unable to send verification email': '验证码邮件发送失败，请稍后再试',
     'User already exists': '用户名或邮箱已被占用',
@@ -80,6 +84,15 @@ export function profileFrom(payload: ApiPayload | null): UserProfile | null {
         comments: Number.isFinite(Number(profile.comments))
             ? Math.max(0, Math.round(Number(profile.comments)))
             : 0,
+        circles: Number.isFinite(Number(profile.circles))
+            ? Math.max(0, Math.round(Number(profile.circles)))
+            : undefined,
+        joinedCircles: Number.isFinite(Number(profile.joinedCircles))
+            ? Math.max(0, Math.round(Number(profile.joinedCircles)))
+            : undefined,
+        createdCircles: Number.isFinite(Number(profile.createdCircles))
+            ? Math.max(0, Math.round(Number(profile.createdCircles)))
+            : undefined,
         canWrite: profile.canWrite === true,
     };
 }
@@ -116,6 +129,37 @@ export async function requestEmailCode(
     const payload = await readPayload(response);
     if (!response.ok) {
         throw new Error(errorMessage(payload, '验证码发送失败，请稍后再试'));
+    }
+
+    const data =
+        payload?.data && typeof payload.data === 'object'
+            ? (payload.data as { cooldown?: unknown; expiresIn?: unknown })
+            : null;
+    const cooldown = Number(data?.cooldown);
+    const expiresIn = Number(data?.expiresIn);
+
+    return {
+        cooldown: Number.isFinite(cooldown) && cooldown > 0 ? Math.round(cooldown) : 60,
+        expiresIn: Number.isFinite(expiresIn) && expiresIn > 0 ? Math.round(expiresIn) : 600,
+    };
+}
+
+export async function requestSmsCode(
+    endpoint: string,
+    phone: string
+): Promise<EmailCodeResult> {
+    const response = await fetch(endpoint, {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: {
+            Accept: 'application/json',
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ phone: phone.trim(), purpose: 'register' }),
+    });
+    const payload = await readPayload(response);
+    if (!response.ok) {
+        throw new Error(errorMessage(payload, '短信验证码发送失败，请稍后再试'));
     }
 
     const data =

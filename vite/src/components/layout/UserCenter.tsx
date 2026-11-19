@@ -1,5 +1,13 @@
 import { useEffect, useState } from 'react';
-import { ExternalLink, FileText, LogOut, MessageSquare, Shield, UserRound } from 'lucide-react';
+import {
+    CircleDot,
+    ExternalLink,
+    FileText,
+    LogOut,
+    MessageSquare,
+    Shield,
+    UserRound,
+} from 'lucide-react';
 import { Button } from '../ui/button';
 import {
     DropdownMenu,
@@ -40,6 +48,17 @@ export default function UserCenter({ api, show, site }: Props) {
     const [checking, setChecking] = useState(true);
     const [submitting, setSubmitting] = useState(false);
     const [error, setError] = useState('');
+
+    useEffect(() => {
+        if (!show || !api?.enabled) {
+            return;
+        }
+
+        const openAuth = () => setAuthOpen(true);
+        window.addEventListener('ttdf:open-auth', openAuth);
+
+        return () => window.removeEventListener('ttdf:open-auth', openAuth);
+    }, [show, api?.enabled]);
 
     useEffect(() => {
         if (!show || !api?.enabled) {
@@ -289,6 +308,17 @@ export default function UserCenter({ api, show, site }: Props) {
                                     </span>
                                 </a>
                             </DropdownMenuItem>
+                            {typeof user.circles === 'number' ? (
+                                <DropdownMenuItem asChild className="cursor-pointer px-2 py-2">
+                                    <a href={sitePath(site, 'circles')}>
+                                        <CircleDot strokeWidth={1.8} />
+                                        圈子
+                                        <span className="ml-auto text-[11px] text-ink-faint">
+                                            加入 {user.joinedCircles ?? 0} · 创建 {user.createdCircles ?? 0}
+                                        </span>
+                                    </a>
+                                </DropdownMenuItem>
+                            ) : null}
                             <DropdownMenuSeparator className="bg-line" />
                             <DropdownMenuItem
                                 variant="destructive"

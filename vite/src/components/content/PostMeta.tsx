@@ -1,4 +1,4 @@
-import { CalendarDays, Eye, MessageCircle, UserRound } from 'lucide-react';
+import { CalendarDays, Eye, Heart, MessageCircle, UserRound } from 'lucide-react';
 import { Badge } from '../ui/badge';
 import type { PostCategory } from '../../types';
 
@@ -9,6 +9,8 @@ interface Props {
     commentsText: string;
     views?: number;
     viewsText?: string;
+    likes?: number;
+    likesText?: string;
     categories: PostCategory[];
 }
 
@@ -19,6 +21,8 @@ export default function PostMeta({
     commentsText,
     views = 0,
     viewsText = '',
+    likes = 0,
+    likesText = '',
     categories,
 }: Props) {
     return (
@@ -48,6 +52,13 @@ export default function PostMeta({
                 <span className="inline-flex items-center gap-1.5">
                     <Eye className="size-3.5" strokeWidth={1.8} aria-hidden="true" />
                     {viewsText || views} 次阅读
+                </span>
+            ) : null}
+
+            {likes > 0 ? (
+                <span className="inline-flex items-center gap-1.5">
+                    <Heart className="size-3.5" strokeWidth={1.8} aria-hidden="true" />
+                    {likesText || likes} 点赞
                 </span>
             ) : null}
 
