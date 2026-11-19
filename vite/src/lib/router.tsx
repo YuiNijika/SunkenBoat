@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
     createBrowserRouter,
     isRouteErrorResponse,
@@ -359,6 +359,10 @@ async function loadRoute({ request }: LoaderFunctionArgs): Promise<RoutePayload>
     return result.payload;
 }
 
+function dropCachedRoute(): void {
+    cache.delete(routeKey(new URL(window.location.href)));
+}
+
 function RouteProgress() {
     const navigation = useNavigation();
     const started = useRef(false);
@@ -483,6 +487,73 @@ function RouteLinkInterceptor() {
 function RoutePage() {
     const payload = useLoaderData() as RoutePayload;
     const location = useLocation();
+    const [previewPayload, setPreviewPayload] = useState<RoutePayload | null>(null);
+
+    useEffect(() => {
+        if (window.parent === window) {
+            return;
+        }
+
+        const onMessage = async (event: MessageEvent) => {
+            if (event.origin !== window.location.origin) {
+                return;
+            }
+
+            const data = event.data as { type?: unknown; id?: unknown } | null;
+            if (!data || typeof data.type !== 'string') {
+                return;
+            }
+
+            if (data.type !== 'ttdf:preview:refresh') {
+                return;
+            }
+
+            const id = typeof data.id === 'string' ? data.id : '';
+            cache.clear();
+            const scrollX = window.scrollX;
+            const scrollY = window.scrollY;
+
+            const url = new URL(window.location.href);
+            url.searchParams.set('ttdf_refresh', String(Date.now()));
+            const result = await fetchRoute(url);
+            if (result) {
+                rememberResult(new URL(window.location.href), result);
+                syncDocument(result.payload);
+                setPreviewPayload(result.payload);
+                window.setTimeout(() => {
+                    window.requestAnimationFrame(() => window.scrollTo(scrollX, scrollY));
+                    window.parent.postMessage(
+                        { type: 'ttdf:preview:refreshed', id },
+                        window.location.origin
+                    );
+                }, 200);
+            }
+        };
+
+        window.addEventListener('message', onMessage);
+
+        return () => window.removeEventListener('message', onMessage);
+    }, []);
+
+    useEffect(() => {
+        if (window.parent !== window) {
+            window.parent.postMessage({ type: 'ttdf:preview:ready' }, window.location.origin);
+        }
+    }, [payload]);
+
+    useEffect(() => {
+        if (window.parent === window) {
+            return;
+        }
+
+        window.addEventListener('pageshow', dropCachedRoute);
+
+        return () => window.removeEventListener('pageshow', dropCachedRoute);
+    }, []);
+
+    useEffect(() => {
+        setPreviewPayload(null);
+    }, [location.pathname, location.search]);
 
     useEffect(() => {
         syncDocument(payload);
@@ -511,9 +582,11 @@ function RoutePage() {
         }
     }, [location.key]);
 
+    const activePayload = previewPayload ?? payload;
+
     return (
         <>
-            <App data={payload.data} />
+            <App data={activePayload.data} />
             <ScrollRestoration />
         </>
     );

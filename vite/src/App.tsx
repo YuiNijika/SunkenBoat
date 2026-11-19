@@ -204,14 +204,22 @@ function SiteApp({ data, appStyle }: { data: PageData; appStyle: CSSProperties }
             : ['reading-progress', 'header', 'main', 'footer', 'action-rail'];
 
     const renderBlock = (block: PageData['blocks'][number], index: number) => (
-        <div key={`${block.type}-${index}`} data-block={block.type} style={blockStyle(block)}>
+        <div
+            key={`${block.type}-${index}`}
+            data-block={block.type}
+            data-block-index={index}
+            style={blockStyle(block)}
+        >
             <BlockRenderer block={block} />
         </div>
     );
     const isWideBlock = (block: PageData['blocks'][number]) =>
         block.width === 'half' || block.width === 'full';
-    const wideBlocks = data.blocks.filter(isWideBlock);
-    const contentBlocks = data.blocks.filter((block) => !isWideBlock(block));
+    const indexedBlocks = data.blocks.map((block, index) => ({ block, index }));
+    const wideBlocks = indexedBlocks.filter((item) => isWideBlock(item.block));
+    const contentBlocks = indexedBlocks.filter((item) => !isWideBlock(item.block));
+    const renderForumBlock = (block: PageData['blocks'][number]) =>
+        renderBlock(block, data.blocks.indexOf(block));
 
     const modules: Record<string, ReactNode> = {
         'reading-progress': showProgress ? <ReadingProgress /> : null,
@@ -232,13 +240,14 @@ function SiteApp({ data, appStyle }: { data: PageData; appStyle: CSSProperties }
             >
                 {wideBlocks.length > 0 ? (
                     <div className="page-wide-stack">
-                        {wideBlocks.map((block, index) => (
+                        {wideBlocks.map(({ block, index }) => (
                             <div
                                 key={`${block.type}-${index}`}
                                 className={
                                     block.width === 'full' ? 'page-wide-full' : 'page-wide-half'
                                 }
                                 data-block={block.type}
+                                data-block-index={index}
                                 style={wideBlockStyle(block, index)}
                             >
                                 <BlockRenderer block={block} />
@@ -258,21 +267,21 @@ function SiteApp({ data, appStyle }: { data: PageData; appStyle: CSSProperties }
                                     className="order-2 grid content-start gap-[15px] lg:sticky lg:top-[88px] lg:order-1 lg:self-start"
                                     data-forum-slot="left"
                                 >
-                                    {forumLeft.map(renderBlock)}
+                                    {forumLeft.map(renderForumBlock)}
                                 </aside>
                             ) : null}
                             <div
                                 className="order-1 grid min-w-0 content-start gap-[15px] lg:order-2"
                                 data-forum-slot="main"
                             >
-                                {contentBlocks.map(renderBlock)}
+                                {contentBlocks.map(({ block, index }) => renderBlock(block, index))}
                             </div>
                             {forumRight.length > 0 ? (
                                 <aside
                                     className="order-3 grid content-start gap-[15px] lg:sticky lg:top-[88px] lg:self-start"
                                     data-forum-slot="right"
                                 >
-                                    {forumRight.map(renderBlock)}
+                                    {forumRight.map(renderForumBlock)}
                                 </aside>
                             ) : null}
                         </div>
@@ -291,7 +300,7 @@ function SiteApp({ data, appStyle }: { data: PageData; appStyle: CSSProperties }
                                         (sidebarFirst ? ' lg:order-2' : '')
                                     }
                                 >
-                                    {contentBlocks.map(renderBlock)}
+                                    {contentBlocks.map(({ block, index }) => renderBlock(block, index))}
                                 </div>
                                 <aside
                                     className={
@@ -317,7 +326,7 @@ function SiteApp({ data, appStyle }: { data: PageData; appStyle: CSSProperties }
                         </div>
                     ) : (
                         <div className="grid grid-cols-[minmax(0,1fr)] gap-[15px]">
-                            {contentBlocks.map(renderBlock)}
+                            {contentBlocks.map(({ block, index }) => renderBlock(block, index))}
                             {data.kind === 'account' ? (
                                 <AccountPanel
                                     api={data.api?.user}
