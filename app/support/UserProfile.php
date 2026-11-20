@@ -63,12 +63,15 @@ final class UserProfile
 
     public static function enabled(): bool
     {
-        return (Settings::values()['User_Center_Enhanced'] ?? true) === true;
+        $values = Settings::values();
+
+        return ($values['Show_UserCenter'] ?? false) === true
+            && ($values['User_Center_Enhanced'] ?? false) === true;
     }
 
     public static function certificationEnabled(): bool
     {
-        return self::enabled() && (Settings::values()['User_Certification'] ?? true) === true;
+        return self::enabled() && (Settings::values()['User_Certification'] ?? false) === true;
     }
 
     /**

@@ -879,12 +879,23 @@ export default function AccountPanel({ api, section = 'profile' }: Props) {
     };
 
     if (!api?.enabled) {
+        const centerEnabled = api?.centerEnabled === true;
+        const apiReady = api?.apiReady === true;
+        const title = centerEnabled ? '账号服务尚未就绪' : '账号服务未启用';
+        const description = centerEnabled
+            ? apiReady
+                ? '账号服务正在初始化，请稍后重新加载页面。'
+                : api?.admin
+                  ? '前台用户中心已开启，但 REST API 总开关或 v2 写接口尚未开启。请到“设置外观 → 运行&扩展 → 接口&安全”开启这两项后重试。'
+                  : '站点正在配置前台账号服务，请稍后再试或联系管理员。'
+            : '站点暂未开放前台账号服务，请联系管理员。';
+
         return (
             <div className="surface-card card-pad">
                 <p className="section-label">Account</p>
-                <h2 className="mt-2 text-[20px] font-medium">账号服务未启用</h2>
+                <h2 className="mt-2 text-[20px] font-medium">{title}</h2>
                 <p className="mt-2 text-[13px] leading-6 text-ink-mute">
-                    站点暂未开放前台账号服务，请联系管理员。
+                    {description}
                 </p>
             </div>
         );

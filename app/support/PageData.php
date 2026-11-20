@@ -2868,7 +2868,7 @@ final class PageData
             'showSidebar' => ($values['Show_Sidebar'] ?? true) === true,
             'sidebarPages' => self::sidebarPages($values['Sidebar_Pages'] ?? null),
             'sidebarModules' => self::sidebarModules($values['Sidebar_Modules'] ?? null),
-            'showUserCenter' => ($values['Show_UserCenter'] ?? true) === true,
+            'showUserCenter' => ($values['Show_UserCenter'] ?? false) === true,
             'sidebarPosition' => in_array($sidebarPosition, ['left', 'right'], true)
                 ? $sidebarPosition
                 : 'right',
@@ -3122,6 +3122,8 @@ final class PageData
         $resetVerify = ($values['Mail_Verify_Reset'] ?? false) === true;
         $emailVerify = ($values['Mail_Verify_Email'] ?? false) === true;
         $allowRegister = (bool) (Typecho::options()?->allowRegister ?? false);
+        $userCenterEnabled = ($values['Show_UserCenter'] ?? false) === true;
+        $userApiReady = ThemeConfig::restV2Enabled();
 
         return [
             'enabled' => true,
@@ -3133,7 +3135,10 @@ final class PageData
             'tags' => $base . '/tags',
             'stats' => $base . '/stats',
             'user' => [
-                'enabled' => ThemeConfig::restV2Enabled(),
+                'enabled' => $userCenterEnabled && $userApiReady,
+                'centerEnabled' => $userCenterEnabled,
+                'apiReady' => $userApiReady,
+                'admin' => Typecho::isAdmin(),
                 'session' => $v2Base . '/auth/session',
                 'login' => $v2Base . '/auth/login',
                 'register' => $v2Base . '/auth/register',
@@ -3153,12 +3158,12 @@ final class PageData
                 'me' => $v2Base . '/me',
                 'profile' => Endpoint::url('user-profile'),
                 'profileNonce' => Typecho::securityToken(),
-                'enhanced' => ($values['User_Center_Enhanced'] ?? true) === true,
+                'enhanced' => UserProfile::enabled(),
                 'certificationEnabled' => UserProfile::certificationEnabled(),
                 'certification' => Endpoint::url('user-certification'),
                 'certificationNonce' => Typecho::securityToken(),
                 'avatarMedia' => $v2Base . '/media',
-                'avatarMediaEnabled' => ThemeConfig::restV2Enabled()
+                'avatarMediaEnabled' => $userApiReady
                     && UserProfile::enabled()
                     && UserProfile::viewerUid() > 0,
                 'pages' => [
@@ -3170,8 +3175,8 @@ final class PageData
                     'space' => rtrim($index, '/') . '/users',
                 ],
                 'content' => [
-                    'enabled' => ThemeConfig::restV2Enabled() && UserProfile::canWrite(),
-                    'permitted' => UserProfile::canWrite(),
+                    'enabled' => $userCenterEnabled && $userApiReady && UserProfile::canWrite(),
+                    'permitted' => $userCenterEnabled && UserProfile::canWrite(),
                     'contents' => $v2Base . '/admin/contents',
                     'item' => $v2Base . '/admin/contents',
                     'posts' => $v2Base . '/admin/posts',

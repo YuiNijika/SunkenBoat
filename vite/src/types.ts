@@ -105,6 +105,9 @@ export interface UserForumEndpoints {
 
 export interface UserApiEndpoints {
     enabled: boolean;
+    centerEnabled: boolean;
+    apiReady: boolean;
+    admin: boolean;
     session: string;
     login: string;
     register: string;
