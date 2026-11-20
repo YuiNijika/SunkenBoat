@@ -726,10 +726,16 @@ final class PageData
         $values = Settings::values();
         $defaults = self::defaultBlocks($kind);
         $saved = $values[self::settingKey($kind)] ?? null;
-        if (self::isLegacyBlockLayout($saved, $kind)) {
-            $saved = array_merge(['breadcrumbs'], $saved);
-        }
+        $legacy = self::isLegacyBlockLayout($saved, $kind);
         $specs = self::normalizeSpecs($saved, $defaults);
+        if ($legacy) {
+            array_unshift($specs, [
+                'name' => 'breadcrumbs',
+                'variant' => '',
+                'data' => [],
+                'index' => -1,
+            ]);
+        }
         $cache = [];
         $blocks = [];
 
@@ -744,6 +750,7 @@ final class PageData
 
             $block = self::makeBlock($spec, $kind, $archive, $cache);
             if ($block !== null) {
+                $block['settingsIndex'] = (int) $spec['index'];
                 $blocks[] = $block;
             }
         }
@@ -817,17 +824,17 @@ final class PageData
     /**
      * @param mixed $value
      * @param list<string> $defaults
-     * @return list<array{name: string, variant: string, data: array<string, mixed>}>
+     * @return list<array{name: string, variant: string, data: array<string, mixed>, index: int}>
      */
     private static function normalizeSpecs(mixed $value, array $defaults): array
     {
         $items = is_array($value) ? $value : [];
         $specs = [];
 
-        foreach ($items as $item) {
+        foreach ($items as $index => $item) {
             $spec = self::normalizeSpec($item);
             if ($spec !== null) {
-                $specs[] = $spec;
+                $specs[] = $spec + ['index' => (int) $index];
             }
         }
 
@@ -835,10 +842,10 @@ final class PageData
             return $specs;
         }
 
-        foreach ($defaults as $fallback) {
+        foreach ($defaults as $index => $fallback) {
             $spec = self::normalizeSpec($fallback);
             if ($spec !== null) {
-                $specs[] = $spec;
+                $specs[] = $spec + ['index' => (int) $index];
             }
         }
 
@@ -1976,7 +1983,11 @@ final class PageData
                 };
                 $items[] = [
                     'name' => $name,
-                    'avatar' => Avatar::url((string) ($user['mail'] ?? ''), 120),
+                    'avatar' => Avatar::forUser(
+                        $uid,
+                        (string) ($user['mail'] ?? ''),
+                        120
+                    ),
                     'bio' => trim((string) ($user['url'] ?? '')),
                     'url' => self::authorUrl($uid),
                     'badge' => $badge,
@@ -2320,7 +2331,9 @@ final class PageData
             'showPosts' => $showPosts,
             'author' => [
                 'name' => $name !== '' ? $name : '作者',
-                'avatar' => Avatar::url($mail, 120),
+                'avatar' => $uid > 0
+                    ? Avatar::forUser($uid, $mail, 120)
+                    : Avatar::url($mail, 120),
                 'bio' => '',
                 'url' => $url,
                 'badge' => '作者',

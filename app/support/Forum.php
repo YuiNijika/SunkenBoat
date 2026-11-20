@@ -963,7 +963,9 @@ final class Forum
         foreach ($specs as $spec) {
             $block = self::layoutBlock($spec['name'], $spec['variant'], $spec['data'], $context);
             if ($block !== null) {
-                $blocks[] = array_merge($block, self::layoutMeta($spec['data']));
+                $blocks[] = array_merge($block, self::layoutMeta($spec['data']), [
+                    'settingsIndex' => (int) $spec['index'],
+                ]);
             }
         }
 
@@ -972,7 +974,7 @@ final class Forum
 
     /**
      * @param list<string> $defaults
-     * @return list<array{name: string, variant: string, data: array<string, mixed>}>
+     * @return list<array{name: string, variant: string, data: array<string, mixed>, index: int}>
      */
     private static function blockSpecs(mixed $saved, array $defaults): array
     {
@@ -980,7 +982,7 @@ final class Forum
         $configured = is_array($saved);
         $items = $configured ? $saved : [];
 
-        foreach ($items as $item) {
+        foreach ($items as $index => $item) {
             if (is_string($item)) {
                 $name = trim($item);
                 $variant = '';
@@ -1000,16 +1002,26 @@ final class Forum
                 continue;
             }
 
-            $specs[] = ['name' => $name, 'variant' => $variant, 'data' => $data];
+            $specs[] = [
+                'name' => $name,
+                'variant' => $variant,
+                'data' => $data,
+                'index' => (int) $index,
+            ];
         }
 
         if ($configured) {
             return $specs;
         }
 
-        foreach ($defaults as $name) {
+        foreach ($defaults as $index => $name) {
             if (preg_match('/^[a-z0-9][a-z0-9-]*$/', $name) === 1) {
-                $specs[] = ['name' => $name, 'variant' => '', 'data' => []];
+                $specs[] = [
+                    'name' => $name,
+                    'variant' => '',
+                    'data' => [],
+                    'index' => (int) $index,
+                ];
             }
         }
 
@@ -3621,7 +3633,7 @@ final class Forum
             'loggedIn' => false,
             'name' => (string) ($row['name'] ?? ''),
             'screenName' => $display,
-            'avatar' => Avatar::url((string) ($row['mail'] ?? '')),
+            'avatar' => Avatar::forUser($uid, (string) ($row['mail'] ?? '')),
             'group' => $group,
             'groupLabel' => self::GROUP_LABELS[$group] ?? $group,
             'url' => self::indexBase() . '/users/' . $uid,

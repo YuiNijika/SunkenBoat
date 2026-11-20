@@ -1065,7 +1065,7 @@ export default function AccountPanel({ api, section = 'profile' }: Props) {
                             />
                             <div className="min-w-0 pb-1">
                                 <div className="flex flex-wrap items-center gap-2">
-                                    <h2 className="truncate text-[22px] font-semibold leading-8">
+                                    <h2 className="min-w-0 truncate text-[22px] font-semibold leading-8">
                                         {profile.screenName || profile.name}
                                     </h2>
                                     {certificationApproved ? (
@@ -1081,23 +1081,25 @@ export default function AccountPanel({ api, section = 'profile' }: Props) {
                                         <ShieldCheck className="size-3.5" strokeWidth={1.8} aria-hidden="true" />
                                         {GROUP_LABELS[profile.group] ?? profile.group}
                                     </span>
-                                    <span className="chip">
-                                        <FileText className="size-3.5" strokeWidth={1.8} aria-hidden="true" />
-                                        文章 {profile.posts ?? 0}
-                                    </span>
-                                    <span className="chip">
-                                        <MessageSquare className="size-3.5" strokeWidth={1.8} aria-hidden="true" />
-                                        评论 {profile.comments ?? 0}
-                                    </span>
-                                    {typeof profile.circles === 'number' ? (
-                                        <span
-                                            className="chip"
-                                            title={`加入 ${profile.joinedCircles ?? 0} · 创建 ${profile.createdCircles ?? 0}`}
-                                        >
-                                            <CircleDot className="size-3.5" strokeWidth={1.8} aria-hidden="true" />
-                                            {forumLabel} {profile.circles}
+                                    <span className="ml-auto inline-flex flex-wrap items-center gap-2">
+                                        <span className="chip">
+                                            <FileText className="size-3.5" strokeWidth={1.8} aria-hidden="true" />
+                                            文章 {profile.posts ?? 0}
                                         </span>
-                                    ) : null}
+                                        <span className="chip">
+                                            <MessageSquare className="size-3.5" strokeWidth={1.8} aria-hidden="true" />
+                                            评论 {profile.comments ?? 0}
+                                        </span>
+                                        {typeof profile.circles === 'number' ? (
+                                            <span
+                                                className="chip"
+                                                title={`加入 ${profile.joinedCircles ?? 0} · 创建 ${profile.createdCircles ?? 0}`}
+                                            >
+                                                <CircleDot className="size-3.5" strokeWidth={1.8} aria-hidden="true" />
+                                                {forumLabel} {profile.circles}
+                                            </span>
+                                        ) : null}
+                                    </span>
                                 </div>
                                 <p className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-[12px] text-ink-mute">
                                     <span>@{profile.name}</span>
@@ -1129,7 +1131,7 @@ export default function AccountPanel({ api, section = 'profile' }: Props) {
                                     ) : null}
                                 </p>
                                 {details.signature ? (
-                                    <p className="mt-2 max-w-2xl text-[13px] leading-6 text-ink-soft">
+                                    <p className="mt-2 max-w-2xl break-words text-[13px] leading-6 text-ink-soft">
                                         {details.signature}
                                     </p>
                                 ) : null}

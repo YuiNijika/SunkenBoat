@@ -39,6 +39,9 @@ if (!function_exists('threadedComments')) {
         $isReply = (int) $comments->levels > 0;
         $authorId = (int) $comments->authorId;
         $ownerId = (int) $comments->ownerId;
+        $customAvatar = $authorId > 0
+            ? \SunkenBoat\Support\UserProfile::customAvatar($authorId)
+            : '';
         ?>
         <li
             id="<?php $comments->theId(); ?>"
@@ -48,7 +51,20 @@ if (!function_exists('threadedComments')) {
         >
             <div class="comment-inner">
                 <div class="comment-avatar">
-                    <?php $comments->gravatar(45, $options->defaultAvatar, $options->avatarHighRes); ?>
+                    <?php if ($customAvatar !== ''): ?>
+                        <img
+                            class="avatar comment-avatar-img"
+                            src="<?php echo \TTDF\Support\Escaper::url($customAvatar); ?>"
+                            alt=""
+                            width="45"
+                            height="45"
+                            loading="lazy"
+                            decoding="async"
+                            referrerpolicy="no-referrer"
+                        >
+                    <?php else: ?>
+                        <?php $comments->gravatar(45, $options->defaultAvatar, $options->avatarHighRes); ?>
+                    <?php endif; ?>
                 </div>
 
                 <div class="comment-main">
@@ -112,6 +128,13 @@ $paginationHtml = $capture(static fn () => $comments->pageNav('上一页', '下�
 $cancelReplyHtml = $capture(static fn () => $comments->cancelReply());
 $respondId = (string) $archive->respondId;
 $commentUrl = (string) $archive->commentUrl;
+$viewerAvatar = $user->hasLogin()
+    ? \SunkenBoat\Support\Avatar::forUser(
+        (int) $user->uid,
+        (string) $user->mail,
+        90
+    )
+    : '';
 
 $payload = [
     'allow' => (bool) $archive->allow('comment'),
@@ -124,6 +147,7 @@ $payload = [
     'action' => $commentUrl,
     'loggedIn' => (bool) $user->hasLogin(),
     'screenName' => $capture(static fn () => $user->screenName()),
+    'viewerAvatar' => $viewerAvatar,
     'profileUrl' => $capture(static fn () => $options->profileUrl()),
     'logoutUrl' => $capture(static fn () => $options->logoutUrl()),
     'remember' => [

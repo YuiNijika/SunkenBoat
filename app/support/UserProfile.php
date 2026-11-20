@@ -49,6 +49,9 @@ final class UserProfile
 
     private const CERTIFICATION_STATUS = ['none', 'pending', 'approved', 'rejected'];
 
+    /** @var array<int, string> */
+    private static array $customAvatarCache = [];
+
     public static function register(): void
     {
         Endpoint::register('user-profile', [self::class, 'handle'], [
@@ -67,6 +70,30 @@ final class UserProfile
 
         return ($values['Show_UserCenter'] ?? false) === true
             && ($values['User_Center_Enhanced'] ?? false) === true;
+    }
+
+    /**
+     * Return the custom avatar URL for one user without exposing the rest of
+     * their private profile options.
+     */
+    public static function customAvatar(int $uid): string
+    {
+        if ($uid <= 0 || !self::enabled()) {
+            return '';
+        }
+
+        if (array_key_exists($uid, self::$customAvatarCache)) {
+            return self::$customAvatarCache[$uid];
+        }
+
+        try {
+            $extra = self::read($uid);
+            $avatar = Avatar::normalizeUrl($extra['avatar'] ?? '');
+        } catch (\Throwable) {
+            $avatar = '';
+        }
+
+        return self::$customAvatarCache[$uid] = $avatar;
     }
 
     public static function certificationEnabled(): bool
@@ -295,11 +322,12 @@ final class UserProfile
             }
 
             $mail = is_array($user) ? (string) ($user['mail'] ?? '') : '';
+            $customAvatar = self::enabled() ? (string) ($decoded['avatar'] ?? '') : '';
             $items[] = [
                 'uid' => $targetUid,
                 'name' => is_array($user) ? (string) ($user['name'] ?? '') : '',
                 'screenName' => is_array($user) ? (string) ($user['screenName'] ?? '') : '',
-                'avatar' => Avatar::url($mail),
+                'avatar' => Avatar::forUser($targetUid, $mail, 160, $customAvatar),
                 'certification' => $certification,
             ];
         }
@@ -340,7 +368,7 @@ final class UserProfile
             'url' => (string) ($row['url'] ?? ''),
             'group' => (string) ($row['group'] ?? ''),
             'created' => $created > 0 ? date('c', $created) : '',
-            'avatar' => $customAvatar !== '' ? $customAvatar : Avatar::url($mail),
+            'avatar' => Avatar::forUser($uid, $mail, 160, $customAvatar),
             'customAvatar' => $customAvatar,
             'background' => $customBackground,
             'posts' => self::countPosts($uid),
@@ -426,7 +454,12 @@ final class UserProfile
             'uid' => (int) ($row['uid'] ?? 0),
             'name' => (string) ($row['name'] ?? ''),
             'screenName' => (string) ($row['screenName'] ?? ''),
-            'avatar' => $customAvatar !== '' ? $customAvatar : Avatar::url((string) ($row['mail'] ?? '')),
+            'avatar' => Avatar::forUser(
+                $uid,
+                (string) ($row['mail'] ?? ''),
+                160,
+                $customAvatar
+            ),
             'customAvatar' => $customAvatar,
             'background' => $customBackground,
             'url' => (string) ($row['url'] ?? ''),
@@ -497,6 +530,7 @@ final class UserProfile
                 ]);
             }
             $next['avatar'] = $avatar;
+            self::$customAvatarCache[$uid] = $avatar;
         }
 
         if (array_key_exists('background', $input)) {

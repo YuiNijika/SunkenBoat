@@ -221,11 +221,14 @@ function SiteApp({ data, appStyle }: { data: PageData; appStyle: CSSProperties }
             ? data.theme.layoutModules
             : ['reading-progress', 'header', 'main', 'footer', 'action-rail'];
 
+    const blockIndex = (block: PageData['blocks'][number], fallback: number): number => (
+        typeof block.settingsIndex === 'number' ? block.settingsIndex : fallback
+    );
     const renderBlock = (block: PageData['blocks'][number], index: number) => (
         <div
             key={`${block.type}-${index}`}
             data-block={block.type}
-            data-block-index={index}
+            data-block-index={blockIndex(block, index)}
             style={blockStyle(block)}
         >
             <BlockRenderer block={block} />
@@ -238,8 +241,8 @@ function SiteApp({ data, appStyle }: { data: PageData; appStyle: CSSProperties }
     const contentBlocks = indexedBlocks.filter((item) => !isWideBlock(item.block));
     const topBlock = wideBlocks.length > 0 ? wideBlocks[0].block : data.blocks[0];
     const flushTop = topBlock?.spaceTop === 'none';
-    const renderForumBlock = (block: PageData['blocks'][number]) =>
-        renderBlock(block, data.blocks.indexOf(block));
+    const renderForumBlock = (block: PageData['blocks'][number], index: number) =>
+        renderBlock(block, index);
 
     const modules: Record<string, ReactNode> = {
         'reading-progress': showProgress ? <ReadingProgress /> : null,
@@ -267,7 +270,7 @@ function SiteApp({ data, appStyle }: { data: PageData; appStyle: CSSProperties }
                                     block.width === 'full' ? 'page-wide-full' : 'page-wide-half'
                                 }
                                 data-block={block.type}
-                                data-block-index={index}
+                                data-block-index={blockIndex(block, index)}
                                 style={wideBlockStyle(block, index)}
                             >
                                 <BlockRenderer block={block} />
@@ -285,7 +288,7 @@ function SiteApp({ data, appStyle }: { data: PageData; appStyle: CSSProperties }
                         <div className={'grid grid-cols-[minmax(0,1fr)] gap-[15px] ' + forumColumns}>
                             {forumLeft.length > 0 ? (
                                 <aside
-                                    className="order-2 grid content-start gap-[15px] lg:sticky lg:top-[88px] lg:order-1 lg:self-start"
+                                    className="hidden content-start gap-[15px] lg:sticky lg:top-[88px] lg:order-1 lg:grid lg:self-start"
                                     data-block-slot="left"
                                     data-forum-slot="left"
                                 >

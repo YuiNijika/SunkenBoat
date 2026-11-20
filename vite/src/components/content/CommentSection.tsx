@@ -111,7 +111,7 @@ export function CommentComposer({
         <form
             ref={formRef}
             id="comment-form"
-            className={cx('forum-composer px-4 py-4', className)}
+            className={cx('forum-composer px-3 py-3 sm:px-4 sm:py-4', className)}
             onSubmit={onSubmit}
         >
             <div className="flex items-start gap-3">
@@ -119,7 +119,7 @@ export function CommentComposer({
                     name={authorName}
                     avatar={avatar?.avatar}
                     fallbackImage={avatar?.fallbackImage}
-                    className="size-10"
+                    className="size-9 sm:size-10"
                 />
                 <div className="min-w-0 flex-1">
                     {replyTo ? (
@@ -145,7 +145,7 @@ export function CommentComposer({
                             required
                             disabled={disabled || busy}
                         />
-                        <div className="mt-2 flex flex-wrap items-center gap-1 border-t border-line pt-2">
+                        <div className="mt-2 flex flex-wrap items-center gap-x-1 gap-y-1.5 border-t border-line pt-2">
                             <MarkdownToolbar
                                 target={textareaRef}
                                 onChange={onChange}
@@ -224,7 +224,9 @@ export function CommentEntry({
             id={commentId !== undefined ? `comment-${commentId}` : undefined}
             className={cx(
                 'px-4 py-4',
-                depth > 0 ? 'ml-5 border-t border-line' : 'border-t border-line first:border-t-0'
+                depth > 0
+                    ? 'ml-2 border-t border-line sm:ml-5'
+                    : 'border-t border-line first:border-t-0'
             )}
         >
             <div className="flex items-start gap-3">

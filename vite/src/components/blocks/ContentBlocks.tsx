@@ -64,7 +64,7 @@ export function AlertBlock({ variant, title, text, action }: AlertBlockData) {
             className={`alert-block is-${tone}`}
             role={tone === 'danger' ? 'alert' : 'status'}
         >
-            <div className="flex items-start gap-3">
+            <div className="flex flex-wrap items-start gap-3">
                 <span className="alert-block-icon" aria-hidden="true">
                     <Icon className="size-4" strokeWidth={1.9} />
                 </span>
@@ -75,7 +75,12 @@ export function AlertBlock({ variant, title, text, action }: AlertBlockData) {
                     ) : null}
                 </div>
                 {action.url !== '' ? (
-                    <Button asChild variant="outline" size="sm" className="shrink-0 bg-surface">
+                    <Button
+                        asChild
+                        variant="outline"
+                        size="sm"
+                        className="shrink-0 bg-surface max-sm:ml-[42px] max-sm:mt-1"
+                    >
                         <a href={action.url}>
                             {action.label || '查看'}
                             <ArrowRight className="size-3.5" strokeWidth={1.8} aria-hidden="true" />

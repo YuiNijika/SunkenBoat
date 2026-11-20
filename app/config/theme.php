@@ -79,6 +79,7 @@ $commonBlocks = [
             ['type' => 'Textarea', 'name' => 'text', 'label' => '内容', 'rows' => 3, 'placeholder' => '只支持纯文本。'],
             ['type' => 'Text', 'name' => 'action_label', 'label' => '按钮文案', 'placeholder' => '留空不显示按钮'],
             ['type' => 'Text', 'name' => 'action_url', 'label' => '按钮链接', 'placeholder' => 'https:// 或 /path'],
+            ...$blockLayoutFields,
         ],
     ],
     'notice' => [

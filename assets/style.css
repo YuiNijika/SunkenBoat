@@ -3252,7 +3252,7 @@ a.comment-author:hover {
 }
 
 .hero-block.hero-v2 .hero-bg-fixed {
-    background-attachment: fixed;
+    background-attachment: scroll;
     background-repeat: no-repeat;
     background-position: center;
     background-size: cover;
@@ -3362,7 +3362,7 @@ a.comment-author:hover {
     }
 }
 
-.hero-block.hero-v2.is-image-effect-fixed .hero-bg-fixed {
+.hero-block.hero-v2.is-image-effect-fixed.hero-block-full .hero-bg-fixed {
     background-attachment: fixed;
 }
 
@@ -3642,7 +3642,7 @@ a.comment-author:hover {
 }
 
 @media (hover: none), (max-width: 768px) {
-    .hero-block.hero-v2.is-image-effect-fixed .hero-bg-fixed {
+    .hero-block.hero-v2.is-image-effect-fixed.hero-block-full .hero-bg-fixed {
         background-attachment: scroll;
     }
 }
@@ -8782,4 +8782,44 @@ a.feature-card:hover {
 /* translate.js injects a default selector; the theme renders its own menu. */
 #translateSelectLanguage {
     display: none !important;
+}
+
+/* Interaction polish */
+.user-space-signature,
+.user-space-meta,
+.forum-prose,
+.forum-reply-prose {
+    overflow-wrap: anywhere;
+}
+
+.forum-rail-action:active:not(:disabled) .forum-rail-icon {
+    transform: translateY(0) scale(0.94);
+}
+
+.user-space-tabs button,
+.account-section-nav a {
+    transition:
+        color 0.18s ease,
+        background-color 0.18s ease,
+        border-color 0.18s ease;
+}
+
+/* Image tiles: keep the crop centered and avoid transform flicker while the
+   hover zoom is running. */
+.post-list-thumb img,
+.gallery-item img,
+.media-tile img,
+.user-space-post-thumb img,
+.search-panel-thumb img {
+    display: block;
+    object-position: center;
+    backface-visibility: hidden;
+    -webkit-backface-visibility: hidden;
+}
+
+.post-list-thumb img,
+.gallery-item img,
+.media-tile img,
+.user-space-post-thumb img {
+    will-change: transform;
 }

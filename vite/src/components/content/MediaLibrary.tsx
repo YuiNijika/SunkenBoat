@@ -346,7 +346,7 @@ export default function MediaLibrary({
                                             />
                                         </button>
 
-                                        <div className="absolute top-1.5 right-1.5 flex gap-1 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
+                                        <div className="absolute top-1.5 right-1.5 flex gap-1 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100 max-sm:opacity-100">
                                             <Button
                                                 type="button"
                                                 variant="secondary"

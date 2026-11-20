@@ -445,6 +445,7 @@ export default function CommentsBlock({ data }: Props) {
                         id="api-comment-text"
                         avatar={{
                             name: data.loggedIn ? data.screenName : author || '访客',
+                            avatar: data.viewerAvatar,
                         }}
                         value={text}
                         onChange={setText}

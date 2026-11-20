@@ -307,6 +307,7 @@ export interface CommentsData {
     action: string;
     loggedIn: boolean;
     screenName: string;
+    viewerAvatar: string;
     profileUrl: string;
     logoutUrl: string;
     remember: {
@@ -321,6 +322,12 @@ export interface CommentsData {
 interface BlockBase {
     type: string;
     variant?: string;
+    /**
+     * Position of this block inside the matching Blocks setting. Present when
+     * the server rendered a settings-backed block; use it for the customizer
+     * instead of the rendered array index, because empty blocks are skipped.
+     */
+    settingsIndex?: number;
     width?: 'content' | 'half' | 'full';
     spaceTop?: 'default' | 'none' | 'sm' | 'md' | 'lg' | 'xl';
     spaceBottom?: 'default' | 'none' | 'sm' | 'md' | 'lg' | 'xl';

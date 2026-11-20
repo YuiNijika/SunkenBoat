@@ -77,6 +77,23 @@ final class Avatar
     }
 
     /**
+     * Resolve the avatar for a registered user. A custom avatar saved in the
+     * enhanced profile always wins over the configured avatar service.
+     */
+    public static function forUser(
+        int $uid,
+        string $mail,
+        int $size = 160,
+        ?string $customAvatar = null
+    ): string {
+        $custom = $customAvatar === null
+            ? UserProfile::customAvatar($uid)
+            : self::normalizeUrl($customAvatar);
+
+        return $custom !== '' ? $custom : self::url($mail, $size);
+    }
+
+    /**
      * Validate an avatar image URL. Empty input clears the custom avatar.
      */
     public static function normalizeUrl(mixed $value, int $limit = 512): string
@@ -118,9 +135,10 @@ final class Avatar
     }
 
     /**
-     * REST v2's built-in user profile builds Gravatar URLs directly. Rewrite
-     * those values so login and session responses follow the same avatar
-     * source as the theme-rendered pages.
+     * REST v2's built-in user profile builds Gravatar URLs directly, while
+     * comments only carry the registered author id. Rewrite both forms so API
+     * responses follow the same custom-avatar-first policy as server-rendered
+     * pages.
      *
      * @param mixed $payload
      * @return array<string, mixed>
@@ -129,7 +147,7 @@ final class Avatar
     {
         unset($status, $scope);
 
-        return is_array($payload) ? self::rewriteGravatarUrls($payload) : [];
+        return is_array($payload) ? self::rewriteAvatarPayload($payload) : [];
     }
 
     /**
@@ -187,13 +205,21 @@ final class Avatar
      * @param array<string, mixed> $payload
      * @return array<string, mixed>
      */
-    private static function rewriteGravatarUrls(array $payload): array
+    private static function rewriteAvatarPayload(array $payload): array
     {
         $prefix = self::prefix();
+        $uid = (int) ($payload['authorId'] ?? $payload['uid'] ?? 0);
+
+        if ($uid > 0 && array_key_exists('avatar', $payload) && is_string($payload['avatar'])) {
+            $custom = UserProfile::customAvatar($uid);
+            if ($custom !== '') {
+                $payload['avatar'] = $custom;
+            }
+        }
 
         foreach ($payload as $key => $value) {
             if (is_array($value)) {
-                $payload[$key] = self::rewriteGravatarUrls($value);
+                $payload[$key] = self::rewriteAvatarPayload($value);
                 continue;
             }
 
