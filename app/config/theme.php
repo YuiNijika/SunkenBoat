@@ -2264,8 +2264,12 @@ return [
                         'name' => 'Show_UserCenter',
                         'value' => false,
                         'inline' => true,
+                        'implies' => [
+                            'RESTAPI_Switch' => true,
+                            'RESTV2_Switch' => true,
+                        ],
                         'label' => '启用前台用户中心',
-                        'description' => '默认关闭。开启后页头显示用户入口并启用 /user/* 路由；还需在“运行&扩展 → 接口&安全”开启 REST API 总开关与 v2 写接口，否则账号页会提示服务未就绪。注册入口还受 Typecho 后台“是否允许注册”控制。',
+                        'description' => '默认关闭。开启后页头显示用户入口并启用 /user/* 路由，同时自动启用 REST API 总开关与 v2 写接口。注册入口还受 Typecho 后台“是否允许注册”控制。',
                     ],
                     [
                         'type' => 'Switch',
@@ -3260,7 +3264,7 @@ return [
                         'value' => false,
                         'group' => 'rest',
                         'label' => 'REST API 总开关',
-                        'description' => '同时控制公开只读接口和完整写接口。关闭后仅保留管理员后台使用的接口。',
+                        'description' => '同时控制公开只读接口和完整写接口。关闭后仅保留管理员后台使用的接口；启用前台用户中心时会自动开启。',
                     ],
                     [
                         'type' => 'Textarea',
@@ -3286,7 +3290,7 @@ return [
                         'group' => 'rest',
                         'inline' => true,
                         'label' => '启用 v2 写接口',
-                        'description' => '仅在 API 总开关开启后生效。开启后可使用登录、评论和内容管理功能。',
+                        'description' => '仅在 API 总开关开启后生效。开启后可使用登录、评论和内容管理功能；启用前台用户中心时会自动开启。',
                     ],
                     [
                         'type' => 'Text',

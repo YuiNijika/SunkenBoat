@@ -21,11 +21,12 @@ use TTDF\Theme\ArchiveLayout;
 use TTDF\Theme\FrontendAssets;
 use TTDF\Theme\Options;
 use TTDF\Theme\Schema;
+use TTDF\Theme\Settings;
 use TTDF\Theme\ThemeConfig;
 
 final class Framework
 {
-    public const VERSION = '5.0.6-next';
+    public const VERSION = '5.0.7-next';
 
     public const CORE_RELATIVE_PATH = 'vendor/yuinijika/ttdf/core';
 
@@ -102,6 +103,7 @@ final class Framework
         Hooks::reset();
         TypechoBridge::reset();
         Options::reset();
+        Settings::reset();
         Schema::reset();
         ErrorHandler::reset();
         Config::reset();
