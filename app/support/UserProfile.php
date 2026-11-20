@@ -32,7 +32,9 @@ final class UserProfile
         'administrator' => 4,
     ];
 
-    public const OPTION_NAME = '_ttdf_user_profile';
+    public const OPTION_NAME = 'sunken_user_profile';
+
+    public const LEGACY_OPTION_NAME = '_ttdf_user_profile';
 
     private const TEXT_FIELDS = [
         'signature' => 120,
@@ -43,9 +45,17 @@ final class UserProfile
 
     private const PRIVACY = ['public', 'members', 'private'];
 
+    private const CERTIFICATION_TYPES = ['personal', 'organization'];
+
+    private const CERTIFICATION_STATUS = ['none', 'pending', 'approved', 'rejected'];
+
     public static function register(): void
     {
         Endpoint::register('user-profile', [self::class, 'handle'], [
+            'auth' => 'user',
+            'method' => 'ANY',
+        ]);
+        Endpoint::register('user-certification', [self::class, 'handleCertification'], [
             'auth' => 'user',
             'method' => 'ANY',
         ]);
@@ -56,17 +66,31 @@ final class UserProfile
         return (Settings::values()['User_Center_Enhanced'] ?? true) === true;
     }
 
+    public static function certificationEnabled(): bool
+    {
+        return self::enabled() && (Settings::values()['User_Certification'] ?? true) === true;
+    }
+
     /**
-     * @return array<string, string>
+     * @return array<string, mixed>
      */
     public static function defaults(): array
     {
         return [
             'avatar' => '',
+            'background' => '',
             'signature' => '',
             'gender' => 'secret',
             'privacy' => 'public',
             'location' => '',
+            'certificationType' => '',
+            'certificationName' => '',
+            'certificationNote' => '',
+            'certificationStatus' => 'none',
+            'certificationSubmitted' => 0,
+            'certificationReviewed' => 0,
+            'certificationReviewer' => 0,
+            'certificationReason' => '',
         ];
     }
 
@@ -97,6 +121,190 @@ final class UserProfile
     }
 
     /**
+     * User-facing certification submission plus administrator review actions.
+     *
+     * @param array<string, mixed> $data
+     * @return array<string, mixed>
+     */
+    public static function handleCertification(array $data): array
+    {
+        $uid = self::currentUid();
+        if ($uid <= 0) {
+            Response::error('Authentication required', 401);
+        }
+
+        $method = strtoupper((string) ($_SERVER['REQUEST_METHOD'] ?? 'GET'));
+        $admin = self::viewerIsAdmin();
+        $certification = self::certification(self::read($uid));
+
+        if ($method === 'GET') {
+            if ($admin && self::intValue($data['pending'] ?? 0) === 1) {
+                return [
+                    'enabled' => self::certificationEnabled(),
+                    'certification' => $certification,
+                    'items' => self::pendingCertifications(),
+                ];
+            }
+
+            return [
+                'enabled' => self::certificationEnabled(),
+                'certification' => $certification,
+            ];
+        }
+
+        $action = trim((string) ($data['op'] ?? 'submit'));
+        if ($action === 'submit') {
+            if (!self::certificationEnabled()) {
+                Response::error('认证功能尚未开启', 403);
+            }
+            if ($certification['status'] === 'pending') {
+                Response::error('认证申请正在审核中，请耐心等待', 409);
+            }
+
+            $type = trim((string) ($data['type'] ?? ''));
+            if (!in_array($type, self::CERTIFICATION_TYPES, true)) {
+                Response::error('请选择认证类型', 422, ['type' => '认证类型无效']);
+            }
+            $name = self::text($data['name'] ?? '', 64);
+            if (self::length($name) < 2) {
+                Response::error('认证名称至少需要 2 个字符', 422, [
+                    'name' => '请填写真实姓名或组织名称',
+                ]);
+            }
+            $note = self::text($data['note'] ?? '', 500);
+            if ($note === '') {
+                Response::error('请填写认证说明', 422, ['note' => '请补充认证依据']);
+            }
+
+            $next = self::read($uid);
+            $next['certificationType'] = $type;
+            $next['certificationName'] = $name;
+            $next['certificationNote'] = $note;
+            $next['certificationStatus'] = 'pending';
+            $next['certificationSubmitted'] = time();
+            $next['certificationReviewed'] = 0;
+            $next['certificationReviewer'] = 0;
+            $next['certificationReason'] = '';
+            self::write($uid, $next);
+
+            return [
+                'message' => '认证申请已提交，请等待管理员审核',
+                'certification' => self::certification($next),
+            ];
+        }
+
+        if (!$admin) {
+            Response::error('只有管理员可以审核认证', 403);
+        }
+
+        $targetUid = self::intValue($data['uid'] ?? 0);
+        if ($targetUid <= 0) {
+            Response::error('请选择要审核的用户', 422, ['uid' => '用户 UID 无效']);
+        }
+
+        $next = self::read($targetUid);
+        if ($action === 'approve') {
+            $next['certificationStatus'] = 'approved';
+        } elseif ($action === 'reject') {
+            $next['certificationStatus'] = 'rejected';
+        } elseif ($action === 'revoke') {
+            $next['certificationStatus'] = 'none';
+        } else {
+            Response::error('未知的认证操作', 422);
+        }
+
+        $next['certificationReason'] = self::text($data['reason'] ?? '', 200);
+        $next['certificationReviewed'] = time();
+        $next['certificationReviewer'] = $uid;
+        self::write($targetUid, $next);
+
+        return [
+            'message' => match ($action) {
+                'approve' => '认证已通过',
+                'reject' => '认证已驳回',
+                default => '认证已撤销',
+            },
+            'uid' => $targetUid,
+            'certification' => self::certification($next),
+        ];
+    }
+
+    /**
+     * @param array<string, mixed> $values
+     * @return array{status: string, type: string, name: string, note: string, reason: string, submitted: int, reviewed: int}
+     */
+    private static function certification(array $values): array
+    {
+        $status = (string) ($values['certificationStatus'] ?? 'none');
+        $type = (string) ($values['certificationType'] ?? '');
+
+        return [
+            'status' => in_array($status, self::CERTIFICATION_STATUS, true) ? $status : 'none',
+            'type' => in_array($type, self::CERTIFICATION_TYPES, true) ? $type : '',
+            'name' => self::text($values['certificationName'] ?? '', 64),
+            'note' => self::text($values['certificationNote'] ?? '', 500),
+            'reason' => self::text($values['certificationReason'] ?? '', 200),
+            'submitted' => self::timestamp($values['certificationSubmitted'] ?? 0),
+            'reviewed' => self::timestamp($values['certificationReviewed'] ?? 0),
+        ];
+    }
+
+    /**
+     * @return list<array<string, mixed>>
+     */
+    private static function pendingCertifications(): array
+    {
+        try {
+            $db = Db::get();
+            $rows = $db->fetchAll(
+                $db->select('user', 'value')
+                    ->from('table.options')
+                    ->where('name = ?', self::OPTION_NAME)
+                    ->limit(200)
+            );
+        } catch (\Throwable) {
+            return [];
+        }
+
+        $items = [];
+        foreach ($rows as $row) {
+            $targetUid = (int) ($row['user'] ?? 0);
+            $raw = (string) ($row['value'] ?? '');
+            $decoded = json_decode($raw, true);
+            if ($targetUid <= 0 || !is_array($decoded)) {
+                continue;
+            }
+
+            $certification = self::certification($decoded);
+            if ($certification['status'] !== 'pending') {
+                continue;
+            }
+
+            try {
+                $user = $db->fetchRow(
+                    $db->select('uid', 'name', 'screenName', 'mail')
+                        ->from('table.users')
+                        ->where('uid = ?', $targetUid)
+                        ->limit(1)
+                );
+            } catch (\Throwable) {
+                $user = null;
+            }
+
+            $mail = is_array($user) ? (string) ($user['mail'] ?? '') : '';
+            $items[] = [
+                'uid' => $targetUid,
+                'name' => is_array($user) ? (string) ($user['name'] ?? '') : '',
+                'screenName' => is_array($user) ? (string) ($user['screenName'] ?? '') : '',
+                'avatar' => Avatar::url($mail),
+                'certification' => $certification,
+            ];
+        }
+
+        return $items;
+    }
+
+    /**
      * @return array<string, mixed>
      */
     public static function viewer(int $uid): array
@@ -117,7 +325,9 @@ final class UserProfile
         $created = is_numeric($row['created'] ?? null) ? (int) $row['created'] : 0;
         $extra = self::read($uid);
         $customAvatar = self::enabled() ? ($extra['avatar'] ?? '') : '';
+        $customBackground = self::enabled() ? ($extra['background'] ?? '') : '';
         unset($extra['avatar']);
+        unset($extra['background']);
 
         $profile = array_merge([
             'uid' => (int) ($row['uid'] ?? 0),
@@ -129,9 +339,12 @@ final class UserProfile
             'created' => $created > 0 ? date('c', $created) : '',
             'avatar' => $customAvatar !== '' ? $customAvatar : Avatar::url($mail),
             'customAvatar' => $customAvatar,
+            'background' => $customBackground,
             'posts' => self::countPosts($uid),
             'comments' => self::countComments($uid),
             'canWrite' => self::canWriteGroup((string) ($row['group'] ?? '')),
+            'certificationEnabled' => self::certificationEnabled(),
+            'certification' => self::certification($extra),
         ], $extra);
 
         $circles = Forum::userCircleCounts($uid);
@@ -197,7 +410,14 @@ final class UserProfile
             || ($privacy === 'private' && ($self || $admin))
         );
         $customAvatar = $enabled ? (string) ($extra['avatar'] ?? '') : '';
+        $customBackground = $enabled ? (string) ($extra['background'] ?? '') : '';
         $created = is_numeric($row['created'] ?? null) ? (int) $row['created'] : 0;
+        $certification = self::certification($extra);
+        $publicCertification = $certification['status'] === 'approved'
+            || $self
+            || $admin
+                ? $certification
+                : null;
 
         $profile = [
             'uid' => (int) ($row['uid'] ?? 0),
@@ -205,6 +425,7 @@ final class UserProfile
             'screenName' => (string) ($row['screenName'] ?? ''),
             'avatar' => $customAvatar !== '' ? $customAvatar : Avatar::url((string) ($row['mail'] ?? '')),
             'customAvatar' => $customAvatar,
+            'background' => $customBackground,
             'url' => (string) ($row['url'] ?? ''),
             'group' => (string) ($row['group'] ?? ''),
             'created' => $created > 0 ? date('c', $created) : '',
@@ -214,6 +435,8 @@ final class UserProfile
             'isSelf' => $self,
             'privacy' => $privacy,
             'detailsVisible' => $detailsVisible,
+            'certificationEnabled' => self::certificationEnabled(),
+            'certification' => $publicCertification,
             'signature' => $detailsVisible ? (string) ($extra['signature'] ?? '') : '',
             'gender' => $detailsVisible ? (string) ($extra['gender'] ?? 'secret') : '',
             'location' => $detailsVisible ? (string) ($extra['location'] ?? '') : '',
@@ -273,6 +496,17 @@ final class UserProfile
             $next['avatar'] = $avatar;
         }
 
+        if (array_key_exists('background', $input)) {
+            $rawBackground = is_string($input['background']) ? trim($input['background']) : '';
+            $background = Avatar::normalizeUrl($rawBackground);
+            if ($rawBackground !== '' && $background === '') {
+                Response::error('Invalid background URL', 422, [
+                    'background' => '背景图地址必须是完整的 http(s) 图片链接',
+                ]);
+            }
+            $next['background'] = $background;
+        }
+
         $gender = (string) ($input['gender'] ?? $current['gender']);
         $next['gender'] = in_array($gender, self::GENDERS, true) ? $gender : $current['gender'];
 
@@ -283,7 +517,7 @@ final class UserProfile
     }
 
     /**
-     * @return array<string, string>
+     * @return array<string, mixed>
      */
     private static function read(int $uid): array
     {
@@ -297,13 +531,25 @@ final class UserProfile
         );
 
         $raw = $rows[0]['value'] ?? '';
+
+        if (!is_string($raw) || trim($raw) === '') {
+            $legacy = $db->fetchAll(
+                $db->select('value')
+                    ->from('table.options')
+                    ->where('name = ?', self::LEGACY_OPTION_NAME)
+                    ->where('user = ?', $uid)
+                    ->limit(1)
+            );
+            $raw = $legacy[0]['value'] ?? '';
+        }
+
         $decoded = is_string($raw) ? json_decode($raw, true) : null;
 
         return self::normalize(is_array($decoded) ? $decoded : []);
     }
 
     /**
-     * @param array<string, string> $values
+     * @param array<string, mixed> $values
      */
     private static function write(int $uid, array $values): void
     {
@@ -339,7 +585,7 @@ final class UserProfile
 
     /**
      * @param array<string, mixed> $values
-     * @return array<string, string>
+     * @return array<string, mixed>
      */
     private static function normalize(array $values): array
     {
@@ -351,13 +597,51 @@ final class UserProfile
         }
 
         $result['avatar'] = Avatar::normalizeUrl($values['avatar'] ?? $defaults['avatar']);
+        $result['background'] = Avatar::normalizeUrl(
+            $values['background'] ?? $defaults['background']
+        );
 
         $gender = (string) ($values['gender'] ?? $defaults['gender']);
         $privacy = (string) ($values['privacy'] ?? $defaults['privacy']);
         $result['gender'] = in_array($gender, self::GENDERS, true) ? $gender : $defaults['gender'];
         $result['privacy'] = in_array($privacy, self::PRIVACY, true) ? $privacy : $defaults['privacy'];
 
+        $type = (string) ($values['certificationType'] ?? $defaults['certificationType']);
+        $status = (string) ($values['certificationStatus'] ?? $defaults['certificationStatus']);
+        $result['certificationType'] = in_array($type, self::CERTIFICATION_TYPES, true)
+            ? $type
+            : '';
+        $result['certificationName'] = self::text(
+            $values['certificationName'] ?? $defaults['certificationName'],
+            64
+        );
+        $result['certificationNote'] = self::text(
+            $values['certificationNote'] ?? $defaults['certificationNote'],
+            500
+        );
+        $result['certificationStatus'] = in_array($status, self::CERTIFICATION_STATUS, true)
+            ? $status
+            : 'none';
+        $result['certificationSubmitted'] = self::timestamp(
+            $values['certificationSubmitted'] ?? $defaults['certificationSubmitted']
+        );
+        $result['certificationReviewed'] = self::timestamp(
+            $values['certificationReviewed'] ?? $defaults['certificationReviewed']
+        );
+        $result['certificationReviewer'] = self::timestamp(
+            $values['certificationReviewer'] ?? $defaults['certificationReviewer']
+        );
+        $result['certificationReason'] = self::text(
+            $values['certificationReason'] ?? $defaults['certificationReason'],
+            200
+        );
+
         return $result;
+    }
+
+    private static function timestamp(mixed $value): int
+    {
+        return is_numeric($value) ? max(0, (int) $value) : 0;
     }
 
     private static function text(mixed $value, int $limit): string
@@ -375,6 +659,16 @@ final class UserProfile
         return function_exists('mb_substr')
             ? mb_substr($value, 0, $limit, 'UTF-8')
             : substr($value, 0, $limit);
+    }
+
+    private static function length(string $value): int
+    {
+        return function_exists('mb_strlen') ? mb_strlen($value, 'UTF-8') : strlen($value);
+    }
+
+    private static function intValue(mixed $value): int
+    {
+        return is_numeric($value) ? (int) $value : 0;
     }
 
     private static function currentUid(): int

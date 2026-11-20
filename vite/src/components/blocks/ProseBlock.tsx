@@ -4,6 +4,7 @@ import { Card } from '../ui/card';
 import ImageLightbox from '../content/ImageLightbox';
 import PostMeta from '../content/PostMeta';
 import { ShareButton } from '../content/ShareSheet';
+import { notifyError, notifySuccess } from '../../lib/notify';
 import type { LightboxImage } from '../content/ImageLightbox';
 import type { PostCategory, ShareConfig } from '../../types';
 
@@ -105,10 +106,12 @@ export default function ProseBlock({ title, meta, share, layout, html, codeCopy 
                         button?.setAttribute('data-state', 'success');
                         button?.setAttribute('aria-label', '代码已复制');
                         button?.setAttribute('title', '代码已复制');
+                        notifySuccess('代码已复制。');
                     } catch {
                         button?.setAttribute('data-state', 'error');
                         button?.setAttribute('aria-label', '复制失败');
                         button?.setAttribute('title', '复制失败');
+                        notifyError('复制失败，请手动选择代码。');
                     }
 
                     timer = window.setTimeout(() => {

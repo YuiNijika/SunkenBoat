@@ -88,8 +88,12 @@ export interface OAuthEndpoints {
 
 export interface UserForumEndpoints {
     enabled: boolean;
+    label: string;
+    title: string;
     content: string;
     moderation: string;
+    topicUpdate: string;
+    topicDelete: string;
     nonce: string;
     home: string;
     editor: string;
@@ -119,6 +123,9 @@ export interface UserApiEndpoints {
     profile: string;
     profileNonce: string;
     enhanced: boolean;
+    certificationEnabled: boolean;
+    certification: string;
+    certificationNonce: string;
     avatarMedia: string;
     avatarMediaEnabled: boolean;
     pages: {
@@ -171,6 +178,7 @@ export interface UserProfile {
     created?: string;
     avatar?: string;
     customAvatar?: string;
+    background?: string;
     signature?: string;
     gender?: string;
     privacy?: string;
@@ -181,6 +189,18 @@ export interface UserProfile {
     joinedCircles?: number;
     createdCircles?: number;
     canWrite?: boolean;
+    certificationEnabled?: boolean;
+    certification?: UserCertification | null;
+}
+
+export interface UserCertification {
+    status: 'none' | 'pending' | 'approved' | 'rejected' | string;
+    type: 'personal' | 'organization' | '' | string;
+    name: string;
+    note: string;
+    reason: string;
+    submitted: number;
+    reviewed: number;
 }
 
 export interface MediaItem {
@@ -310,27 +330,30 @@ export interface HeroBlock extends BlockBase {
     eyebrow: string;
     title: string;
     lead: string;
+    background: 'color' | 'image' | 'video';
+    color: string;
     image: string;
+    imageFit: 'cover' | 'contain' | 'fill';
+    imageEffect: 'none' | 'fixed' | 'zoom' | 'pan';
+    imagePosition: 'center' | 'top' | 'bottom' | 'left' | 'right';
+    video: string;
+    videoPoster: string;
     height: '' | 'sm' | 'md' | 'lg' | 'screen';
     overlay: number;
     align: 'left' | 'center';
     hot: string[];
-    showFeatured: boolean;
     searchAction: string;
     searchPlaceholder: string;
     actions: { label: string; url: string; style: string }[];
-    featured: FeaturedPost | null;
+    cards: HeroCard[];
+    cardStyle: 'glass' | 'solid';
 }
 
-export interface FeaturedPost {
+export interface HeroCard {
     title: string;
+    text: string;
     url: string;
-    excerpt: string;
-    date: string;
-    thumb: string;
-    comments: number;
-    readingTime: number;
-    views: number;
+    badge: string;
 }
 
 export interface PostListBlock extends BlockBase {
@@ -423,6 +446,9 @@ export interface CarouselBlock extends BlockBase {
     width: 'content' | 'half' | 'full';
     title: string;
     slides: CarouselSlide[];
+    height: '' | 'sm' | 'md' | 'lg' | 'screen';
+    overlay: number;
+    align: 'left' | 'center';
 }
 
 export interface PostNavBlock extends BlockBase {
@@ -772,6 +798,7 @@ export interface UserSpaceProfile {
     screenName: string;
     avatar: string;
     customAvatar: string;
+    background: string;
     url: string;
     group: string;
     created: string;
@@ -787,6 +814,8 @@ export interface UserSpaceProfile {
     signature: string;
     gender: string;
     location: string;
+    certificationEnabled?: boolean;
+    certification?: UserCertification | null;
     editUrl?: string;
 }
 
@@ -833,7 +862,11 @@ export interface ForumPermissions {
 
 export interface ForumEndpoints {
     circleCreate: string;
+    circleUpdate: string;
     topicCreate: string;
+    topicUpdate: string;
+    topicDelete: string;
+    moderation: string;
     replyCreate: string;
     join: string;
     react: string;
@@ -892,6 +925,7 @@ export interface ForumCircle {
     slug: string;
     description: string;
     icon: string;
+    background: string;
     url: string;
     topicCount: number;
     memberCount: number;
@@ -911,6 +945,8 @@ export interface ForumTopic {
     slug: string;
     title: string;
     status: 'publish' | 'waiting' | 'rejected' | string;
+    deleted?: boolean;
+    restricted?: boolean;
     url: string;
     excerpt: string;
     thumbnail: string;
@@ -1002,8 +1038,11 @@ export interface ForumCircleBlock extends BlockBase {
 
 export interface ForumTopicBlock extends BlockBase {
     type: 'forum-topic';
+    restricted?: boolean;
+    restrictedText?: string;
     forum: ForumConfig;
     topic: ForumTopic;
+    circle: ForumCircle | null;
     breadcrumbs: BreadcrumbItem[];
     contentHtml: string;
     replies: ForumReply[];
@@ -1130,6 +1169,7 @@ export interface ForumEditorCircle {
     slug: string;
     url: string;
     icon: string;
+    background: string;
     description: string;
 }
 
@@ -1139,7 +1179,29 @@ export interface ForumEditorGate {
     text: string;
 }
 
+export interface ForumEditorTopic {
+    id: number;
+    title: string;
+    slug: string;
+    content: string;
+    kind: string;
+    tags: string[];
+    circleId: number;
+    status: string;
+    pinned: boolean;
+    featured: boolean;
+    url: string;
+}
+
+export interface ForumEditorStatusOption {
+    value: 'publish' | 'waiting' | 'rejected' | string;
+    label: string;
+}
+
 export interface ForumEditorData {
+    mode: 'forum-topic';
+    isEdit: boolean;
+    topic: ForumEditorTopic | null;
     gate: ForumEditorGate | null;
     circle: ForumEditorCircle | null;
     circles: ForumEditorCircle[];
@@ -1157,10 +1219,14 @@ export interface ForumEditorData {
     canCreateCircle: boolean;
     viewer: ForumViewer;
     permissions: ForumPermissions;
+    canModerate: boolean;
+    statusOptions: ForumEditorStatusOption[];
     canUseMedia: boolean;
     mediaEndpoint: string;
     endpoints: {
         topicCreate: string;
+        topicUpdate: string;
+        topicDelete: string;
     };
 }
 

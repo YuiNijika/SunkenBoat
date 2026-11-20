@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react';
 import type { FormEvent, ReactNode } from 'react';
 import { useLocation } from 'react-router-dom';
 import {
+    BadgeCheck,
+    Camera,
     CircleDot,
     ExternalLink,
     FileText,
@@ -10,10 +12,12 @@ import {
     LoaderCircle,
     LogOut,
     Mail,
+    MapPin,
     MessageSquare,
     Newspaper,
     ShieldCheck,
     Unlink,
+    UserCheck,
     UserRound,
 } from 'lucide-react';
 import { Button } from '../ui/button';
@@ -24,7 +28,14 @@ import {
     readPayload,
     requestEmailCode,
 } from '../../lib/user';
-import type { OAuthProvider, UserApiEndpoints, UserProfile } from '../../types';
+import type {
+    OAuthProvider,
+    UserApiEndpoints,
+    UserCertification,
+    UserProfile,
+} from '../../types';
+import { notifyError, notifySuccess } from '../../lib/notify';
+import { refreshApp } from '../../lib/appNavigation';
 import ContentManager from './ContentManager';
 import AuthDialog from './AuthDialog';
 import UserAvatar from './UserAvatar';
@@ -40,18 +51,22 @@ const GROUP_LABELS: Record<string, string> = {
 
 type Status = 'loading' | 'guest' | 'ready' | 'error';
 
-interface Feedback {
-    tone: 'success' | 'error';
-    text: string;
-}
-
 interface Props {
     api?: UserApiEndpoints;
     section?: AccountSection;
 }
 
+interface PendingCertification {
+    uid: number;
+    name: string;
+    screenName: string;
+    avatar: string;
+    certification: UserCertification;
+}
+
 interface ProfileDetails {
     avatar: string;
+    background: string;
     signature: string;
     gender: string;
     privacy: string;
@@ -62,6 +77,7 @@ type AccountSection = 'profile' | 'security' | 'social' | 'content';
 
 const EMPTY_DETAILS: ProfileDetails = {
     avatar: '',
+    background: '',
     signature: '',
     gender: 'secret',
     privacy: 'public',
@@ -91,33 +107,36 @@ const OAUTH_ERRORS: Record<string, string> = {
     oauth_unbound: '该社交账号尚未绑定，请先登录后到用户中心绑定。',
 };
 
-function FeedbackText({ feedback }: { feedback: Feedback | null }) {
-    if (!feedback) {
-        return null;
-    }
-
-    return (
-        <p
-            className={
-                'rounded-[4px] px-3 py-2 text-[12px] leading-5 ' +
-                (feedback.tone === 'error'
-                    ? 'bg-destructive/10 text-destructive'
-                    : 'bg-brand-soft text-brand')
-            }
-            role={feedback.tone === 'error' ? 'alert' : 'status'}
-        >
-            {feedback.text}
-        </p>
-    );
-}
-
 function detailsFromProfile(profile: UserProfile): ProfileDetails {
     return {
         avatar: profile.customAvatar ?? '',
+        background: profile.background ?? '',
         signature: profile.signature ?? '',
         gender: profile.gender || 'secret',
         privacy: profile.privacy || 'public',
         location: profile.location ?? '',
+    };
+}
+
+function certificationFrom(value: unknown): UserCertification | null {
+    if (!value || typeof value !== 'object') {
+        return null;
+    }
+
+    const item = value as Partial<UserCertification>;
+    const status = String(item.status ?? 'none');
+    if (!['none', 'pending', 'approved', 'rejected'].includes(status)) {
+        return null;
+    }
+
+    return {
+        status,
+        type: String(item.type ?? ''),
+        name: String(item.name ?? ''),
+        note: String(item.note ?? ''),
+        reason: String(item.reason ?? ''),
+        submitted: Number.isFinite(Number(item.submitted)) ? Math.max(0, Number(item.submitted)) : 0,
+        reviewed: Number.isFinite(Number(item.reviewed)) ? Math.max(0, Number(item.reviewed)) : 0,
     };
 }
 
@@ -163,16 +182,22 @@ export default function AccountPanel({ api, section = 'profile' }: Props) {
     const [cooldown, setCooldown] = useState(0);
     const [details, setDetails] = useState<ProfileDetails>(EMPTY_DETAILS);
     const [detailsReady, setDetailsReady] = useState(false);
-    const [profileFeedback, setProfileFeedback] = useState<Feedback | null>(null);
-    const [mailFeedback, setMailFeedback] = useState<Feedback | null>(null);
-    const [passwordFeedback, setPasswordFeedback] = useState<Feedback | null>(null);
     const [loadError, setLoadError] = useState('');
     const [oauthProviders, setOauthProviders] = useState<OAuthProvider[]>(
         api?.oauth?.providers ?? []
     );
     const [oauthBusy, setOauthBusy] = useState('');
-    const [oauthFeedback, setOauthFeedback] = useState<Feedback | null>(null);
     const [avatarMediaOpen, setAvatarMediaOpen] = useState(false);
+    const [backgroundMediaOpen, setBackgroundMediaOpen] = useState(false);
+    const [certification, setCertification] = useState<UserCertification | null>(null);
+    const [certType, setCertType] = useState<'personal' | 'organization'>('personal');
+    const [certName, setCertName] = useState('');
+    const [certNote, setCertNote] = useState('');
+    const [certBusy, setCertBusy] = useState(false);
+    const [pendingCertifications, setPendingCertifications] = useState<PendingCertification[]>([]);
+    const [pendingCertLoading, setPendingCertLoading] = useState(false);
+    const [certReviewBusy, setCertReviewBusy] = useState(0);
+    const [certReason, setCertReason] = useState('');
 
     const sessionEndpoint = api?.session;
     const meEndpoint = api?.me;
@@ -188,15 +213,13 @@ export default function AccountPanel({ api, section = 'profile' }: Props) {
         const error = params.get('oauth_error');
 
         if (result === 'bound') {
-            setOauthFeedback({ tone: 'success', text: '社交账号已绑定。' });
+            notifySuccess('社交账号已绑定。');
         } else if (result === 'login') {
-            setOauthFeedback({ tone: 'success', text: '已通过社交账号登录。' });
-        } else if (!error) {
-            setOauthFeedback(null);
+            notifySuccess('已通过社交账号登录。');
         }
 
         if (error) {
-            setOauthFeedback({ tone: 'error', text: OAUTH_ERRORS[error] ?? '社交账号授权失败。' });
+            notifyError(OAUTH_ERRORS[error] ?? '社交账号授权失败。');
         }
     }, [location.search]);
 
@@ -285,6 +308,7 @@ export default function AccountPanel({ api, section = 'profile' }: Props) {
                     setUrl(current.url ?? '');
                     setMail(current.mail ?? '');
                     setDetails(detailsFromProfile(current));
+                    setCertification(current.certification ?? null);
                     setStatus('ready');
                 }
             } catch (reason) {
@@ -304,6 +328,91 @@ export default function AccountPanel({ api, section = 'profile' }: Props) {
             controller.abort();
         };
     }, [api?.enabled, api?.enhanced, api?.profile, api?.profileNonce, meEndpoint, sessionEndpoint]);
+
+    useEffect(() => {
+        if (
+            section !== 'content'
+            || profile?.group !== 'administrator'
+            || !api?.certificationEnabled
+            || !api.certification
+            || !api.certificationNonce
+        ) {
+            setPendingCertifications([]);
+            return;
+        }
+
+        const controller = new AbortController();
+        let active = true;
+        setPendingCertLoading(true);
+
+        void (async () => {
+            try {
+                const url = new URL(api.certification, window.location.href);
+                url.searchParams.set('pending', '1');
+                const response = await fetch(url, {
+                    credentials: 'same-origin',
+                    headers: {
+                        Accept: 'application/json',
+                        'X-Typecho-Token': api.certificationNonce,
+                    },
+                    signal: controller.signal,
+                });
+                const payload = await readPayload(response);
+                if (!response.ok) {
+                    throw new Error(errorMessage(payload, '读取认证申请失败'));
+                }
+
+                const data = payload?.data as { items?: unknown } | undefined;
+                const items = Array.isArray(data?.items) ? data.items : [];
+                if (active) {
+                    setPendingCertifications(
+                        items
+                            .map((value): PendingCertification | null => {
+                                if (!value || typeof value !== 'object') {
+                                    return null;
+                                }
+                                const item = value as Partial<PendingCertification>;
+                                const cert = certificationFrom(item.certification);
+                                if (!cert || Number(item.uid) <= 0) {
+                                    return null;
+                                }
+
+                                return {
+                                    uid: Number(item.uid),
+                                    name: String(item.name ?? ''),
+                                    screenName: String(item.screenName ?? ''),
+                                    avatar: String(item.avatar ?? ''),
+                                    certification: cert,
+                                };
+                            })
+                            .filter((item): item is PendingCertification => item !== null)
+                    );
+                }
+            } catch (reason) {
+                if (reason instanceof DOMException && reason.name === 'AbortError') {
+                    return;
+                }
+                if (active) {
+                    setPendingCertifications([]);
+                }
+            } finally {
+                if (active) {
+                    setPendingCertLoading(false);
+                }
+            }
+        })();
+
+        return () => {
+            active = false;
+            controller.abort();
+        };
+    }, [
+        section,
+        profile?.group,
+        api?.certification,
+        api?.certificationEnabled,
+        api?.certificationNonce,
+    ]);
 
     useEffect(() => {
         if (cooldown <= 0) {
@@ -327,6 +436,9 @@ export default function AccountPanel({ api, section = 'profile' }: Props) {
         setMail(next.mail ?? '');
         if (api?.enhanced) {
             setDetails(detailsFromProfile(next));
+        }
+        if (next.certification) {
+            setCertification(next.certification);
         }
         setStatus('ready');
     };
@@ -392,7 +504,7 @@ export default function AccountPanel({ api, section = 'profile' }: Props) {
             try {
                 new URL(url.trim());
             } catch {
-                setProfileFeedback({ tone: 'error', text: '个人主页需要填写完整的 http(s) 地址' });
+                notifyError('个人主页需要填写完整的 http(s) 地址');
                 return;
             }
         }
@@ -408,13 +520,28 @@ export default function AccountPanel({ api, section = 'profile' }: Props) {
                     throw new Error();
                 }
             } catch {
-                setProfileFeedback({ tone: 'error', text: '头像地址需要填写完整的 http(s) 链接' });
+                notifyError('头像地址需要填写完整的 http(s) 链接');
+                return;
+            }
+        }
+
+        if (details.background.trim() !== '') {
+            try {
+                const backgroundUrl = new URL(details.background.trim());
+                if (
+                    (backgroundUrl.protocol !== 'http:' && backgroundUrl.protocol !== 'https:')
+                    || backgroundUrl.username !== ''
+                    || backgroundUrl.password !== ''
+                ) {
+                    throw new Error();
+                }
+            } catch {
+                notifyError('背景图地址需要填写完整的 http(s) 链接');
                 return;
             }
         }
 
         setProfileBusy(true);
-        setProfileFeedback(null);
 
         try {
             const response = await fetch(meEndpoint, {
@@ -447,12 +574,11 @@ export default function AccountPanel({ api, section = 'profile' }: Props) {
             }
 
             syncProfile(updated);
-            setProfileFeedback({ tone: 'success', text: '个人资料已更新。' });
+            notifySuccess('个人资料已更新。');
         } catch (reason) {
-            setProfileFeedback({
-                tone: 'error',
-                text: reason instanceof Error ? reason.message : '资料保存失败',
-            });
+            notifyError(
+                reason instanceof Error ? reason.message : '资料保存失败'
+            );
         } finally {
             setProfileBusy(false);
         }
@@ -464,7 +590,6 @@ export default function AccountPanel({ api, section = 'profile' }: Props) {
         }
 
         setOauthBusy(provider.id);
-        setOauthFeedback(null);
 
         try {
             const response = await fetch(api.oauth.unbind, {
@@ -495,12 +620,9 @@ export default function AccountPanel({ api, section = 'profile' }: Props) {
                     )
                 );
             }
-            setOauthFeedback({ tone: 'success', text: `${provider.label} 已解绑。` });
+            notifySuccess(`${provider.label} 已解绑。`);
         } catch (reason) {
-            setOauthFeedback({
-                tone: 'error',
-                text: reason instanceof Error ? reason.message : '解绑失败',
-            });
+            notifyError(reason instanceof Error ? reason.message : '解绑失败');
         } finally {
             setOauthBusy('');
         }
@@ -513,25 +635,22 @@ export default function AccountPanel({ api, section = 'profile' }: Props) {
 
         const nextMail = mail.trim();
         if (nextMail === '') {
-            setMailFeedback({ tone: 'error', text: '请先填写新邮箱' });
+            notifyError('请先填写新邮箱');
             return;
         }
 
         setSendingCode(true);
-        setMailFeedback(null);
 
         try {
             const result = await requestEmailCode(api.emailCode, nextMail, 'email');
             setCooldown(result.cooldown);
-            setMailFeedback({
-                tone: 'success',
-                text: `验证码已发送至新邮箱，${Math.max(1, Math.ceil(result.expiresIn / 60))} 分钟内有效。`,
-            });
+            notifySuccess(
+                `验证码已发送至新邮箱，${Math.max(1, Math.ceil(result.expiresIn / 60))} 分钟内有效。`
+            );
         } catch (reason) {
-            setMailFeedback({
-                tone: 'error',
-                text: reason instanceof Error ? reason.message : '验证码发送失败',
-            });
+            notifyError(
+                reason instanceof Error ? reason.message : '验证码发送失败'
+            );
         } finally {
             setSendingCode(false);
         }
@@ -545,22 +664,21 @@ export default function AccountPanel({ api, section = 'profile' }: Props) {
 
         const nextMail = mail.trim();
         if (nextMail === '') {
-            setMailFeedback({ tone: 'error', text: '邮箱不能为空' });
+            notifyError('邮箱不能为空');
             return;
         }
 
         if (profile && nextMail.toLowerCase() === profile.mail?.toLowerCase()) {
-            setMailFeedback({ tone: 'error', text: '新邮箱不能与当前邮箱相同' });
+            notifyError('新邮箱不能与当前邮箱相同');
             return;
         }
 
         if (api.emailVerify && emailCode.trim() === '') {
-            setMailFeedback({ tone: 'error', text: '请输入发送到新邮箱的验证码' });
+            notifyError('请输入发送到新邮箱的验证码');
             return;
         }
 
         setMailBusy(true);
-        setMailFeedback(null);
 
         try {
             const response = await fetch(meEndpoint, {
@@ -587,12 +705,9 @@ export default function AccountPanel({ api, section = 'profile' }: Props) {
 
             syncProfile(updated);
             setEmailCode('');
-            setMailFeedback({ tone: 'success', text: '登录邮箱已更新。' });
+            notifySuccess('登录邮箱已更新。');
         } catch (reason) {
-            setMailFeedback({
-                tone: 'error',
-                text: reason instanceof Error ? reason.message : '邮箱更新失败',
-            });
+            notifyError(reason instanceof Error ? reason.message : '邮箱更新失败');
         } finally {
             setMailBusy(false);
         }
@@ -605,17 +720,16 @@ export default function AccountPanel({ api, section = 'profile' }: Props) {
         }
 
         if (newPassword !== confirmPassword) {
-            setPasswordFeedback({ tone: 'error', text: '两次输入的新密码不一致' });
+            notifyError('两次输入的新密码不一致');
             return;
         }
 
         if (newPassword.length < 6 || newPassword.length > 18) {
-            setPasswordFeedback({ tone: 'error', text: '新密码长度需为 6–18 个字符' });
+            notifyError('新密码长度需为 6–18 个字符');
             return;
         }
 
         setPasswordBusy(true);
-        setPasswordFeedback(null);
 
         try {
             const response = await fetch(api.password, {
@@ -640,15 +754,9 @@ export default function AccountPanel({ api, section = 'profile' }: Props) {
             setCurrentPassword('');
             setNewPassword('');
             setConfirmPassword('');
-            setPasswordFeedback({
-                tone: 'success',
-                text: '密码已修改，其他设备上的旧登录凭证已失效。',
-            });
+            notifySuccess('密码已修改，其他设备上的旧登录凭证已失效。');
         } catch (reason) {
-            setPasswordFeedback({
-                tone: 'error',
-                text: reason instanceof Error ? reason.message : '密码修改失败',
-            });
+            notifyError(reason instanceof Error ? reason.message : '密码修改失败');
         } finally {
             setPasswordBusy(false);
         }
@@ -660,7 +768,6 @@ export default function AccountPanel({ api, section = 'profile' }: Props) {
         }
 
         setLoggingOut(true);
-        setLoadError('');
 
         try {
             const response = await fetch(api.logout, {
@@ -679,14 +786,95 @@ export default function AccountPanel({ api, section = 'profile' }: Props) {
 
             setProfile(null);
             setStatus('guest');
-            setProfileFeedback(null);
-            setMailFeedback(null);
-            setPasswordFeedback(null);
-            setOauthFeedback(null);
+            notifySuccess('已退出登录。');
         } catch (reason) {
-            setLoadError(reason instanceof Error ? reason.message : '退出登录失败');
+            notifyError(reason instanceof Error ? reason.message : '退出登录失败');
         } finally {
             setLoggingOut(false);
+        }
+    };
+
+    const submitCertification = async (event: FormEvent<HTMLFormElement>) => {
+        event.preventDefault();
+        if (!api?.certification || !api.certificationNonce || certBusy) {
+            return;
+        }
+        if (certName.trim().length < 2) {
+            notifyError('请填写真实姓名或组织名称');
+            return;
+        }
+        if (certNote.trim() === '') {
+            notifyError('请填写认证说明');
+            return;
+        }
+
+        setCertBusy(true);
+        try {
+            const response = await fetch(api.certification, {
+                method: 'POST',
+                credentials: 'same-origin',
+                headers: {
+                    Accept: 'application/json',
+                    'Content-Type': 'application/json',
+                    'X-Typecho-Token': api.certificationNonce,
+                },
+                body: JSON.stringify({
+                    op: 'submit',
+                    type: certType,
+                    name: certName.trim(),
+                    note: certNote.trim(),
+                }),
+            });
+            const payload = await readPayload(response);
+            if (!response.ok) {
+                throw new Error(errorMessage(payload, '认证申请提交失败'));
+            }
+
+            const data = payload?.data as { certification?: unknown; message?: unknown } | undefined;
+            const next = certificationFrom(data?.certification);
+            if (next) {
+                setCertification(next);
+            }
+            notifySuccess(
+                typeof data?.message === 'string' && data.message !== ''
+                    ? data.message
+                    : '认证申请已提交，请等待管理员审核。'
+            );
+        } catch (reason) {
+            notifyError(reason instanceof Error ? reason.message : '认证申请提交失败');
+        } finally {
+            setCertBusy(false);
+        }
+    };
+
+    const reviewCertification = async (uid: number, op: 'approve' | 'reject' | 'revoke') => {
+        if (!api?.certification || !api.certificationNonce || certReviewBusy > 0) {
+            return;
+        }
+
+        setCertReviewBusy(uid);
+        try {
+            const response = await fetch(api.certification, {
+                method: 'POST',
+                credentials: 'same-origin',
+                headers: {
+                    Accept: 'application/json',
+                    'Content-Type': 'application/json',
+                    'X-Typecho-Token': api.certificationNonce,
+                },
+                body: JSON.stringify({ op, uid, reason: certReason.trim() }),
+            });
+            const payload = await readPayload(response);
+            if (!response.ok) {
+                throw new Error(errorMessage(payload, '认证审核失败'));
+            }
+
+            setPendingCertifications((current) => current.filter((item) => item.uid !== uid));
+            notifySuccess(op === 'approve' ? '认证已通过。' : op === 'reject' ? '认证已驳回。' : '认证已撤销。');
+        } catch (reason) {
+            notifyError(reason instanceof Error ? reason.message : '认证审核失败');
+        } finally {
+            setCertReviewBusy(0);
         }
     };
 
@@ -718,7 +906,7 @@ export default function AccountPanel({ api, section = 'profile' }: Props) {
                 <p className="section-label">Account</p>
                 <h2 className="mt-2 text-[20px] font-medium">无法读取账号信息</h2>
                 <p className="mt-2 text-[13px] leading-6 text-ink-mute">{loadError}</p>
-                <Button className="mt-5" type="button" variant="secondary" onClick={() => window.location.reload()}>
+                <Button className="mt-5" type="button" variant="secondary" onClick={() => refreshApp()}>
                     重新加载
                 </Button>
             </div>
@@ -744,17 +932,6 @@ export default function AccountPanel({ api, section = 'profile' }: Props) {
                             {loadError}
                         </p>
                     ) : null}
-                    {oauthFeedback ? (
-                        <p
-                            className={
-                                'mt-3 text-[12px] leading-5 ' +
-                                (oauthFeedback.tone === 'error' ? 'text-destructive' : 'text-brand')
-                            }
-                            role={oauthFeedback.tone === 'error' ? 'alert' : 'status'}
-                        >
-                            {oauthFeedback.text}
-                        </p>
-                    ) : null}
                 </div>
                 <AuthDialog
                     open={authOpen}
@@ -763,10 +940,6 @@ export default function AccountPanel({ api, section = 'profile' }: Props) {
                     checking={false}
                     onAuthenticated={(next) => {
                         void hydrateProfile(next);
-                        setProfileFeedback(null);
-                        setMailFeedback(null);
-                        setPasswordFeedback(null);
-                        setOauthFeedback(null);
                     }}
                 />
             </>
@@ -785,9 +958,21 @@ export default function AccountPanel({ api, section = 'profile' }: Props) {
         avatar: details.avatar || profile.avatar,
         customAvatar: details.avatar,
     };
+    const coverUrl = details.background || profile.background || '';
+    const coverStyle = coverUrl !== ''
+        ? {
+              backgroundImage:
+                  'linear-gradient(180deg, rgba(8, 12, 18, 0.12), rgba(8, 12, 18, 0.34)), '
+                  + `url(${JSON.stringify(coverUrl)})`,
+              backgroundSize: 'cover',
+              backgroundPosition: 'center',
+          }
+        : undefined;
+    const certificationApproved = certification?.status === 'approved';
 
     const pageUrls = api.pages;
     const spaceUrl = `${pageUrls.space.replace(/\/+$/, '')}/${profile.uid}`;
+    const forumLabel = api.forum?.label || '圈子';
     const navItems: { id: AccountSection; href: string; label: string; icon: ReactNode }[] = [
         {
             id: 'profile',
@@ -837,26 +1022,50 @@ export default function AccountPanel({ api, section = 'profile' }: Props) {
         },
         content: {
             title: '内容管理',
-            description: '统一管理文章、论坛帖子、圈子与历史评论，数据会随页面一起加载。',
+            description: `统一管理文章、${forumLabel}帖子、${forumLabel}与历史评论，数据会随页面一起加载。`,
         },
     };
 
     return (
         <div className="grid gap-[15px]">
             <section className="surface-card overflow-hidden">
-                <div className="account-cover" aria-hidden="true" />
+                <div className="account-cover" style={coverStyle} aria-label="个人主页背景">
+                    {api.enhanced ? (
+                        <div className="account-cover-actions">
+                            <Button
+                                type="button"
+                                size="sm"
+                                variant="secondary"
+                                className="h-8 border-white/20 bg-black/25 text-white backdrop-blur hover:bg-black/40"
+                                onClick={() => setBackgroundMediaOpen(true)}
+                            >
+                                <Camera aria-hidden="true" />
+                                更换背景
+                            </Button>
+                        </div>
+                    ) : null}
+                </div>
                 <div className="card-pad relative -mt-12">
                     <div className="flex flex-wrap items-end justify-between gap-4">
                         <div className="flex min-w-0 items-end gap-4">
                             <ProfileAvatar
                                 profile={profile}
-                                className="size-20 border-4 border-surface shadow-card"
+                                className="size-24 border-4 border-surface shadow-card"
                             />
                             <div className="min-w-0 pb-1">
                                 <div className="flex flex-wrap items-center gap-2">
                                     <h2 className="truncate text-[22px] font-semibold leading-8">
                                         {profile.screenName || profile.name}
                                     </h2>
+                                    {certificationApproved ? (
+                                        <span
+                                            className="chip border-[rgba(77,163,255,0.35)] bg-[rgba(77,163,255,0.1)] text-[#2d7dd2]"
+                                            title="已通过站点认证"
+                                        >
+                                            <BadgeCheck className="size-3.5" strokeWidth={2} aria-hidden="true" />
+                                            已认证
+                                        </span>
+                                    ) : null}
                                     <span className="chip">
                                         <ShieldCheck className="size-3.5" strokeWidth={1.8} aria-hidden="true" />
                                         {GROUP_LABELS[profile.group] ?? profile.group}
@@ -875,7 +1084,7 @@ export default function AccountPanel({ api, section = 'profile' }: Props) {
                                             title={`加入 ${profile.joinedCircles ?? 0} · 创建 ${profile.createdCircles ?? 0}`}
                                         >
                                             <CircleDot className="size-3.5" strokeWidth={1.8} aria-hidden="true" />
-                                            圈子 {profile.circles}
+                                            {forumLabel} {profile.circles}
                                         </span>
                                     ) : null}
                                 </div>
@@ -883,7 +1092,12 @@ export default function AccountPanel({ api, section = 'profile' }: Props) {
                                     <span>@{profile.name}</span>
                                     <span>UID {profile.uid}</span>
                                     {createdText ? <span>{createdText} 加入</span> : null}
-                                    {details.location ? <span>{details.location}</span> : null}
+                                    {details.location ? (
+                                        <span className="inline-flex items-center gap-1">
+                                            <MapPin className="size-3" strokeWidth={1.8} aria-hidden="true" />
+                                            {details.location}
+                                        </span>
+                                    ) : null}
                                     {details.gender !== 'secret'
                                         ? <span>{GENDER_LABELS[details.gender] ?? details.gender}</span>
                                         : null}
@@ -904,7 +1118,7 @@ export default function AccountPanel({ api, section = 'profile' }: Props) {
                                     ) : null}
                                 </p>
                                 {details.signature ? (
-                                    <p className="mt-2 max-w-2xl truncate text-[13px] text-ink-soft">
+                                    <p className="mt-2 max-w-2xl text-[13px] leading-6 text-ink-soft">
                                         {details.signature}
                                     </p>
                                 ) : null}
@@ -941,35 +1155,21 @@ export default function AccountPanel({ api, section = 'profile' }: Props) {
                 </div>
             </section>
 
-            <div className="grid items-start gap-[15px] lg:grid-cols-[240px_minmax(0,1fr)]">
-                <aside className="lg:sticky lg:top-[88px]">
-                    <section className="surface-card p-1.5 lg:p-5">
-                        <nav
-                            className="flex gap-1 overflow-x-auto lg:grid lg:gap-1 lg:overflow-visible"
-                            aria-label="用户中心"
-                        >
-                            {navItems.map((item) => (
-                                <a
-                                    key={item.id}
-                                    href={item.href}
-                                    className={
-                                        'flex flex-1 shrink-0 items-center justify-center gap-2 rounded-[6px] px-3 py-2.5 text-[13px] transition-colors lg:justify-start lg:px-3 lg:py-2 ' +
-                                        (section === item.id
-                                            ? 'bg-brand-soft font-medium text-brand'
-                                            : 'text-ink-mute hover:bg-[rgba(136,136,136,0.08)] hover:text-ink')
-                                    }
-                                    aria-current={section === item.id ? 'page' : undefined}
-                                >
-                                    {item.icon}
-                                    {item.label}
-                                </a>
-                            ))}
-                        </nav>
-                    </section>
-                </aside>
+            <nav className="account-tabs" aria-label="用户中心">
+                {navItems.map((item) => (
+                    <a
+                        key={item.id}
+                        href={item.href}
+                        className={section === item.id ? 'is-active' : ''}
+                        aria-current={section === item.id ? 'page' : undefined}
+                    >
+                        {item.icon}
+                        {item.label}
+                    </a>
+                ))}
+            </nav>
 
-                <div className="grid gap-[15px]">
-                    <section className="surface-card card-pad">
+            <section className="surface-card card-pad">
                         <div className="mb-5">
                             <p className="section-label">Account settings</p>
                             <h3 className="mt-1.5 text-[18px] font-medium">
@@ -980,13 +1180,8 @@ export default function AccountPanel({ api, section = 'profile' }: Props) {
                             </p>
                         </div>
 
-                        {oauthFeedback ? (
-                            <div className="mb-4">
-                                <FeedbackText feedback={oauthFeedback} />
-                            </div>
-                        ) : null}
-
                         {section === 'profile' ? (
+                            <>
                             <form className="grid gap-4" onSubmit={(event) => void saveProfile(event)}>
                                 <div className="grid gap-4 sm:grid-cols-2">
                                     <label className="grid gap-1.5">
@@ -1036,21 +1231,6 @@ export default function AccountPanel({ api, section = 'profile' }: Props) {
                                                     </p>
                                                 </div>
                                                 <div className="flex shrink-0 flex-wrap items-center gap-1">
-                                                    {details.avatar ? (
-                                                        <Button
-                                                            type="button"
-                                                            variant="ghost"
-                                                            size="sm"
-                                                            onClick={() =>
-                                                                setDetails((current) => ({
-                                                                    ...current,
-                                                                    avatar: '',
-                                                                }))
-                                                            }
-                                                        >
-                                                            恢复默认
-                                                        </Button>
-                                                    ) : null}
                                                     <Button
                                                         type="button"
                                                         variant="outline"
@@ -1065,6 +1245,51 @@ export default function AccountPanel({ api, section = 'profile' }: Props) {
                                             {!api.avatarMediaEnabled ? (
                                                 <span className="text-[11px] leading-5 text-ink-faint">
                                                     媒体库接口未启用，暂时无法更换头像。
+                                                </span>
+                                            ) : null}
+                                        </div>
+                                        <div className="grid gap-2">
+                                            <span className="text-[12px] font-medium text-ink-soft">
+                                                个人主页背景
+                                            </span>
+                                            <div className="flex flex-wrap items-center gap-3 rounded-[6px] border border-line bg-surface-2 p-3">
+                                                <span
+                                                    className="account-cover-thumb shrink-0"
+                                                    style={
+                                                        details.background !== ''
+                                                            ? {
+                                                                  backgroundImage: `url(${JSON.stringify(
+                                                                      details.background
+                                                                  )})`,
+                                                              }
+                                                            : undefined
+                                                    }
+                                                    aria-hidden="true"
+                                                />
+                                                <div className="min-w-0 flex-1">
+                                                    <p className="truncate text-[12px] text-ink-soft">
+                                                        {details.background
+                                                            ? '已设置个人主页背景'
+                                                            : '使用站点默认渐变背景'}
+                                                    </p>
+                                                    <p className="mt-0.5 text-[11px] leading-5 text-ink-faint">
+                                                        背景会显示在用户中心与个人空间的顶部横幅。
+                                                    </p>
+                                                </div>
+                                                <Button
+                                                    type="button"
+                                                    variant="outline"
+                                                    size="sm"
+                                                    disabled={!api.avatarMediaEnabled}
+                                                    onClick={() => setBackgroundMediaOpen(true)}
+                                                >
+                                                    <Camera aria-hidden="true" />
+                                                    从媒体库选择
+                                                </Button>
+                                            </div>
+                                            {!api.avatarMediaEnabled ? (
+                                                <span className="text-[11px] leading-5 text-ink-faint">
+                                                    媒体库接口未启用，暂时无法更换背景。
                                                 </span>
                                             ) : null}
                                         </div>
@@ -1155,7 +1380,6 @@ export default function AccountPanel({ api, section = 'profile' }: Props) {
                                         更多资料尚未加载完成，保存按钮已暂时禁用。请刷新页面重试。
                                     </p>
                                 ) : null}
-                                <FeedbackText feedback={profileFeedback} />
                                 <div>
                                     <Button
                                         type="submit"
@@ -1172,6 +1396,143 @@ export default function AccountPanel({ api, section = 'profile' }: Props) {
                                     </Button>
                                 </div>
                             </form>
+                            {api.certificationEnabled ? (
+                                <section className="mt-6 rounded-[8px] border border-line bg-surface-2 p-4">
+                                    <div className="flex flex-wrap items-start justify-between gap-3">
+                                        <div>
+                                            <h4 className="flex items-center gap-2 text-[14px] font-medium">
+                                                <UserCheck
+                                                    className="size-4 text-ink-mute"
+                                                    strokeWidth={1.8}
+                                                    aria-hidden="true"
+                                                />
+                                                身份认证
+                                            </h4>
+                                            <p className="mt-1 text-[12px] leading-5 text-ink-mute">
+                                                提交真实身份或组织信息，管理员审核通过后会在个人空间展示认证徽章。
+                                            </p>
+                                        </div>
+                                        <span
+                                            className={
+                                                'chip ' +
+                                                (certification?.status === 'approved'
+                                                    ? 'border-[rgba(77,163,255,0.35)] bg-[rgba(77,163,255,0.1)] text-[#2d7dd2]'
+                                                    : certification?.status === 'pending'
+                                                      ? 'border-[rgba(245,158,11,0.3)] bg-[rgba(245,158,11,0.1)] text-[#b45309]'
+                                                      : certification?.status === 'rejected'
+                                                        ? 'border-[rgba(229,72,77,0.3)] bg-[rgba(229,72,77,0.08)] text-[#d94848]'
+                                                        : '')
+                                            }
+                                        >
+                                            <BadgeCheck className="size-3.5" strokeWidth={2} aria-hidden="true" />
+                                            {certification?.status === 'approved'
+                                                ? '已认证'
+                                                : certification?.status === 'pending'
+                                                  ? '审核中'
+                                                  : certification?.status === 'rejected'
+                                                    ? '未通过'
+                                                    : '未认证'}
+                                        </span>
+                                    </div>
+
+                                    {certification?.status === 'approved' ? (
+                                        <div className="mt-4 rounded-[6px] border border-line bg-surface px-3 py-3 text-[12px] leading-5 text-ink-soft">
+                                            <p className="font-medium text-ink">
+                                                {certification.name || '已认证用户'}
+                                            </p>
+                                            <p className="mt-0.5 text-ink-mute">
+                                                {certification.type === 'organization'
+                                                    ? '组织认证'
+                                                    : '个人认证'}
+                                                {certification.reviewed > 0
+                                                    ? ` · ${new Date(certification.reviewed * 1000).toLocaleDateString()}`
+                                                    : ''}
+                                            </p>
+                                        </div>
+                                    ) : null}
+
+                                    {certification?.status === 'pending' ? (
+                                        <p className="mt-4 rounded-[6px] border border-line bg-surface px-3 py-3 text-[12px] leading-5 text-ink-mute">
+                                            申请已提交，管理员审核后会在个人空间展示认证徽章。
+                                        </p>
+                                    ) : null}
+
+                                    {certification?.status === 'rejected' ? (
+                                        <p className="mt-4 rounded-[6px] border border-[rgba(229,72,77,0.25)] bg-[rgba(229,72,77,0.06)] px-3 py-3 text-[12px] leading-5 text-[#b93b3b]">
+                                            认证未通过
+                                            {certification.reason !== ''
+                                                ? `：${certification.reason}`
+                                                : '，请补充材料后重新提交。'}
+                                        </p>
+                                    ) : null}
+
+                                    {certification?.status !== 'approved' && certification?.status !== 'pending' ? (
+                                        <form className="mt-4 grid gap-3" onSubmit={(event) => void submitCertification(event)}>
+                                            <div className="grid gap-3 sm:grid-cols-[180px_minmax(0,1fr)]">
+                                                <label className="grid gap-1.5">
+                                                    <span className="text-[12px] font-medium text-ink-soft">认证类型</span>
+                                                    <select
+                                                        className="h-10 rounded-[4px] border border-line bg-surface px-3 text-[13px] text-ink outline-none focus:border-brand"
+                                                        value={certType}
+                                                        onChange={(event) =>
+                                                            setCertType(
+                                                                event.target.value === 'organization'
+                                                                    ? 'organization'
+                                                                    : 'personal'
+                                                            )
+                                                        }
+                                                    >
+                                                        <option value="personal">个人认证</option>
+                                                        <option value="organization">组织认证</option>
+                                                    </select>
+                                                </label>
+                                                <label className="grid gap-1.5">
+                                                    <span className="text-[12px] font-medium text-ink-soft">
+                                                        {certType === 'organization' ? '组织名称' : '真实姓名'}
+                                                    </span>
+                                                    <Input
+                                                        className="h-10"
+                                                        value={certName}
+                                                        onChange={(event) => setCertName(event.target.value)}
+                                                        maxLength={64}
+                                                        placeholder={
+                                                            certType === 'organization'
+                                                                ? '例如：SunkenBoat Studio'
+                                                                : '例如：张三'
+                                                        }
+                                                    />
+                                                </label>
+                                            </div>
+                                            <label className="grid gap-1.5">
+                                                <span className="text-[12px] font-medium text-ink-soft">认证说明</span>
+                                                <textarea
+                                                    className="min-h-[88px] rounded-[4px] border border-line bg-surface px-3 py-2 text-[13px] text-ink outline-none focus:border-brand"
+                                                    value={certNote}
+                                                    onChange={(event) => setCertNote(event.target.value)}
+                                                    maxLength={500}
+                                                    placeholder="请填写认证依据、个人主页或其他可核验信息"
+                                                />
+                                            </label>
+                                            <div className="flex items-center gap-2">
+                                                <Button type="submit" disabled={certBusy}>
+                                                    {certBusy ? (
+                                                        <>
+                                                            <LoaderCircle className="animate-spin" aria-hidden="true" />
+                                                            提交中…
+                                                        </>
+                                                    ) : (
+                                                        '提交认证'
+                                                    )}
+                                                </Button>
+                                                <span className="text-[11px] text-ink-faint">
+                                                    认证资料仅管理员可见
+                                                </span>
+                                            </div>
+                                        </form>
+                                    ) : null}
+                                </section>
+                            ) : null}
+                            </>
                         ) : null}
 
                         {section === 'security' ? (
@@ -1241,7 +1602,6 @@ export default function AccountPanel({ api, section = 'profile' }: Props) {
                                             邮件服务尚未配置，暂时无法更换登录邮箱。
                                         </p>
                                     ) : null}
-                                    <FeedbackText feedback={mailFeedback} />
                                     <div>
                                         <Button type="submit" disabled={mailBusy || !api.emailChangeEnabled}>
                                             {mailBusy ? (
@@ -1307,7 +1667,6 @@ export default function AccountPanel({ api, section = 'profile' }: Props) {
                                                 />
                                             </label>
                                         </div>
-                                        <FeedbackText feedback={passwordFeedback} />
                                         <div>
                                             <Button type="submit" disabled={passwordBusy}>
                                                 {passwordBusy ? (
@@ -1431,11 +1790,116 @@ export default function AccountPanel({ api, section = 'profile' }: Props) {
                         ) : null}
 
                         {section === 'content' ? (
-                            <ContentManager api={api} profile={profile} />
+                            <div className="grid gap-[15px]">
+                                {profile.group === 'administrator'
+                                && api.certificationEnabled
+                                && api.certification ? (
+                                    <section className="rounded-[8px] border border-line bg-surface-2 p-4">
+                                        <div className="flex flex-wrap items-center justify-between gap-2">
+                                            <div>
+                                                <h4 className="flex items-center gap-2 text-[14px] font-medium">
+                                                    <UserCheck
+                                                        className="size-4 text-ink-mute"
+                                                        strokeWidth={1.8}
+                                                        aria-hidden="true"
+                                                    />
+                                                    认证审核
+                                                </h4>
+                                                <p className="mt-1 text-[12px] leading-5 text-ink-mute">
+                                                    待处理的认证申请会显示在这里。
+                                                </p>
+                                            </div>
+                                            <span className="chip">
+                                                {pendingCertLoading
+                                                    ? '读取中…'
+                                                    : `${pendingCertifications.length} 待审核`}
+                                            </span>
+                                        </div>
+
+                                        {pendingCertLoading ? (
+                                            <div className="mt-4 grid gap-2" aria-busy="true">
+                                                <span className="h-14 animate-pulse rounded-[6px] bg-surface-3" />
+                                                <span className="h-14 animate-pulse rounded-[6px] bg-surface-3" />
+                                            </div>
+                                        ) : pendingCertifications.length === 0 ? (
+                                            <p className="mt-4 rounded-[6px] border border-dashed border-line bg-surface px-3 py-5 text-center text-[12px] text-ink-faint">
+                                                暂无待审核的认证申请。
+                                            </p>
+                                        ) : (
+                                            <div className="mt-4 grid gap-2">
+                                                <Input
+                                                    className="h-9"
+                                                    value={certReason}
+                                                    onChange={(event) => setCertReason(event.target.value)}
+                                                    maxLength={200}
+                                                    placeholder="审核备注（可选，会显示给申请人）"
+                                                />
+                                                {pendingCertifications.map((item) => (
+                                                    <div
+                                                        key={item.uid}
+                                                        className="flex flex-wrap items-center gap-3 rounded-[6px] border border-line bg-surface p-3"
+                                                    >
+                                                        <UserAvatar
+                                                            name={item.screenName || item.name}
+                                                            avatar={item.avatar}
+                                                            className="size-10"
+                                                        />
+                                                        <div className="min-w-0 flex-1">
+                                                            <p className="truncate text-[13px] font-medium">
+                                                                {item.certification.name
+                                                                    || item.screenName
+                                                                    || item.name}
+                                                                <span className="ml-2 text-[11px] font-normal text-ink-faint">
+                                                                    {item.certification.type === 'organization'
+                                                                        ? '组织认证'
+                                                                        : '个人认证'}
+                                                                </span>
+                                                            </p>
+                                                            <p className="mt-0.5 line-clamp-2 text-[11.5px] leading-5 text-ink-mute">
+                                                                {item.certification.note}
+                                                            </p>
+                                                        </div>
+                                                        <div className="flex shrink-0 items-center gap-1.5">
+                                                            <Button
+                                                                type="button"
+                                                                size="sm"
+                                                                disabled={certReviewBusy > 0}
+                                                                onClick={() =>
+                                                                    void reviewCertification(
+                                                                        item.uid,
+                                                                        'approve'
+                                                                    )
+                                                                }
+                                                            >
+                                                                {certReviewBusy === item.uid
+                                                                    ? '处理中…'
+                                                                    : '通过'}
+                                                            </Button>
+                                                            <Button
+                                                                type="button"
+                                                                size="sm"
+                                                                variant="outline"
+                                                                disabled={certReviewBusy > 0}
+                                                                onClick={() =>
+                                                                    void reviewCertification(
+                                                                        item.uid,
+                                                                        'reject'
+                                                                    )
+                                                                }
+                                                            >
+                                                                驳回
+                                                            </Button>
+                                                        </div>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        )}
+                                    </section>
+                                ) : null}
+                                <ContentManager api={api} profile={profile} />
+                            </div>
                         ) : null}
-                    </section>
-                </div>
-            </div>
+            </section>
 
             <MediaLibrary
                 open={avatarMediaOpen}
@@ -1448,6 +1912,19 @@ export default function AccountPanel({ api, section = 'profile' }: Props) {
                 onSelect={(item) => {
                     setDetails((current) => ({ ...current, avatar: item.url }));
                     setAvatarMediaOpen(false);
+                }}
+            />
+            <MediaLibrary
+                open={backgroundMediaOpen}
+                onOpenChange={setBackgroundMediaOpen}
+                mediaEndpoint={api.avatarMedia}
+                uploadPurpose="background"
+                allowDelete={false}
+                title="选择个人主页背景"
+                description="从媒体库选择或上传背景图片"
+                onSelect={(item) => {
+                    setDetails((current) => ({ ...current, background: item.url }));
+                    setBackgroundMediaOpen(false);
                 }}
             />
         </div>

@@ -3,6 +3,7 @@ import type { FormEvent } from 'react';
 import { ArrowUpRight, Clock3, Hash, Search, X } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '../ui/button';
+import { notifyError } from '../../lib/notify';
 import type { PostSummary, SearchScope, SiteInfo, WidgetsData } from '../../types';
 
 interface Props {
@@ -17,7 +18,6 @@ export default function SearchPanel({ site, widgets, scope = null, onClose }: Pr
     const [query, setQuery] = useState('');
     const [remoteResults, setRemoteResults] = useState<PostSummary[]>([]);
     const [remoteLoading, setRemoteLoading] = useState(false);
-    const [remoteError, setRemoteError] = useState('');
     const inputRef = useRef<HTMLInputElement>(null);
 
     useEffect(() => {
@@ -54,7 +54,6 @@ export default function SearchPanel({ site, widgets, scope = null, onClose }: Pr
         }
 
         setRemoteLoading(true);
-        setRemoteError('');
         try {
             const endpoint = new URL(site.apiBase.replace(/\/+$/, '') + '/search');
             endpoint.searchParams.set('q', value);
@@ -74,7 +73,9 @@ export default function SearchPanel({ site, widgets, scope = null, onClose }: Pr
             );
         } catch (reason) {
             setRemoteResults([]);
-            setRemoteError(reason instanceof Error ? reason.message : '搜索失败，请稍后再试。');
+            notifyError(
+                reason instanceof Error ? reason.message : '搜索失败，请稍后再试。'
+            );
         } finally {
             setRemoteLoading(false);
         }
@@ -175,11 +176,7 @@ export default function SearchPanel({ site, widgets, scope = null, onClose }: Pr
                 <div className="search-panel-body" aria-live="polite">
                     {scope !== null ? (
                         <>
-                            {remoteError !== '' ? (
-                                <p className="search-panel-empty" role="alert">
-                                    {remoteError}
-                                </p>
-                            ) : remoteResults.length > 0 ? (
+                            {remoteResults.length > 0 ? (
                                 <div className="search-panel-group">
                                     <p className="search-panel-label">
                                         「{scope.label}」中的搜索结果

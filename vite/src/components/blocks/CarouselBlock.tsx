@@ -14,11 +14,21 @@ interface Props {
     title: string;
     slides: CarouselSlide[];
     width?: 'content' | 'half' | 'full';
+    height?: '' | 'sm' | 'md' | 'lg' | 'screen';
+    overlay?: number;
+    align?: 'left' | 'center';
 }
 
 const AUTOPLAY_DELAY = 5600;
 
-export default function CarouselBlock({ title, slides, width = 'content' }: Props) {
+export default function CarouselBlock({
+    title,
+    slides,
+    width = 'content',
+    height = '',
+    overlay = 45,
+    align = 'center',
+}: Props) {
     const [api, setApi] = useState<CarouselApi>();
     const [current, setCurrent] = useState(0);
     const [dragging, setDragging] = useState(false);
@@ -63,7 +73,14 @@ export default function CarouselBlock({ title, slides, width = 'content' }: Prop
 
     return (
         <section
-            className={`carousel-shell surface-card overflow-hidden p-0 is-${width}`}
+            className={[
+                'carousel-shell surface-card overflow-hidden p-0',
+                `is-${width}`,
+                height !== '' ? `is-height-${height}` : '',
+                `is-align-${align}`,
+            ]
+                .filter(Boolean)
+                .join(' ')}
             aria-label={title || '精选内容'}
             data-width={width}
         >
@@ -101,7 +118,10 @@ export default function CarouselBlock({ title, slides, width = 'content' }: Prop
                                 ) : (
                                     <div className="carousel-placeholder" />
                                 )}
-                                <div className="carousel-shade" />
+                                <div
+                                    className="carousel-shade"
+                                    style={{ opacity: Math.max(0, Math.min(90, overlay)) / 100 }}
+                                />
                                 <div className="carousel-copy">
                                     {slide.title ? <h3>{slide.title}</h3> : null}
                                     {slide.description ? <p>{slide.description}</p> : null}

@@ -16,7 +16,9 @@ use Typecho\Db;
  */
 final class TypechoBindingStore implements BindingStore
 {
-    public const OPTION_PREFIX = '_ttdf_oauth_';
+    public const OPTION_PREFIX = 'sunken_oauth_';
+
+    public const LEGACY_OPTION_PREFIX = '_ttdf_oauth_';
 
     public function get(int $uid, string $provider): ?array
     {
@@ -33,7 +35,19 @@ final class TypechoBindingStore implements BindingStore
                 ->limit(1)
         );
 
-        return $this->decode((string) ($rows[0]['value'] ?? ''));
+        $raw = (string) ($rows[0]['value'] ?? '');
+        if ($raw === '') {
+            $legacy = $db->fetchAll(
+                $db->select('value')
+                    ->from('table.options')
+                    ->where('name = ?', self::LEGACY_OPTION_PREFIX . $provider)
+                    ->where('user = ?', $uid)
+                    ->limit(1)
+            );
+            $raw = (string) ($legacy[0]['value'] ?? '');
+        }
+
+        return $this->decode($raw);
     }
 
     public function save(int $uid, string $provider, Identity $identity): void
@@ -92,6 +106,11 @@ final class TypechoBindingStore implements BindingStore
                 ->where('name = ?', $this->optionName($provider))
                 ->where('user = ?', $uid)
         );
+        $db->query(
+            $db->delete('table.options')
+                ->where('name = ?', self::LEGACY_OPTION_PREFIX . $provider)
+                ->where('user = ?', $uid)
+        );
     }
 
     public function owner(string $provider, string $subject): int
@@ -103,10 +122,16 @@ final class TypechoBindingStore implements BindingStore
 
         $db = Db::get();
         $rows = $db->fetchAll(
-            $db->select('user', 'value')
+            $db->select('user', 'value', 'name')
                 ->from('table.options')
                 ->where('name = ?', $this->optionName($provider))
         );
+        $legacyRows = $db->fetchAll(
+            $db->select('user', 'value', 'name')
+                ->from('table.options')
+                ->where('name = ?', self::LEGACY_OPTION_PREFIX . $provider)
+        );
+        $rows = array_merge($rows, $legacyRows);
 
         foreach ($rows as $row) {
             $binding = $this->decode((string) ($row['value'] ?? ''));
@@ -132,24 +157,33 @@ final class TypechoBindingStore implements BindingStore
         );
 
         $bindings = [];
+        $legacy = [];
         foreach ($rows as $row) {
             $name = (string) ($row['name'] ?? '');
-            if (!str_starts_with($name, self::OPTION_PREFIX)) {
+            $isLegacy = false;
+            if (str_starts_with($name, self::OPTION_PREFIX)) {
+                $provider = substr($name, strlen(self::OPTION_PREFIX));
+            } elseif (str_starts_with($name, self::LEGACY_OPTION_PREFIX)) {
+                $provider = substr($name, strlen(self::LEGACY_OPTION_PREFIX));
+                $isLegacy = true;
+            } else {
                 continue;
             }
-
-            $provider = substr($name, strlen(self::OPTION_PREFIX));
             if (preg_match('/^[a-z0-9][a-z0-9_-]{0,31}$/', $provider) !== 1) {
                 continue;
             }
 
             $binding = $this->decode((string) ($row['value'] ?? ''));
             if ($binding !== null) {
-                $bindings[$provider] = $binding;
+                if ($isLegacy) {
+                    $legacy[$provider] = $binding;
+                } else {
+                    $bindings[$provider] = $binding;
+                }
             }
         }
 
-        return $bindings;
+        return array_merge($legacy, $bindings);
     }
 
     /**

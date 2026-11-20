@@ -1,4 +1,4 @@
-import type { UserProfile } from '../types';
+import type { UserCertification, UserProfile } from '../types';
 
 export interface ApiPayload {
     data?: unknown;
@@ -51,6 +51,28 @@ export function errorMessage(payload: ApiPayload | null, fallback: string): stri
     return fallback;
 }
 
+function certificationFrom(value: unknown): UserCertification | null {
+    if (!value || typeof value !== 'object') {
+        return null;
+    }
+
+    const item = value as Partial<UserCertification>;
+    const status = String(item.status ?? 'none');
+    if (!['none', 'pending', 'approved', 'rejected'].includes(status)) {
+        return null;
+    }
+
+    return {
+        status,
+        type: String(item.type ?? ''),
+        name: String(item.name ?? ''),
+        note: String(item.note ?? ''),
+        reason: String(item.reason ?? ''),
+        submitted: Number.isFinite(Number(item.submitted)) ? Math.max(0, Number(item.submitted)) : 0,
+        reviewed: Number.isFinite(Number(item.reviewed)) ? Math.max(0, Number(item.reviewed)) : 0,
+    };
+}
+
 export function profileFrom(payload: ApiPayload | null): UserProfile | null {
     const data = payload?.data;
     if (!data || typeof data !== 'object') {
@@ -77,6 +99,7 @@ export function profileFrom(payload: ApiPayload | null): UserProfile | null {
         created: String(profile.created ?? ''),
         avatar: String(profile.avatar ?? ''),
         customAvatar: String(profile.customAvatar ?? ''),
+        background: String(profile.background ?? ''),
         signature: String(profile.signature ?? ''),
         gender: String(profile.gender ?? 'secret'),
         privacy: String(profile.privacy ?? 'public'),
@@ -95,6 +118,8 @@ export function profileFrom(payload: ApiPayload | null): UserProfile | null {
             ? Math.max(0, Math.round(Number(profile.createdCircles)))
             : undefined,
         canWrite: profile.canWrite === true,
+        certificationEnabled: profile.certificationEnabled === true,
+        certification: certificationFrom(profile.certification),
     };
 }
 

@@ -19,6 +19,7 @@ import {
 } from '../ui/dropdown-menu';
 import AuthDialog from './AuthDialog';
 import UserAvatar from './UserAvatar';
+import { notifyError, notifySuccess } from '../../lib/notify';
 import { errorMessage, profileFrom, readPayload } from '../../lib/user';
 import type { SiteInfo, UserApiEndpoints, UserProfile } from '../../types';
 
@@ -47,7 +48,7 @@ export default function UserCenter({ api, show, site }: Props) {
     const [user, setUser] = useState<UserProfile | null>(null);
     const [checking, setChecking] = useState(true);
     const [submitting, setSubmitting] = useState(false);
-    const [error, setError] = useState('');
+    const [refreshKey, setRefreshKey] = useState(0);
 
     useEffect(() => {
         if (!show || !api?.enabled) {
@@ -55,9 +56,14 @@ export default function UserCenter({ api, show, site }: Props) {
         }
 
         const openAuth = () => setAuthOpen(true);
+        const refreshAuth = () => setRefreshKey((value) => value + 1);
         window.addEventListener('ttdf:open-auth', openAuth);
+        window.addEventListener('ttdf:auth-changed', refreshAuth);
 
-        return () => window.removeEventListener('ttdf:open-auth', openAuth);
+        return () => {
+            window.removeEventListener('ttdf:open-auth', openAuth);
+            window.removeEventListener('ttdf:auth-changed', refreshAuth);
+        };
     }, [show, api?.enabled]);
 
     useEffect(() => {
@@ -147,7 +153,7 @@ export default function UserCenter({ api, show, site }: Props) {
             active = false;
             controller.abort();
         };
-    }, [show, api?.enabled, api?.me, api?.profile, api?.profileNonce, api?.session]);
+    }, [show, api?.enabled, api?.me, api?.profile, api?.profileNonce, api?.session, refreshKey]);
 
     useEffect(() => {
         if (user && authOpen) {
@@ -161,7 +167,6 @@ export default function UserCenter({ api, show, site }: Props) {
 
     const logout = async () => {
         setSubmitting(true);
-        setError('');
 
         try {
             const response = await fetch(api.logout, {
@@ -180,8 +185,10 @@ export default function UserCenter({ api, show, site }: Props) {
 
             setUser(null);
             setMenuOpen(false);
+            window.dispatchEvent(new Event('ttdf:auth-changed'));
+            notifySuccess('已退出登录。');
         } catch (reason) {
-            setError(reason instanceof Error ? reason.message : '退出登录失败');
+            notifyError(reason instanceof Error ? reason.message : '退出登录失败');
         } finally {
             setSubmitting(false);
         }
@@ -189,6 +196,7 @@ export default function UserCenter({ api, show, site }: Props) {
 
     const hydrateProfile = async (next: UserProfile) => {
         setUser(next);
+        window.dispatchEvent(new Event('ttdf:auth-changed'));
 
         if (!api?.profile || !api.profileNonce) {
             return;
@@ -222,6 +230,9 @@ export default function UserCenter({ api, show, site }: Props) {
     const spaceUrl = `${api.pages.space.replace(/\/+$/, '')}/${user?.uid ?? 0}`;
     const contentUrl = api.pages.content;
     const adminUrl = sitePath(site, 'admin/');
+    const forumLabel = api.forum?.label || '圈子';
+    const canOpenContent =
+        api.content.enabled || api.forum?.canPost === true || api.forum?.canCreateCircle === true;
 
     const trigger = (
         <Button
@@ -247,82 +258,97 @@ export default function UserCenter({ api, show, site }: Props) {
                         <DropdownMenuContent
                             align="end"
                             sideOffset={8}
-                            className="user-menu-content w-[300px] border-line bg-surface p-2"
+                            className="user-menu-content w-[min(320px,calc(100vw-24px))] border-line bg-surface p-2"
                         >
-                            {error ? (
-                                <p className="mb-1 rounded-[4px] bg-destructive/10 px-3 py-2 text-[12px] text-destructive" role="alert">
-                                    {error}
-                                </p>
-                            ) : null}
-                            <DropdownMenuLabel className="flex items-center gap-3 px-2 py-2 font-normal">
-                                <UserAvatar
-                                    name={user.screenName || user.name}
-                                    avatar={user.avatar}
-                                    className="size-9"
-                                />
-                                <span className="min-w-0">
-                                    <span className="block truncate text-[13px] font-medium text-ink">
-                                        {user.screenName || user.name}
-                                    </span>
-                                    <span className="mt-0.5 block truncate text-[11px] text-ink-mute">
-                                        {GROUP_LABELS[user.group] ?? user.group} · @{user.name}
-                                    </span>
-                                </span>
+                            <DropdownMenuLabel className="p-0 font-normal">
+                                <div className="user-menu-profile">
+                                    <UserAvatar
+                                        name={user.screenName || user.name}
+                                        avatar={user.avatar}
+                                        className="user-menu-profile-avatar"
+                                    />
+                                    <div className="user-menu-profile-copy">
+                                        <div className="user-menu-profile-title">
+                                            <strong>{user.screenName || user.name}</strong>
+                                            <span className="user-menu-role">
+                                                {GROUP_LABELS[user.group] ?? user.group}
+                                            </span>
+                                        </div>
+                                        <span className="user-menu-handle">@{user.name}</span>
+                                    </div>
+                                </div>
+                                <div className="user-menu-stats">
+                                    <DropdownMenuItem asChild className="user-menu-stat">
+                                        <a
+                                            href={contentUrl}
+                                            title={`共 ${user.posts ?? 0} 篇文章`}
+                                        >
+                                            <span>
+                                                <FileText aria-hidden="true" />
+                                                文章
+                                            </span>
+                                            <strong>{user.posts ?? 0}</strong>
+                                        </a>
+                                    </DropdownMenuItem>
+                                    <DropdownMenuItem asChild className="user-menu-stat">
+                                        <a
+                                            href={contentUrl}
+                                            title={`共 ${user.comments ?? 0} 条评论`}
+                                        >
+                                            <span>
+                                                <MessageSquare aria-hidden="true" />
+                                                评论
+                                            </span>
+                                            <strong>{user.comments ?? 0}</strong>
+                                        </a>
+                                    </DropdownMenuItem>
+                                    <DropdownMenuItem asChild className="user-menu-stat">
+                                        <a
+                                            href={sitePath(site, 'circles')}
+                                            title={`加入 ${user.joinedCircles ?? 0} · 创建 ${user.createdCircles ?? 0}`}
+                                        >
+                                            <span>
+                                                <CircleDot aria-hidden="true" />
+                                                {forumLabel}
+                                            </span>
+                                            <strong>{user.circles ?? 0}</strong>
+                                        </a>
+                                    </DropdownMenuItem>
+                                </div>
                             </DropdownMenuLabel>
                             <DropdownMenuSeparator className="bg-line" />
-                            <DropdownMenuItem asChild className="cursor-pointer px-2 py-2">
+                            <DropdownMenuItem asChild className="user-menu-link">
                                 <a href={profileUrl}>
                                     <UserRound strokeWidth={1.8} />
-                                    用户中心
+                                    <span>用户中心</span>
                                 </a>
                             </DropdownMenuItem>
-                            <DropdownMenuItem asChild className="cursor-pointer px-2 py-2">
+                            <DropdownMenuItem asChild className="user-menu-link">
                                 <a href={spaceUrl}>
                                     <ExternalLink strokeWidth={1.8} />
-                                    我的空间
+                                    <span>我的空间</span>
                                 </a>
                             </DropdownMenuItem>
-                            {user.group === 'administrator' ? (
-                                <DropdownMenuItem asChild className="cursor-pointer px-2 py-2">
-                                    <a href={adminUrl}>
-                                        <Shield strokeWidth={1.8} />
-                                        进入后台
+                            {canOpenContent ? (
+                                <DropdownMenuItem asChild className="user-menu-link">
+                                    <a href={contentUrl}>
+                                        <FileText strokeWidth={1.8} />
+                                        <span>内容管理</span>
                                     </a>
                                 </DropdownMenuItem>
                             ) : null}
-                            <DropdownMenuItem asChild className="cursor-pointer px-2 py-2">
-                                <a href={contentUrl}>
-                                    <FileText strokeWidth={1.8} />
-                                    文章数
-                                    <span className="ml-auto text-[11px] text-ink-faint">
-                                        {user.posts ?? 0}
-                                    </span>
-                                </a>
-                            </DropdownMenuItem>
-                            <DropdownMenuItem asChild className="cursor-pointer px-2 py-2">
-                                <a href={contentUrl}>
-                                    <MessageSquare strokeWidth={1.8} />
-                                    评论数
-                                    <span className="ml-auto text-[11px] text-ink-faint">
-                                        {user.comments ?? 0}
-                                    </span>
-                                </a>
-                            </DropdownMenuItem>
-                            {typeof user.circles === 'number' ? (
-                                <DropdownMenuItem asChild className="cursor-pointer px-2 py-2">
-                                    <a href={sitePath(site, 'circles')}>
-                                        <CircleDot strokeWidth={1.8} />
-                                        圈子
-                                        <span className="ml-auto text-[11px] text-ink-faint">
-                                            加入 {user.joinedCircles ?? 0} · 创建 {user.createdCircles ?? 0}
-                                        </span>
+                            {user.group === 'administrator' ? (
+                                <DropdownMenuItem asChild className="user-menu-link">
+                                    <a href={adminUrl}>
+                                        <Shield strokeWidth={1.8} />
+                                        <span>进入后台</span>
                                     </a>
                                 </DropdownMenuItem>
                             ) : null}
                             <DropdownMenuSeparator className="bg-line" />
                             <DropdownMenuItem
                                 variant="destructive"
-                                className="cursor-pointer px-2 py-2"
+                                className="user-menu-link user-menu-logout"
                                 disabled={submitting}
                                 onSelect={(event) => {
                                     event.preventDefault();
@@ -346,7 +372,6 @@ export default function UserCenter({ api, show, site }: Props) {
                 checking={checking}
                 onAuthenticated={(profile) => {
                     void hydrateProfile(profile);
-                    setError('');
                 }}
             />
         </>

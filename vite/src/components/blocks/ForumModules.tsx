@@ -10,6 +10,7 @@ import {
 } from 'lucide-react';
 import UserAvatar from '../layout/UserAvatar';
 import { Button } from '../ui/button';
+import { navigateApp } from '../../lib/appNavigation';
 import { Input } from '../ui/input';
 import type {
     ForumAuthorsBlock,
@@ -115,7 +116,7 @@ export function ForumHomeHeader(props: ForumHomeHeaderBlock) {
                 open={circleOpen}
                 onOpenChange={setCircleOpen}
                 forum={forum}
-                onCreated={(url) => window.location.assign(url)}
+                onCreated={(url) => navigateApp(url)}
             />
         </section>
     );
@@ -411,6 +412,7 @@ export function ForumTopicList(props: ForumTopicListBlock) {
 
             <TopicList
                 topics={visible}
+                forum={forum}
                 pager={pager}
                 emptyTitle={
                     tagFilter !== ''
@@ -462,7 +464,7 @@ export function ForumTopicList(props: ForumTopicListBlock) {
                 open={circleOpen}
                 onOpenChange={setCircleOpen}
                 forum={forum}
-                onCreated={(url) => window.location.assign(url)}
+                onCreated={(url) => navigateApp(url)}
             />
         </section>
     );
@@ -503,7 +505,7 @@ export function ForumCreate(props: ForumCreateBlock) {
                 open={circleOpen}
                 onOpenChange={setCircleOpen}
                 forum={forum}
-                onCreated={(url) => window.location.assign(url)}
+                onCreated={(url) => navigateApp(url)}
             />
         </>
     );
@@ -604,8 +606,11 @@ export function ForumCircleInfo({ forum, circle, title }: ForumCircleInfoBlock) 
         <Panel title={title || '关于圈子'}>
             <div className="flex items-start gap-3">
                 <CircleMark circle={circle} size="size-14" />
-                <div className="min-w-0">
-                    <h2 id="forum-circle-title" className="text-[16px] font-semibold leading-6 text-ink">
+                <div className="min-w-0 flex-1">
+                    <h2
+                        id="forum-circle-title"
+                        className="truncate text-[16px] font-semibold leading-6 text-ink"
+                    >
                         {circle.name}
                     </h2>
                     <p className="mt-1 text-[11px] text-ink-faint">
@@ -628,7 +633,16 @@ export function ForumCircleHero({ forum, circle }: ForumCircleHeroBlock) {
 
     return (
         <section className="surface-card overflow-hidden">
-            <div className="forum-circle-banner flex items-center gap-3 px-[18px] py-5 text-white">
+            <div
+                className="forum-circle-banner flex items-center gap-3 px-[18px] py-5 text-white"
+                style={
+                    circle.background !== ''
+                        ? {
+                              backgroundImage: `linear-gradient(100deg, rgba(8, 15, 30, 0.82), rgba(8, 15, 30, 0.38)), url("${circle.background}")`,
+                          }
+                        : undefined
+                }
+            >
                 <CircleMark circle={circle} size="size-12" />
                 <div className="min-w-0 flex-1">
                     <p className="text-[10px] font-medium tracking-[0.16em] text-white/60 uppercase">

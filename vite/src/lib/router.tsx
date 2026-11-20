@@ -9,6 +9,7 @@ import {
     useLocation,
     useNavigate,
     useNavigation,
+    useRevalidator,
     useRouteError,
 } from 'react-router-dom';
 import type { LoaderFunctionArgs } from 'react-router-dom';
@@ -231,6 +232,7 @@ async function fetchRoute(url: URL, signal?: AbortSignal): Promise<FetchResult |
             Accept: 'text/html,application/xhtml+xml',
         },
         credentials: 'same-origin',
+        cache: 'no-store',
         signal,
     });
 
@@ -484,6 +486,81 @@ function RouteLinkInterceptor() {
     return null;
 }
 
+function RouteAppNavigationBridge() {
+    const navigate = useNavigate();
+    const revalidator = useRevalidator();
+
+    useEffect(() => {
+        const detailHref = (event: Event): string => {
+            const detail = (event as CustomEvent<{ href?: unknown }>).detail;
+            return detail && typeof detail.href === 'string' ? detail.href.trim() : '';
+        };
+
+        const resolve = (href: string): URL | null => {
+            if (href === '') {
+                return null;
+            }
+
+            try {
+                return new URL(href, window.location.href);
+            } catch {
+                return null;
+            }
+        };
+
+        const go = (url: URL): void => {
+            if (!canRoute(url)) {
+                window.location.assign(url.toString());
+                return;
+            }
+
+            const current = new URL(window.location.href);
+            if (url.pathname === current.pathname && url.search === current.search) {
+                if (url.hash === '') {
+                    window.scrollTo({ top: 0, behavior: 'smooth' });
+                    return;
+                }
+            }
+
+            cache.delete(routeKey(url));
+            inflight.delete(routeKey(url));
+            navigate(url.pathname + url.search + url.hash, { viewTransition: true });
+        };
+
+        const onNavigate = (event: Event): void => {
+            const url = resolve(detailHref(event));
+            if (url !== null) {
+                go(url);
+            }
+        };
+
+        const onRefresh = (event: Event): void => {
+            const href = detailHref(event);
+            if (href !== '') {
+                const url = resolve(href);
+                if (url !== null) {
+                    go(url);
+                }
+                return;
+            }
+
+            cache.delete(routeKey(new URL(window.location.href)));
+            inflight.delete(routeKey(new URL(window.location.href)));
+            revalidator.revalidate();
+        };
+
+        window.addEventListener('ttdf:navigate', onNavigate);
+        window.addEventListener('ttdf:refresh', onRefresh);
+
+        return () => {
+            window.removeEventListener('ttdf:navigate', onNavigate);
+            window.removeEventListener('ttdf:refresh', onRefresh);
+        };
+    }, [navigate, revalidator]);
+
+    return null;
+}
+
 function RoutePage() {
     const payload = useLoaderData() as RoutePayload;
     const location = useLocation();
@@ -626,6 +703,7 @@ function RouteShell() {
         <>
             <RouteProgress />
             <RouteLinkInterceptor />
+            <RouteAppNavigationBridge />
             <RoutePage />
         </>
     );

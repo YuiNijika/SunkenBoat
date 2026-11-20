@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import {
     ArrowUpRight,
+    BadgeCheck,
     CalendarDays,
     ChevronRight,
     CircleDot,
@@ -176,10 +177,20 @@ export default function UserSpaceBlock({
     const initial = name.slice(0, 1);
     const joinText = joined(profile.created);
     const gender = GENDER_LABELS[profile.gender] ?? '';
+    const coverStyle = profile.background !== ''
+        ? {
+              backgroundImage:
+                  'linear-gradient(180deg, rgba(8, 12, 18, 0.08), rgba(8, 12, 18, 0.3)), '
+                  + `url(${JSON.stringify(profile.background)})`,
+              backgroundSize: 'cover',
+              backgroundPosition: 'center',
+          }
+        : undefined;
+    const certified = profile.certification?.status === 'approved';
 
     return (
         <section className="user-space" aria-labelledby="user-space-title">
-            <div className="user-space-cover" aria-hidden="true">
+            <div className="user-space-cover" style={coverStyle} aria-label="个人空间背景">
                 <span className="user-space-cover-grid" />
             </div>
             <div className="user-space-body">
@@ -212,6 +223,21 @@ export default function UserSpaceBlock({
                                     />
                                     {GROUP_LABELS[profile.group] ?? profile.group}
                                 </span>
+                                {certified && profile.certification ? (
+                                    <span
+                                        className="chip border-[rgba(77,163,255,0.35)] bg-[rgba(77,163,255,0.1)] text-[#2d7dd2]"
+                                        title="已通过站点认证"
+                                    >
+                                        <BadgeCheck
+                                            className="size-3.5"
+                                            strokeWidth={2}
+                                            aria-hidden="true"
+                                        />
+                                        {profile.certification.type === 'organization'
+                                            ? '组织认证'
+                                            : '个人认证'}
+                                    </span>
+                                ) : null}
                             </div>
                             <p className="user-space-handle">
                                 @{profile.name}

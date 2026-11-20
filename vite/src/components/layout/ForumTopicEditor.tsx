@@ -19,10 +19,13 @@ import {
     X,
 } from 'lucide-react';
 import { renderMarkdown } from '../../lib/markdown';
+import { flashNotify, notifyError, notifySuccess } from '../../lib/notify';
+import { navigateApp } from '../../lib/appNavigation';
 import MarkdownToolbar from '../content/MarkdownToolbar';
 import MediaLibrary from '../content/MediaLibrary';
 import { Badge } from '../ui/badge';
 import { Button } from '../ui/button';
+import { Checkbox } from '../ui/checkbox';
 import { Input } from '../ui/input';
 import { Textarea } from '../ui/textarea';
 import type { MediaItem, PageData } from '../../types';
@@ -110,26 +113,55 @@ export default function ForumTopicEditor({ data }: { data: PageData }) {
         );
     }
 
-    const initialCircle = editor.circle?.id ?? editor.circles[0]?.id ?? 0;
+    const editing = editor.isEdit && editor.topic !== null;
+    const topic = editor.topic;
+    const initial = useMemo(
+        () => ({
+            circle: topic?.circleId ?? editor.circle?.id ?? editor.circles[0]?.id ?? 0,
+            kind: topic?.kind ?? editor.topicKinds[0]?.value ?? '讨论',
+            tags: topic?.tags ?? [],
+            title: topic?.title ?? '',
+            slug: topic?.slug ?? '',
+            content: topic?.content ?? '',
+            status: topic?.status ?? 'publish',
+            pinned: topic?.pinned ?? false,
+            featured: topic?.featured ?? false,
+        }),
+        [editor, topic]
+    );
+    const initialCircle = initial.circle;
     const [selectedCircle, setSelectedCircle] = useState(initialCircle);
-    const [kind, setKind] = useState(editor.topicKinds[0]?.value ?? '讨论');
-    const [tags, setTags] = useState<string[]>([]);
+    const [kind, setKind] = useState(initial.kind);
+    const [tags, setTags] = useState<string[]>(initial.tags);
     const [tagInput, setTagInput] = useState('');
-    const [title, setTitle] = useState('');
-    const [slug, setSlug] = useState('');
-    const [content, setContent] = useState('');
+    const [title, setTitle] = useState(initial.title);
+    const [slug, setSlug] = useState(initial.slug);
+    const [content, setContent] = useState(initial.content);
+    const [status, setStatus] = useState(initial.status);
+    const [pinned, setPinned] = useState(initial.pinned);
+    const [featured, setFeatured] = useState(initial.featured);
     const [viewMode, setViewMode] = useState<ViewMode>('split');
     const [mediaOpen, setMediaOpen] = useState(false);
     const [uploading, setUploading] = useState(false);
     const [submitting, setSubmitting] = useState(false);
     const [pending, setPending] = useState(false);
+    const [pendingMessage, setPendingMessage] = useState('');
     const [dragging, setDragging] = useState(false);
-    const [feedback, setFeedback] = useState<{ tone: 'error' | 'success'; text: string } | null>(null);
     const textareaRef = useRef<HTMLTextAreaElement>(null);
     const stats = useMemo(() => countWords(content), [content]);
     const previewHtml = useMemo(() => renderMarkdown(content), [content]);
     const circle = editor.circles.find((item) => item.id === selectedCircle) ?? editor.circle;
-    const dirty = title.trim() !== '' || slug.trim() !== '' || content.trim() !== '' || tags.length > 0;
+    const dirty =
+        selectedCircle !== initial.circle
+        || kind !== initial.kind
+        || tags.join('\n') !== initial.tags.join('\n')
+        || title !== initial.title
+        || slug !== initial.slug
+        || content !== initial.content
+        || status !== initial.status
+        || pinned !== initial.pinned
+        || featured !== initial.featured;
+    const resubmitting = editing && status === 'rejected' && !editor.canModerate;
 
     const addTag = (value = tagInput) => {
         const next = value
@@ -145,13 +177,12 @@ export default function ForumTopicEditor({ data }: { data: PageData }) {
             return;
         }
         if (tags.length >= 8) {
-            setFeedback({ tone: 'error', text: '最多添加 8 个话题。' });
+            notifyError('最多添加 8 个话题。');
             return;
         }
 
         setTags((current) => [...current, next]);
         setTagInput('');
-        setFeedback(null);
     };
 
     const removeTag = (value: string) => {
@@ -195,7 +226,6 @@ export default function ForumTopicEditor({ data }: { data: PageData }) {
         }
 
         setUploading(true);
-        setFeedback(null);
         try {
             for (const file of images) {
                 const body = new FormData();
@@ -224,11 +254,9 @@ export default function ForumTopicEditor({ data }: { data: PageData }) {
                     insertMedia(item);
                 }
             }
+            notifySuccess('图片已插入正文。');
         } catch (reason) {
-            setFeedback({
-                tone: 'error',
-                text: reason instanceof Error ? reason.message : '图片上传失败',
-            });
+            notifyError(reason instanceof Error ? reason.message : '图片上传失败');
         } finally {
             setUploading(false);
         }
@@ -239,22 +267,24 @@ export default function ForumTopicEditor({ data }: { data: PageData }) {
             return;
         }
         if (selectedCircle <= 0) {
-            setFeedback({ tone: 'error', text: '请选择要发布到的圈子。' });
+            notifyError('请选择要发布到的圈子。');
             return;
         }
         if (title.trim().length < 2) {
-            setFeedback({ tone: 'error', text: '标题至少需要 2 个字符。' });
+            notifyError('标题至少需要 2 个字符。');
             return;
         }
         if (content.trim() === '') {
-            setFeedback({ tone: 'error', text: '正文不能为空。' });
+            notifyError('正文不能为空。');
             return;
         }
 
         setSubmitting(true);
-        setFeedback(null);
         try {
-            const response = await fetch(editor.endpoints.topicCreate, {
+            const endpoint = editing
+                ? editor.endpoints.topicUpdate
+                : editor.endpoints.topicCreate;
+            const response = await fetch(endpoint, {
                 method: 'POST',
                 credentials: 'same-origin',
                 headers: {
@@ -263,12 +293,16 @@ export default function ForumTopicEditor({ data }: { data: PageData }) {
                     'X-Typecho-Token': editor.nonce,
                 },
                 body: JSON.stringify({
+                    ...(editing ? { topic_id: topic?.id ?? 0 } : {}),
                     circle_id: selectedCircle,
                     kind,
                     tags,
                     title: title.trim(),
                     slug: slug.trim(),
                     content,
+                    ...(editing && editor.canModerate
+                        ? { status, pinned, featured }
+                        : {}),
                 }),
             });
             const payload = (await response.json().catch(() => null)) as
@@ -291,13 +325,24 @@ export default function ForumTopicEditor({ data }: { data: PageData }) {
                     typeof result.message === 'string' && result.message.trim() !== ''
                         ? result.message
                         : '帖子已提交审核';
+                if (editing) {
+                    const url = typeof result.url === 'string' ? result.url : '';
+                    if (url !== '') {
+                        flashNotify('success', message);
+                        navigateApp(url);
+                        return;
+                    }
+                }
                 setPending(true);
-                setFeedback({ tone: 'success', text: message });
-                setTitle('');
-                setSlug('');
-                setContent('');
-                setTags([]);
-                setTagInput('');
+                setPendingMessage(message);
+                notifySuccess(message);
+                if (!editing) {
+                    setTitle('');
+                    setSlug('');
+                    setContent('');
+                    setTags([]);
+                    setTagInput('');
+                }
                 return;
             }
             const url = typeof result?.url === 'string' ? result.url : '';
@@ -305,12 +350,12 @@ export default function ForumTopicEditor({ data }: { data: PageData }) {
                 throw new Error('发布成功，但没有返回帖子地址，请回到圈子查看。');
             }
 
-            window.location.assign(url);
+            flashNotify('success', editing ? '帖子已保存。' : '帖子已发布。');
+            navigateApp(url);
         } catch (reason) {
-            setFeedback({
-                tone: 'error',
-                text: reason instanceof Error ? reason.message : '发布失败，请稍后再试。',
-            });
+            notifyError(
+                reason instanceof Error ? reason.message : '发布失败，请稍后再试。'
+            );
         } finally {
             setSubmitting(false);
         }
@@ -334,16 +379,36 @@ export default function ForumTopicEditor({ data }: { data: PageData }) {
                 <header className="editor-topbar">
                     <div className="editor-topbar-row">
                         <div className="editor-topbar-left">
-                            <a className="editor-back" href={editor.homeUrl}>
+                            <a
+                                className="editor-back"
+                                href={editing && topic ? topic.url : editor.homeUrl}
+                            >
                                 <ArrowLeft aria-hidden="true" />
-                                <span>{editor.displayName}</span>
+                                <span>
+                                    {editing && circle ? circle.name : editor.displayName}
+                                </span>
                             </a>
                             <span className="editor-topbar-sep" aria-hidden="true">
                                 /
                             </span>
-                            <span className="editor-topbar-doc">发布新帖</span>
-                            <Badge variant="secondary">新帖</Badge>
-                            {dirty ? <span className="editor-dirty">未发布</span> : null}
+                            <span className="editor-topbar-doc">
+                                {editing ? '编辑帖子' : '发布新帖'}
+                            </span>
+                            <Badge variant="secondary">{editing ? '编辑' : '新帖'}</Badge>
+                            {editing && status !== 'publish' ? (
+                                <Badge variant="outline">
+                                    {status === 'waiting'
+                                        ? '待审核'
+                                        : status === 'rejected'
+                                          ? '已驳回'
+                                          : status}
+                                </Badge>
+                            ) : null}
+                            {dirty ? (
+                                <span className="editor-dirty">
+                                    {editing ? '未保存' : '未发布'}
+                                </span>
+                            ) : null}
                         </div>
                         <div className="editor-toolbar-actions">
                             <Button type="submit" size="sm" disabled={submitting || uploading}>
@@ -352,27 +417,46 @@ export default function ForumTopicEditor({ data }: { data: PageData }) {
                                 ) : (
                                     <Send aria-hidden="true" />
                                 )}
-                                {submitting ? '发布中…' : '发布帖子'}
+                                {submitting
+                                    ? editing
+                                        ? '保存中…'
+                                        : '发布中…'
+                                    : resubmitting
+                                      ? '重新提交审核'
+                                      : editing
+                                      ? '保存修改'
+                                      : '发布帖子'}
                             </Button>
                         </div>
                     </div>
                     <div className="editor-topbar-sub">
                         <span>
-                            {circle ? `发布到 ${circle.name}` : '圈子发帖'} · Markdown · 媒体库
+                            {circle
+                                ? editing
+                                    ? `编辑于 ${circle.name}`
+                                    : `发布到 ${circle.name}`
+                                : '圈子发帖'}{' '}
+                            · Markdown · 媒体库
                         </span>
                         <span className="editor-shortcut">
-                            <kbd>Ctrl</kbd>+<kbd>Enter</kbd> 发布
+                            <kbd>Ctrl</kbd>+<kbd>Enter</kbd> {editing ? '保存' : '发布'}
                         </span>
                     </div>
                 </header>
 
                 <div className="editor-canvas">
+                    {resubmitting ? (
+                        <div className="content-feedback content-feedback-warning" role="status">
+                            这篇帖子已被管理员驳回。修改内容并保存后，会重新进入审核队列。
+                        </div>
+                    ) : null}
+
                     {pending ? (
                         <div
                             className="content-feedback content-feedback-success flex flex-wrap items-center justify-between gap-2"
                             role="status"
                         >
-                            <span>{feedback?.text || '帖子已提交审核'}</span>
+                            <span>{pendingMessage || '帖子已提交审核'}</span>
                             <a
                                 className="font-medium underline underline-offset-2"
                                 href={editor.contentUrl || editor.homeUrl}
@@ -380,18 +464,6 @@ export default function ForumTopicEditor({ data }: { data: PageData }) {
                                 前往内容管理
                             </a>
                         </div>
-                    ) : feedback ? (
-                        <p
-                            className={
-                                'content-feedback ' +
-                                (feedback.tone === 'error'
-                                    ? 'content-feedback-error'
-                                    : 'content-feedback-success')
-                            }
-                            role={feedback.tone === 'error' ? 'alert' : 'status'}
-                        >
-                            {feedback.text}
-                        </p>
                     ) : null}
 
                     <div className="editor-layout">
@@ -666,6 +738,48 @@ export default function ForumTopicEditor({ data }: { data: PageData }) {
                                     ) : null}
                                 </div>
                             </MetaBox>
+
+                            {editing && editor.canModerate ? (
+                                <MetaBox title="管理设置">
+                                    <div className="grid gap-3">
+                                        <label className="editor-field">
+                                            <span className="editor-field-head">帖子状态</span>
+                                            <select
+                                                className="editor-field-select"
+                                                value={status}
+                                                onChange={(event) => setStatus(event.target.value)}
+                                            >
+                                                {editor.statusOptions.map((option) => (
+                                                    <option key={option.value} value={option.value}>
+                                                        {option.label}
+                                                    </option>
+                                                ))}
+                                            </select>
+                                        </label>
+                                        <label className="flex items-center gap-2 text-[12px] text-ink-mute">
+                                            <Checkbox
+                                                checked={pinned}
+                                                onCheckedChange={(checked) =>
+                                                    setPinned(checked === true)
+                                                }
+                                            />
+                                            置顶这篇帖子
+                                        </label>
+                                        <label className="flex items-center gap-2 text-[12px] text-ink-mute">
+                                            <Checkbox
+                                                checked={featured}
+                                                onCheckedChange={(checked) =>
+                                                    setFeatured(checked === true)
+                                                }
+                                            />
+                                            设为精华内容
+                                        </label>
+                                        <p className="editor-meta-note">
+                                            状态和推荐设置会在保存帖子时一并生效。
+                                        </p>
+                                    </div>
+                                </MetaBox>
+                            ) : null}
 
                             <MetaBox title="所属圈子">
                                 {circle ? (

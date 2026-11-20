@@ -34,7 +34,7 @@ final class PageData
 
     private const LAYOUT_MODULES = ['reading-progress', 'header', 'main', 'footer', 'action-rail'];
 
-    private const SIDEBAR_MODULES = ['toc', 'site-card', 'recent-posts', 'categories', 'tags'];
+    private const SIDEBAR_MODULES = ['toc', 'user-card', 'site-card', 'recent-posts', 'categories', 'tags'];
 
     private const SIDEBAR_PAGES = ['home', 'archive', 'post', 'page'];
 
@@ -966,7 +966,38 @@ final class PageData
 
         $overlay = is_numeric($data['overlay'] ?? null) ? (int) $data['overlay'] : 55;
         $height = (string) ($data['height'] ?? '');
-        $align = (string) ($data['align'] ?? 'left');
+        $align = (string) ($data['align'] ?? 'center');
+        $background = trim((string) ($data['background'] ?? ''));
+        if ($background === '') {
+            $background = trim((string) ($data['video'] ?? '')) !== ''
+                ? 'video'
+                : (trim((string) ($data['image'] ?? '')) !== '' ? 'image' : 'color');
+        }
+        $color = trim((string) ($data['color'] ?? ''));
+        if (preg_match('/^#[0-9a-f]{6}$/i', $color) !== 1) {
+            $color = '#10141c';
+        }
+        $cards = [];
+        foreach (self::pipeRows(
+            $data['cards'] ?? null,
+            ['title', 'text', 'url', 'badge'],
+            4
+        ) as $row) {
+            if ($row['title'] === '' && $row['text'] === '') {
+                continue;
+            }
+
+            $cards[] = [
+                'title' => $row['title'],
+                'text' => $row['text'],
+                'url' => self::safeUrl($row['url']),
+                'badge' => $row['badge'],
+            ];
+        }
+        $cardStyle = (string) ($data['card_style'] ?? 'glass');
+        $imageFit = (string) ($data['image_fit'] ?? 'cover');
+        $imageEffect = (string) ($data['image_effect'] ?? 'none');
+        $imagePosition = (string) ($data['image_position'] ?? 'center');
 
         return [
             'type' => 'hero',
@@ -977,16 +1008,29 @@ final class PageData
             'eyebrow' => self::text($data, 'eyebrow', ''),
             'title' => self::text($data, 'title', $site['title']),
             'lead' => self::text($data, 'lead', $lead),
+            'background' => in_array($background, ['color', 'image', 'video'], true)
+                ? $background
+                : 'color',
+            'color' => $color,
             'image' => Media::url($data['image'] ?? ''),
+            'imageFit' => in_array($imageFit, ['cover', 'contain', 'fill'], true) ? $imageFit : 'cover',
+            'imageEffect' => in_array($imageEffect, ['none', 'fixed', 'zoom', 'pan'], true)
+                ? $imageEffect
+                : 'none',
+            'imagePosition' => in_array($imagePosition, ['center', 'top', 'bottom', 'left', 'right'], true)
+                ? $imagePosition
+                : 'center',
+            'video' => self::safeUrl($data['video'] ?? ''),
+            'videoPoster' => Media::url($data['video_poster'] ?? ''),
             'height' => in_array($height, ['sm', 'md', 'lg', 'screen'], true) ? $height : '',
             'overlay' => max(0, min(90, $overlay)),
-            'align' => in_array($align, ['left', 'center'], true) ? $align : 'left',
+            'align' => in_array($align, ['left', 'center'], true) ? $align : 'center',
             'hot' => $hot,
-            'showFeatured' => !isset($data['show_featured']) || (string) $data['show_featured'] !== '0',
             'searchAction' => $site['url'],
             'searchPlaceholder' => self::text($data, 'search_placeholder', '输入关键词搜索站内文章…'),
             'actions' => $actions,
-            'featured' => self::featuredPost($site['url']),
+            'cards' => $cards,
+            'cardStyle' => in_array($cardStyle, ['glass', 'solid'], true) ? $cardStyle : 'glass',
         ];
     }
 
@@ -999,34 +1043,47 @@ final class PageData
         $category = trim((string) ($data['category'] ?? ''));
         $source = (string) ($data['source'] ?? 'articles');
         $source = in_array($source, ['articles', 'forum', 'mixed'], true) ? $source : 'articles';
+        $order = (string) ($data['order'] ?? 'latest');
+        $order = $order === 'random' ? 'random' : 'latest';
         $forumCircle = trim((string) ($data['forum_circle'] ?? ''));
-        $cacheKey = $category === '' ? 'posts' : 'posts:' . $category;
+        $cacheKey = ($category === '' ? 'posts' : 'posts:' . $category) . ':' . $order;
         $paginationKey = $category === '' ? 'pagination' : 'pagination:' . $category;
         $limit = is_numeric($data['limit'] ?? null) ? (int) $data['limit'] : 0;
         $columns = is_numeric($data['columns'] ?? null) ? (int) $data['columns'] : 0;
-        $showPagination = !isset($data['show_pagination']) || (string) $data['show_pagination'] !== '0';
+        $showPagination = $order !== 'random'
+            && (!isset($data['show_pagination']) || (string) $data['show_pagination'] !== '0');
         $fetchLimit = $limit > 0 ? min(30, $limit) : 30;
         $articles = $source === 'forum'
             ? []
-            : self::cached(
-                $cache,
-                $cacheKey,
-                static fn (): array => $category !== ''
-                    ? self::postSummariesByCategory($category)
-                    : self::postSummaries($archive)
-            );
+            : ($order === 'random'
+                ? self::cached(
+                    $cache,
+                    $cacheKey,
+                    static fn (): array => self::randomPostSummaries($fetchLimit, $category)
+                )
+                : self::cached(
+                    $cache,
+                    $cacheKey,
+                    static fn (): array => $category !== ''
+                        ? self::postSummariesByCategory($category)
+                        : self::postSummaries($archive)
+                ));
         $forumPosts = $source === 'articles'
             ? []
             : self::cached(
                 $cache,
-                'forum:' . $forumCircle . ':' . $fetchLimit,
-                static fn (): array => Forum::feedSummaries($fetchLimit, $forumCircle)
+                'forum:' . $forumCircle . ':' . $fetchLimit . ':' . $order,
+                static fn (): array => Forum::feedSummaries($fetchLimit, $forumCircle, $order)
             );
         $posts = match ($source) {
             'forum' => $forumPosts,
             'mixed' => self::mergeContentFeeds($articles, $forumPosts),
             default => $articles,
         };
+        if ($order === 'random') {
+            shuffle($posts);
+            $posts = array_slice($posts, 0, $fetchLimit);
+        }
 
         return [
             'type' => 'post-list',
@@ -1034,7 +1091,11 @@ final class PageData
             'title' => self::text(
                 $data,
                 'title',
-                $kind === 'home' ? ($source === 'forum' ? '最新帖子' : '最新文章') : ''
+                $kind === 'home'
+                    ? ($order === 'random'
+                        ? ($source === 'forum' ? '随机帖子' : '随机文章')
+                        : ($source === 'forum' ? '最新帖子' : '最新文章'))
+                    : ''
             ),
             'category' => $category,
             'source' => $source,
@@ -1096,15 +1157,22 @@ final class PageData
             return null;
         }
 
+        $height = (string) ($data['height'] ?? '');
+        $overlay = is_numeric($data['overlay'] ?? null) ? (int) $data['overlay'] : 45;
+        $align = (string) ($data['align'] ?? 'center');
+
         return [
             'type' => 'carousel',
             'variant' => $variant !== '' ? $variant : 'default',
             'width' => self::blockWidth($data),
             'title' => self::text($data, 'title', ''),
+            'height' => in_array($height, ['sm', 'md', 'lg', 'screen'], true) ? $height : '',
+            'overlay' => max(0, min(90, $overlay)),
+            'align' => in_array($align, ['left', 'center'], true) ? $align : 'center',
             'slides' => array_map(static fn (array $slide): array => [
-                'image' => (string) ($slide['image'] ?? ''),
-                'title' => (string) ($slide['title'] ?? ''),
-                'description' => (string) ($slide['description'] ?? ''),
+                'image' => Media::url($slide['image'] ?? ''),
+                'title' => self::clip((string) ($slide['title'] ?? ''), 160),
+                'description' => self::clip((string) ($slide['description'] ?? ''), 300),
                 'url' => self::safeUrl($slide['url'] ?? ''),
             ], $slides),
         ];
@@ -3086,6 +3154,9 @@ final class PageData
                 'profile' => Endpoint::url('user-profile'),
                 'profileNonce' => Typecho::securityToken(),
                 'enhanced' => ($values['User_Center_Enhanced'] ?? true) === true,
+                'certificationEnabled' => UserProfile::certificationEnabled(),
+                'certification' => Endpoint::url('user-certification'),
+                'certificationNonce' => Typecho::securityToken(),
                 'avatarMedia' => $v2Base . '/media',
                 'avatarMediaEnabled' => ThemeConfig::restV2Enabled()
                     && UserProfile::enabled()
@@ -3127,11 +3198,18 @@ final class PageData
     {
         $context = Forum::viewerContext();
         $permissions = $context['permissions'];
+        $values = Settings::values();
+        $label = trim((string) ($values['Forum_Display_Name'] ?? ''));
+        $title = trim((string) ($values['Forum_Title'] ?? ''));
 
         return [
             'enabled' => (bool) $context['enabled'],
+            'label' => $label !== '' ? $label : '圈子',
+            'title' => $title !== '' ? $title : ($label !== '' ? $label : '圈子广场'),
             'content' => Endpoint::url('forum-user-content'),
             'moderation' => Endpoint::url('forum-moderation'),
+            'topicUpdate' => Endpoint::url('forum-topic-update'),
+            'topicDelete' => Endpoint::url('forum-topic-delete'),
             'nonce' => Typecho::securityToken(),
             'home' => Forum::homeUrl(),
             'editor' => Forum::editorUrl(),
@@ -3574,6 +3652,119 @@ final class PageData
             return $items;
         } catch (\Throwable $exception) {
             error_log('TTDF category post lookup failed: ' . $exception->getMessage());
+
+            return [];
+        }
+    }
+
+    /**
+     * Random article cards are resolved from the content table instead of the
+     * current archive page so the module can mix articles from the whole site.
+     *
+     * @return list<array<string, mixed>>
+     */
+    private static function randomPostSummaries(int $limit, string $category = ''): array
+    {
+        if (!class_exists('Typecho\\Db')) {
+            return [];
+        }
+
+        $limit = max(1, min(30, $limit));
+
+        try {
+            $db = \Typecho\Db::get();
+            $cids = [];
+
+            if ($category !== '') {
+                $meta = $db->fetchRow(
+                    $db->select('mid', 'name', 'slug')
+                        ->from('table.metas')
+                        ->where('type = ?', 'category')
+                        ->where('slug = ?', $category)
+                        ->limit(1)
+                );
+
+                if (!is_array($meta) && ctype_digit($category)) {
+                    $meta = $db->fetchRow(
+                        $db->select('mid', 'name', 'slug')
+                            ->from('table.metas')
+                            ->where('type = ?', 'category')
+                            ->where('mid = ?', (int) $category)
+                            ->limit(1)
+                    );
+                }
+
+                if (!is_array($meta)) {
+                    return [];
+                }
+
+                $cidRows = $db->fetchAll(
+                    $db->select('cid')
+                        ->from('table.relationships')
+                        ->where('mid = ?', (int) ($meta['mid'] ?? 0))
+                );
+                foreach ($cidRows as $cidRow) {
+                    $cid = (int) ($cidRow['cid'] ?? 0);
+                    if ($cid > 0) {
+                        $cids[] = $cid;
+                    }
+                }
+
+                if ($cids === []) {
+                    return [];
+                }
+            }
+
+            $options = Typecho::options();
+            $now = (int) ($options?->time ?? time());
+            $query = $db->select('cid', 'title', 'slug', 'created', 'text', 'commentsNum', 'authorId')
+                ->from('table.contents')
+                ->where('type = ?', 'post')
+                ->where('status = ?', 'publish')
+                ->where('created < ?', $now)
+                ->where('(table.contents.password IS NULL OR table.contents.password = ?)', '');
+            if ($cids !== []) {
+                $query->where('cid IN ?', $cids);
+            }
+
+            $rows = $db->fetchAll(
+                $query->order('created', \Typecho\Db::SORT_DESC)->limit(300)
+            );
+            $rows = array_values(array_filter($rows, 'is_array'));
+            shuffle($rows);
+            $rows = array_slice($rows, 0, $limit);
+
+            $siteUrl = Typecho::siteUrl();
+            $topicIds = array_map(
+                static fn (array $row): int => (int) ($row['cid'] ?? 0),
+                $rows
+            );
+            $views = ArticleViews::counts($topicIds);
+            self::primeThumbnailFields($topicIds);
+            $items = [];
+
+            foreach ($rows as $row) {
+                $text = (string) ($row['text'] ?? '');
+                $cid = (int) ($row['cid'] ?? 0);
+                $items[] = [
+                    'title' => trim((string) ($row['title'] ?? '')),
+                    'url' => self::postUrl($row),
+                    'excerpt' => self::excerpt($row, $text, 120),
+                    'date' => self::postDate($row, 'Y-m-d'),
+                    'dateIso' => self::postDate($row, 'c'),
+                    'thumb' => self::thumbnail($cid, $text, $siteUrl),
+                    'author' => self::authorName((int) ($row['authorId'] ?? 0)),
+                    'comments' => (int) ($row['commentsNum'] ?? 0),
+                    'readingTime' => self::readingMinutes($text),
+                    'categories' => self::termsOfCid($cid, 'category'),
+                    'tags' => self::termsOfCid($cid, 'tag'),
+                    'views' => $views[$cid] ?? 0,
+                ];
+            }
+
+            return $items;
+        } catch (\Throwable $exception) {
+            error_log('TTDF random post lookup failed: ' . $exception->getMessage());
 
             return [];
         }

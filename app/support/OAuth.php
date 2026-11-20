@@ -44,7 +44,7 @@ final class OAuth
 
     public const PENDING_TTL = 900;
 
-    private const RATE_PREFIX = 'oauthr_';
+    private const RATE_PREFIX = 'sunken_or_';
 
     private const RATE_WINDOW = 1800;
 

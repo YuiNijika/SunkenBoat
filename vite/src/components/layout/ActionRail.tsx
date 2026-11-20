@@ -23,7 +23,7 @@ export default function ActionRail({ colorMode }: Props) {
     }, []);
 
     return (
-        <div className="fixed right-4 top-1/3 z-30 hidden flex-col gap-2 xl:flex">
+        <div className="fixed right-4 top-1/3 z-30 hidden flex-col gap-2 2xl:flex">
             <button
                 type="button"
                 className="rail-btn"

@@ -78,20 +78,36 @@ export default function BlockRenderer({ block }: Props) {
                     eyebrow={block.eyebrow}
                     title={block.title}
                     lead={block.lead}
+                    background={block.background}
+                    color={block.color}
                     image={block.image}
+                    imageFit={block.imageFit}
+                    imageEffect={block.imageEffect}
+                    imagePosition={block.imagePosition}
+                    video={block.video}
+                    videoPoster={block.videoPoster}
                     height={block.height}
                     overlay={block.overlay}
                     align={block.align}
                     hot={block.hot}
-                    showFeatured={block.showFeatured}
                     searchAction={block.searchAction}
                     searchPlaceholder={block.searchPlaceholder}
                     actions={block.actions}
-                    featured={block.featured}
+                    cards={block.cards}
+                    cardStyle={block.cardStyle}
                 />
             );
         case 'carousel':
-            return <CarouselBlock title={block.title} slides={block.slides} width={block.width} />;
+            return (
+                <CarouselBlock
+                    title={block.title}
+                    slides={block.slides}
+                    width={block.width}
+                    height={block.height}
+                    overlay={block.overlay}
+                    align={block.align}
+                />
+            );
         case 'post-list':
             return (
                 <PostListBlock

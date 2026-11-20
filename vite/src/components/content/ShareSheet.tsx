@@ -17,6 +17,7 @@ import {
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '../ui/dialog';
 import type { LucideProps } from 'lucide-react';
 import type { ShareConfig } from '../../types';
+import { notifyError, notifySuccess } from '../../lib/notify';
 
 type ShareIcon = ComponentType<LucideProps>;
 
@@ -189,22 +190,19 @@ async function createPoster(url: string, title: string, siteName: string, brand:
 }
 
 export default function ShareSheet({ open, onOpenChange, config, url, title, siteName }: Props) {
-    const [status, setStatus] = useState('');
+    const [copied, setCopied] = useState(false);
     const [posterBusy, setPosterBusy] = useState(false);
     const enabled = config.items.length > 0 ? config.items : ['copy'];
     const channels = CHANNELS.filter((channel) => enabled.includes(channel.id));
 
-    const flash = (message: string) => {
-        setStatus(message);
-        window.setTimeout(() => setStatus(''), 2200);
-    };
-
     const copy = async () => {
         try {
             await copyText(url);
-            flash('链接已复制');
+            setCopied(true);
+            notifySuccess('链接已复制。');
+            window.setTimeout(() => setCopied(false), 1800);
         } catch {
-            flash('请手动复制地址栏链接');
+            notifyError('请手动复制地址栏链接。');
         }
     };
 
@@ -222,9 +220,9 @@ export default function ShareSheet({ open, onOpenChange, config, url, title, sit
             link.download = `${(title || siteName).replace(/[\\/:*?"<>|]/g, '-').slice(0, 48)}-分享海报.png`;
             link.click();
             window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
-            flash('海报已生成');
+            notifySuccess('海报已生成。');
         } catch {
-            flash('海报生成失败，请稍后再试');
+            notifyError('海报生成失败，请稍后再试。');
         } finally {
             setPosterBusy(false);
         }
@@ -293,7 +291,7 @@ export default function ShareSheet({ open, onOpenChange, config, url, title, sit
                                     )}
                                 </span>
                                 <span className="share-sheet-label">{channel.label}</span>
-                                {channel.id === 'copy' && status === '链接已复制' ? (
+                                {channel.id === 'copy' && copied ? (
                                     <Check className="ml-auto size-4 text-brand" strokeWidth={2} />
                                 ) : null}
                             </button>
@@ -302,7 +300,7 @@ export default function ShareSheet({ open, onOpenChange, config, url, title, sit
                 </div>
 
                 <div className="share-sheet-footer">
-                    <span className={status !== '' ? 'text-brand' : ''}>{status || '分享给更多朋友'}</span>
+                    <span>分享给更多朋友</span>
                 </div>
             </DialogContent>
         </Dialog>

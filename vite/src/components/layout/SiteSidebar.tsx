@@ -2,11 +2,12 @@ import { Fragment } from 'react';
 import type { ReactNode } from 'react';
 import { ArrowUpRight, MessageCircle, Rss } from 'lucide-react';
 import Toc from '../content/Toc';
+import SidebarUserCard from './SidebarUserCard';
 import { Badge } from '../ui/badge';
 import { Button } from '../ui/button';
 import { Card } from '../ui/card';
 import type { TocItem } from '../../lib/article';
-import type { SiteInfo, WidgetsData } from '../../types';
+import type { SiteInfo, UserApiEndpoints, WidgetsData } from '../../types';
 
 interface Props {
     site: SiteInfo;
@@ -14,6 +15,7 @@ interface Props {
     toc?: TocItem[];
     tocTitle?: string;
     modules?: string[];
+    api?: UserApiEndpoints;
 }
 
 function Panel({
@@ -47,7 +49,8 @@ export default function SiteSidebar({
     widgets,
     toc = [],
     tocTitle = '',
-    modules = ['toc', 'site-card', 'recent-posts', 'categories', 'tags'],
+    modules = ['toc', 'user-card', 'site-card', 'recent-posts', 'categories', 'tags'],
+    api,
 }: Props) {
     const { stats, recent, categories, tags } = widgets;
     const counters = [
@@ -64,6 +67,7 @@ export default function SiteSidebar({
                     <Toc items={toc} title="" />
                 </Panel>
             ) : null,
+        'user-card': <SidebarUserCard api={api} />,
         'site-card': (
             <Card className="surface-card gap-0 overflow-hidden p-0">
                 <div className="site-profile-cover relative h-[84px]" aria-hidden="true">

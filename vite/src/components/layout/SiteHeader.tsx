@@ -220,7 +220,7 @@ export default function SiteHeader({ site, colorMode, widgets, api, showUserCent
 
                 <div className="ml-auto flex items-center gap-1">
                     {site.translate.enabled ? (
-                        <DropdownMenu>
+                        <DropdownMenu modal={false}>
                             <DropdownMenuTrigger asChild>
                                 <Button
                                     type="button"

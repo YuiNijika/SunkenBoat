@@ -1,11 +1,17 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { FormEvent } from 'react';
-import { ChevronDown, ChevronUp, MessageCircle, Reply } from 'lucide-react';
+import { ChevronDown, ChevronUp } from 'lucide-react';
 import type { CommentsData } from '../../types';
+import {
+    CommentComposer,
+    CommentEmpty,
+    CommentEntry,
+    CommentSection,
+} from '../content/CommentSection';
 import MarkdownToolbar from '../content/MarkdownToolbar';
 import MediaLibrary from '../content/MediaLibrary';
 import { Button } from '../ui/button';
-import { Card } from '../ui/card';
+import { notifyError, notifySuccess } from '../../lib/notify';
 import { Input } from '../ui/input';
 import { Label } from '../ui/label';
 import { Textarea } from '../ui/textarea';
@@ -26,23 +32,6 @@ interface ApiComment {
 
 interface Props {
     data: CommentsData;
-}
-
-function EmptyComments({ image, text }: { image: string; text: string }) {
-    return (
-        <div className="comments-empty">
-            {image !== '' ? (
-                <img
-                    className="comments-empty-image"
-                    src={image}
-                    alt=""
-                    loading="lazy"
-                    decoding="async"
-                />
-            ) : null}
-            <p>{text}</p>
-        </div>
-    );
 }
 
 function highlightIn(root: HTMLElement | null): void {
@@ -99,105 +88,8 @@ function insertMediaMarkdown(
     });
 }
 
-function Avatar({ comment }: { comment: ApiComment }) {
-    if (comment.avatar) {
-        return (
-            <img
-                className="comment-avatar-img"
-                src={comment.avatar}
-                alt=""
-                width={45}
-                height={45}
-                loading="lazy"
-                decoding="async"
-            />
-        );
-    }
-
-    return (
-        <span className="comment-avatar-img comment-avatar-fallback" aria-hidden="true">
-            {(comment.author.trim().slice(0, 1) || '访').toUpperCase()}
-        </span>
-    );
-}
-
-function CommentItem({
-    comment,
-    replyTo,
-    isReply,
-    onReply,
-}: {
-    comment: ApiComment;
-    replyTo?: string;
-    isReply?: boolean;
-    onReply: (comment: ApiComment) => void;
-}) {
-    const isOwner = comment.authorId > 0 && comment.authorId === comment.ownerId;
-
-    return (
-        <li
-            className={isReply ? 'comment-item comment-item-reply' : 'comment-item'}
-            itemScope
-            itemType="http://schema.org/UserComments"
-        >
-            <div className="comment-inner">
-                <div className="comment-avatar">
-                    <Avatar comment={comment} />
-                </div>
-
-                <div className="comment-main">
-                    <header className="comment-head">
-                        {comment.url ? (
-                            <a
-                                className="comment-author"
-                                href={comment.url}
-                                rel="nofollow ugc noreferrer"
-                                itemProp="creator"
-                            >
-                                {comment.author || '匿名'}
-                            </a>
-                        ) : (
-                            <cite className="comment-author" itemProp="creator">
-                                {comment.author || '匿名'}
-                            </cite>
-                        )}
-
-                        {isOwner ? <span className="comment-role">博主</span> : null}
-
-                        <a className="comment-time" href={`#comment-${comment.coid}`}>
-                            <time dateTime={comment.created} itemProp="commentTime">
-                                {formatCommentTime(comment.created)}
-                            </time>
-                        </a>
-
-                    </header>
-
-                    <div className="comment-content-row">
-                        <div className="comment-content" itemProp="commentText">
-                            {replyTo ? (
-                                <p className="comment-mention">
-                                    回复 <span>@{replyTo}</span>
-                                </p>
-                            ) : null}
-                            <div
-                                className="comment-body"
-                                dangerouslySetInnerHTML={{ __html: comment.html || comment.text }}
-                            />
-                        </div>
-                        <button
-                            type="button"
-                            className="comment-reply-btn"
-                            aria-label={`回复 ${comment.author || '匿名'}`}
-                            onClick={() => onReply(comment)}
-                        >
-                            <Reply className="size-3" strokeWidth={1.8} aria-hidden="true" />
-                            回复
-                        </button>
-                    </div>
-                </div>
-            </div>
-        </li>
-    );
+function isOwnerComment(comment: ApiComment): boolean {
+    return comment.authorId > 0 && comment.authorId === comment.ownerId;
 }
 
 function LegacyComments({ data }: Props) {
@@ -258,7 +150,7 @@ function LegacyComments({ data }: Props) {
                     ) : null}
                 </>
             ) : (
-                <EmptyComments image={data.nullImage} text="暂时没有评论，欢迎在上方留言。" />
+                <CommentEmpty image={data.nullImage} text="暂时没有评论，欢迎在上方留言。" />
             )}
 
             {data.paginationHtml ? (
@@ -376,8 +268,6 @@ export default function CommentsBlock({ data }: Props) {
     const title = data.title || '评论';
     const [comments, setComments] = useState<ApiComment[]>([]);
     const [loading, setLoading] = useState(data.apiEnabled);
-    const [apiError, setApiError] = useState('');
-    const [notice, setNotice] = useState('');
     const [submitting, setSubmitting] = useState(false);
     const [parent, setParent] = useState(0);
     const [parentTarget, setParentTarget] = useState('');
@@ -389,7 +279,7 @@ export default function CommentsBlock({ data }: Props) {
     const [expanded, setExpanded] = useState(!data.collapsed);
     const formRef = useRef<HTMLFormElement>(null);
     const textareaRef = useRef<HTMLTextAreaElement>(null);
-    const listRef = useRef<HTMLOListElement>(null);
+    const listRef = useRef<HTMLUListElement>(null);
 
     const loadComments = async () => {
         if (!data.apiEnabled) {
@@ -397,7 +287,6 @@ export default function CommentsBlock({ data }: Props) {
         }
 
         setLoading(true);
-        setApiError('');
         try {
             const endpoint = new URL(data.apiUrl, window.location.href);
             endpoint.searchParams.set('cid', String(data.cid));
@@ -413,7 +302,9 @@ export default function CommentsBlock({ data }: Props) {
             }
             setComments(payload.data);
         } catch (error) {
-            setApiError(error instanceof Error ? error.message : '评论接口请求失败');
+            notifyError(
+                error instanceof Error ? error.message : '评论接口请求失败'
+            );
         } finally {
             setLoading(false);
         }
@@ -479,7 +370,6 @@ export default function CommentsBlock({ data }: Props) {
     const handleReply = (comment: ApiComment) => {
         setParent(comment.coid);
         setParentTarget(comment.author || '匿名');
-        setNotice('');
         formRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
         textareaRef.current?.focus();
     };
@@ -491,8 +381,6 @@ export default function CommentsBlock({ data }: Props) {
         }
 
         setSubmitting(true);
-        setApiError('');
-        setNotice('');
         try {
             const response = await fetch(data.apiUrl, {
                 method: 'POST',
@@ -519,14 +407,14 @@ export default function CommentsBlock({ data }: Props) {
             setParent(0);
             setParentTarget('');
             const status = String(payload.data?.status ?? '');
-            setNotice(
+            notifySuccess(
                 status === 'waiting'
                     ? '评论已提交，审核通过后会显示。'
                     : '评论已发布。'
             );
             await loadComments();
         } catch (error) {
-            setApiError(error instanceof Error ? error.message : '评论提交失败');
+            notifyError(error instanceof Error ? error.message : '评论提交失败');
         } finally {
             setSubmitting(false);
         }
@@ -541,115 +429,121 @@ export default function CommentsBlock({ data }: Props) {
     const hiddenCount = threads.roots.length - visibleRoots.length;
 
     return (
-        <Card className="surface-card comments-card" id="comments">
-            <header className="comments-head">
-                <div className="comments-title">
-                    <span className="comments-title-icon">
-                        <MessageCircle className="size-4" strokeWidth={1.6} aria-hidden="true" />
-                    </span>
-                    <h2>{title}</h2>
-                </div>
-                {data.countText ? <span className="comments-count">{data.countText}</span> : null}
-            </header>
-
+        <CommentSection
+            id="comments"
+            title={title}
+            count={data.countText}
+            hint="友善交流，支持 Markdown"
+        >
             {!data.apiEnabled ? (
                 <LegacyComments data={data} />
             ) : (
                 <>
-                    <form ref={formRef} onSubmit={submit} className="comment-form comment-form-api">
-                        {parent > 0 ? (
-                            <div className="comment-replying">
+                    <CommentComposer
+                        formRef={formRef}
+                        textareaRef={textareaRef}
+                        id="api-comment-text"
+                        avatar={{
+                            name: data.loggedIn ? data.screenName : author || '访客',
+                        }}
+                        value={text}
+                        onChange={setText}
+                        onSubmit={submit}
+                        busy={submitting}
+                        placeholder="写下你的想法…支持 Markdown 语法"
+                        replyTo={
+                            parent > 0
+                                ? {
+                                      label: parentTarget || `#${parent}`,
+                                      onCancel: () => {
+                                          setParent(0);
+                                          setParentTarget('');
+                                      },
+                                  }
+                                : null
+                        }
+                        onImage={
+                            data.mediaEnabled ? () => setMediaOpen(true) : undefined
+                        }
+                        footerNote={
+                            data.loggedIn ? (
                                 <span>
-                                    正在回复 <strong>@{parentTarget || `#${parent}`}</strong>
+                                    当前身份：
+                                    <a
+                                        className="text-ink-mute hover:text-brand"
+                                        href={data.profileUrl}
+                                    >
+                                        {data.screenName}
+                                    </a>
                                 </span>
-                                <button
-                                    type="button"
-                                    onClick={() => {
-                                        setParent(0);
-                                        setParentTarget('');
-                                    }}
-                                >
-                                    取消回复
-                                </button>
-                            </div>
-                        ) : null}
-
-                        <div className="comment-field">
-                            <div className="comment-field-head">
-                                <Label htmlFor="api-comment-text">评论内容</Label>
-                                <span className="comment-field-hint">
-                                    支持 Markdown：代码块、链接与图片
-                                </span>
-                            </div>
-                            <div className="markdown-editor">
-                                <MarkdownToolbar
-                                    target={textareaRef}
-                                    onChange={setText}
-                                    onImage={data.mediaEnabled ? () => setMediaOpen(true) : undefined}
-                                    disabled={submitting}
-                                />
-                                <Textarea
-                                    ref={textareaRef}
-                                    id="api-comment-text"
-                                    className="markdown-input"
-                                    rows={5}
-                                    required
-                                    value={text}
-                                    onChange={(event) => setText(event.target.value)}
-                                    placeholder="写下你的想法…支持 Markdown 语法"
-                                />
-                            </div>
-                        </div>
-
-                        {data.loggedIn ? (
-                            <p className="comment-identity">
-                                当前身份：
-                                <a href={data.profileUrl}>{data.screenName}</a>
-                            </p>
-                        ) : (
-                            <div className="comment-guest-grid">
-                                <div className="comment-field">
-                                    <Label htmlFor="api-comment-author">名字</Label>
-                                    <Input
-                                        id="api-comment-author"
-                                        value={author}
-                                        onChange={(event) => setAuthor(event.target.value)}
-                                        autoComplete="nickname"
-                                        required
-                                    />
+                            ) : null
+                        }
+                        guestFields={
+                            data.loggedIn ? null : (
+                                <div className="grid gap-2 sm:grid-cols-3">
+                                    <div className="grid gap-1.5">
+                                        <Label
+                                            htmlFor="api-comment-author"
+                                            className="text-[11px] text-ink-mute"
+                                        >
+                                            名字
+                                        </Label>
+                                        <Input
+                                            id="api-comment-author"
+                                            className="h-8 text-[12px]"
+                                            value={author}
+                                            onChange={(event) =>
+                                                setAuthor(event.target.value)
+                                            }
+                                            autoComplete="nickname"
+                                            required
+                                        />
+                                    </div>
+                                    <div className="grid gap-1.5">
+                                        <Label
+                                            htmlFor="api-comment-mail"
+                                            className="text-[11px] text-ink-mute"
+                                        >
+                                            邮箱
+                                        </Label>
+                                        <Input
+                                            id="api-comment-mail"
+                                            className="h-8 text-[12px]"
+                                            type="email"
+                                            value={mail}
+                                            onChange={(event) =>
+                                                setMail(event.target.value)
+                                            }
+                                            autoComplete="email"
+                                            required={data.requireMail}
+                                        />
+                                    </div>
+                                    <div className="grid gap-1.5">
+                                        <Label
+                                            htmlFor="api-comment-url"
+                                            className="text-[11px] text-ink-mute"
+                                        >
+                                            网站
+                                        </Label>
+                                        <Input
+                                            id="api-comment-url"
+                                            className="h-8 text-[12px]"
+                                            type="url"
+                                            value={url}
+                                            onChange={(event) =>
+                                                setUrl(event.target.value)
+                                            }
+                                            autoComplete="url"
+                                            placeholder={
+                                                data.requireUrl ? '' : '选填'
+                                            }
+                                            required={data.requireUrl}
+                                        />
+                                    </div>
                                 </div>
-                                <div className="comment-field">
-                                    <Label htmlFor="api-comment-mail">邮箱</Label>
-                                    <Input
-                                        id="api-comment-mail"
-                                        type="email"
-                                        value={mail}
-                                        onChange={(event) => setMail(event.target.value)}
-                                        autoComplete="email"
-                                        required={data.requireMail}
-                                    />
-                                </div>
-                                <div className="comment-field">
-                                    <Label htmlFor="api-comment-url">网站</Label>
-                                    <Input
-                                        id="api-comment-url"
-                                        type="url"
-                                        value={url}
-                                        onChange={(event) => setUrl(event.target.value)}
-                                        autoComplete="url"
-                                        placeholder={data.requireUrl ? '' : '选填'}
-                                        required={data.requireUrl}
-                                    />
-                                </div>
-                            </div>
-                        )}
-
-                        <div className="comment-submit">
-                            <Button type="submit" disabled={submitting}>
-                                {submitting ? '提交中…' : '提交评论'}
-                            </Button>
-                        </div>
-                    </form>
+                            )
+                        }
+                    />
                     <MediaLibrary
                         open={mediaOpen}
                         onOpenChange={setMediaOpen}
@@ -660,17 +554,6 @@ export default function CommentsBlock({ data }: Props) {
                             setMediaOpen(false);
                         }}
                     />
-
-                    {apiError ? (
-                        <p className="comment-alert comment-alert-error" role="alert">
-                            {apiError}
-                        </p>
-                    ) : null}
-                    {notice ? (
-                        <p className="comment-alert comment-alert-success" role="status">
-                            {notice}
-                        </p>
-                    ) : null}
 
                     {loading ? (
                         <div className="comment-skeleton" aria-busy="true" aria-label="正在加载评论">
@@ -686,32 +569,71 @@ export default function CommentsBlock({ data }: Props) {
                             ))}
                         </div>
                     ) : threads.roots.length > 0 ? (
-                        <ol className="comment-list" ref={listRef}>
-                            {visibleRoots.map((comment) => (
-                                <li key={comment.coid} className="comment-thread">
-                                    <ol className="comment-list">
-                                        <CommentItem comment={comment} onReply={handleReply} />
-                                        {(threads.replies.get(comment.coid) ?? []).length > 0 ? (
-                                            <li className="comment-children">
-                                                <ol className="comment-list">
-                                                    {(threads.replies.get(comment.coid) ?? []).map((reply) => (
-                                                        <CommentItem
-                                                            key={reply.coid}
-                                                            comment={reply}
-                                                            replyTo={threads.authors.get(reply.parent)}
-                                                            isReply
-                                                            onReply={handleReply}
-                                                        />
-                                                    ))}
-                                                </ol>
-                                            </li>
-                                        ) : null}
-                                    </ol>
-                                </li>
-                            ))}
-                        </ol>
+                        <ul className="border-t border-line" ref={listRef}>
+                            {visibleRoots.map((comment) => {
+                                const replies =
+                                    threads.replies.get(comment.coid) ?? [];
+
+                                return (
+                                    <CommentEntry
+                                        key={comment.coid}
+                                        commentId={comment.coid}
+                                        author={{
+                                            name: comment.author || '匿名',
+                                            avatar: comment.avatar,
+                                            url: comment.url,
+                                            badge: isOwnerComment(comment)
+                                                ? '博主'
+                                                : undefined,
+                                        }}
+                                        createdText={formatCommentTime(
+                                            comment.created
+                                        )}
+                                        createdIso={comment.created}
+                                        contentHtml={
+                                            comment.html || comment.text
+                                        }
+                                        childCount={replies.length}
+                                        onReply={() => handleReply(comment)}
+                                    >
+                                        {replies.map((reply) => (
+                                            <CommentEntry
+                                                key={reply.coid}
+                                                commentId={reply.coid}
+                                                depth={1}
+                                                author={{
+                                                    name:
+                                                        reply.author || '匿名',
+                                                    avatar: reply.avatar,
+                                                    url: reply.url,
+                                                    badge: isOwnerComment(reply)
+                                                        ? '博主'
+                                                        : undefined,
+                                                }}
+                                                createdText={formatCommentTime(
+                                                    reply.created
+                                                )}
+                                                createdIso={reply.created}
+                                                replyToLabel={threads.authors.get(
+                                                    reply.parent
+                                                )}
+                                                onReply={() =>
+                                                    handleReply(reply)
+                                                }
+                                                contentHtml={
+                                                    reply.html || reply.text
+                                                }
+                                            />
+                                        ))}
+                                    </CommentEntry>
+                                );
+                            })}
+                        </ul>
                     ) : (
-                        <EmptyComments image={data.nullImage} text="暂时没有评论，欢迎在上方留言。" />
+                        <CommentEmpty
+                            image={data.nullImage}
+                            text="暂时没有评论，欢迎在上方留言。"
+                        />
                     )}
 
                     {threads.roots.length > previewCount ? (
@@ -734,6 +656,6 @@ export default function CommentsBlock({ data }: Props) {
                     ) : null}
                 </>
             )}
-        </Card>
+        </CommentSection>
     );
 }

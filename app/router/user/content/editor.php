@@ -14,8 +14,9 @@ use TTDF\View\Components;
 $root = Framework::root();
 $type = isset($_GET['type']) && is_scalar($_GET['type']) ? (string) $_GET['type'] : '';
 $circle = isset($_GET['circle']) && is_scalar($_GET['circle']) ? (string) $_GET['circle'] : '';
+$topicId = isset($_GET['id']) && is_scalar($_GET['id']) ? max(0, (int) $_GET['id']) : 0;
 $data = $type === 'forum-topic'
-    ? Forum::editorPage($circle)
+    ? Forum::editorPage($circle, $topicId)
     : PageData::user('content', true);
 $title = trim((string) ($data['title'] ?? '写文章'));
 

@@ -22,7 +22,7 @@ if (!defined('__TYPECHO_ROOT_DIR__')) {
  */
 final class AuthHooks
 {
-    private const RATE_PREFIX = 'ttdfv2r_';
+    private const RATE_PREFIX = 'sunken_rl_';
 
     private const RATE_WINDOW = 1800;
 

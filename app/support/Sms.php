@@ -24,9 +24,9 @@ if (!defined('__TYPECHO_ROOT_DIR__')) {
  */
 final class Sms
 {
-    private const CODE_PREFIX = 'smsc_';
+    private const CODE_PREFIX = 'sunken_sc_';
 
-    private const IP_PREFIX = 'smsi_';
+    private const IP_PREFIX = 'sunken_si_';
 
     private const IP_WINDOW = 600;
 

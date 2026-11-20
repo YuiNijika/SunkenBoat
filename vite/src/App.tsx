@@ -9,8 +9,11 @@ import ReadingProgress from './components/layout/ReadingProgress';
 import SiteFooter from './components/layout/SiteFooter';
 import SiteHeader from './components/layout/SiteHeader';
 import SiteSidebar from './components/layout/SiteSidebar';
+import { Toaster } from './components/ui/sonner';
 import { parseArticle } from './lib/article';
+import { restoreFlashNotify } from './lib/notify';
 import { useSidebarData } from './lib/sidebar';
+import { useTheme } from './lib/theme';
 import type { PageData, ProseBlock } from './types';
 
 const BLOCK_SPACE: Record<string, string> = {
@@ -116,11 +119,26 @@ export default function App({ data }: Props) {
     const pageWidth = Number.isFinite(data.theme.pageWidth) ? data.theme.pageWidth : 1300;
     const appStyle = { '--page-max': `${pageWidth}px` } as CSSProperties;
 
-    if (data.kind === 'editor') {
-        return <EditorApp data={data} appStyle={appStyle} />;
-    }
+    useEffect(() => {
+        restoreFlashNotify();
+    }, []);
 
-    return <SiteApp data={data} appStyle={appStyle} />;
+    return (
+        <>
+            {data.kind === 'editor' ? (
+                <EditorApp data={data} appStyle={appStyle} />
+            ) : (
+                <SiteApp data={data} appStyle={appStyle} />
+            )}
+            <ToasterHost colorMode={data.theme.colorMode} />
+        </>
+    );
+}
+
+function ToasterHost({ colorMode }: { colorMode: string }) {
+    const { theme } = useTheme(colorMode);
+
+    return <Toaster position="top-center" richColors closeButton theme={theme} />;
 }
 
 function EditorApp({ data, appStyle }: { data: PageData; appStyle: CSSProperties }) {
@@ -218,6 +236,8 @@ function SiteApp({ data, appStyle }: { data: PageData; appStyle: CSSProperties }
     const indexedBlocks = data.blocks.map((block, index) => ({ block, index }));
     const wideBlocks = indexedBlocks.filter((item) => isWideBlock(item.block));
     const contentBlocks = indexedBlocks.filter((item) => !isWideBlock(item.block));
+    const topBlock = wideBlocks.length > 0 ? wideBlocks[0].block : data.blocks[0];
+    const flushTop = topBlock?.spaceTop === 'none';
     const renderForumBlock = (block: PageData['blocks'][number]) =>
         renderBlock(block, data.blocks.indexOf(block));
 
@@ -257,7 +277,8 @@ function SiteApp({ data, appStyle }: { data: PageData; appStyle: CSSProperties }
                 ) : null}
                 <div
                     className={
-                        'container-page pb-5 ' + (wideBlocks.length > 0 ? 'pt-0' : 'pt-[15px]')
+                        'container-page pb-5 ' +
+                        (wideBlocks.length > 0 || flushTop ? 'pt-0' : 'pt-[15px]')
                     }
                 >
                     {hasForumLayout ? (
@@ -322,6 +343,7 @@ function SiteApp({ data, appStyle }: { data: PageData; appStyle: CSSProperties }
                                             toc={toc}
                                             tocTitle={prose?.tocTitle ?? ''}
                                             modules={data.theme.sidebarModules}
+                                            api={data.api?.user}
                                         />
                                     </div>
                                 </aside>
@@ -362,7 +384,11 @@ function SiteApp({ data, appStyle }: { data: PageData; appStyle: CSSProperties }
     };
 
     return (
-        <div className="flex min-h-dvh flex-col" data-kind={data.kind} style={appStyle}>
+        <div
+            className={'flex min-h-dvh flex-col' + (flushTop ? ' has-flush-top' : '')}
+            data-kind={data.kind}
+            style={appStyle}
+        >
             {layoutModules.map((module) => (
                 <Fragment key={module}>{modules[module] ?? null}</Fragment>
             ))}

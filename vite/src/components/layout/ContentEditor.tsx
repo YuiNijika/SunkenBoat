@@ -30,6 +30,7 @@ import ComponentLibrary from '../content/ComponentLibrary';
 import MarkdownToolbar from '../content/MarkdownToolbar';
 import MediaLibrary from '../content/MediaLibrary';
 import { renderMarkdown } from '../../lib/markdown';
+import { notifyError, notifySuccess } from '../../lib/notify';
 import { errorMessage, readPayload } from '../../lib/user';
 import { termsFrom } from '../../lib/content';
 import type { ContentItem, TermItem } from '../../lib/content';
@@ -43,7 +44,6 @@ interface Props {
     onSaved?: () => void;
 }
 
-type Feedback = { tone: 'success' | 'error'; text: string };
 type SaveState = 'draft' | 'publish' | null;
 type ViewMode = 'write' | 'split' | 'preview';
 const EMPTY_FIELDS: ArticleField[] = [];
@@ -121,7 +121,6 @@ export default function ContentEditor({
     const [permalink, setPermalink] = useState('');
     const [loading, setLoading] = useState(initialId > 0);
     const [saving, setSaving] = useState<SaveState>(null);
-    const [feedback, setFeedback] = useState<Feedback | null>(null);
     const [viewMode, setViewMode] = useState<ViewMode>('split');
     const [mediaOpen, setMediaOpen] = useState(false);
     const [fieldMediaTarget, setFieldMediaTarget] = useState<string | null>(null);
@@ -260,10 +259,9 @@ export default function ContentEditor({
                 }
 
                 if (active) {
-                    setFeedback({
-                        tone: 'error',
-                        text: reason instanceof Error ? reason.message : '读取文章失败',
-                    });
+                    notifyError(
+                        reason instanceof Error ? reason.message : '读取文章失败'
+                    );
                 }
             } finally {
                 if (active) {
@@ -363,7 +361,6 @@ export default function ContentEditor({
         }
 
         setUploading(true);
-        setFeedback(null);
 
         try {
             for (const file of images) {
@@ -391,11 +388,9 @@ export default function ContentEditor({
                     insertMedia(item);
                 }
             }
+            notifySuccess('图片已插入正文。');
         } catch (reason) {
-            setFeedback({
-                tone: 'error',
-                text: reason instanceof Error ? reason.message : '图片上传失败',
-            });
+            notifyError(reason instanceof Error ? reason.message : '图片上传失败');
         } finally {
             setUploading(false);
         }
@@ -407,12 +402,11 @@ export default function ContentEditor({
         }
 
         if (title.trim() === '') {
-            setFeedback({ tone: 'error', text: '请先填写文章标题' });
+            notifyError('请先填写文章标题。');
             return;
         }
 
         setSaving(nextStatus);
-        setFeedback(null);
 
         try {
             const endpoint =
@@ -472,19 +466,13 @@ export default function ContentEditor({
                 fields: saved?.fields ?? fieldValues,
             });
             setDirty(false);
-            setFeedback({
-                tone: 'success',
-                text: nextStatus === 'draft' ? '草稿已保存。' : '文章已发布。',
-            });
+            notifySuccess(nextStatus === 'draft' ? '草稿已保存。' : '文章已发布。');
 
             if (onSaved) {
                 onSaved();
             }
         } catch (reason) {
-            setFeedback({
-                tone: 'error',
-                text: reason instanceof Error ? reason.message : '文章保存失败',
-            });
+            notifyError(reason instanceof Error ? reason.message : '文章保存失败');
         } finally {
             setSaving(null);
         }
@@ -677,20 +665,6 @@ export default function ContentEditor({
             </header>
 
             <div className="editor-canvas">
-                {feedback ? (
-                    <p
-                        className={
-                            'content-feedback ' +
-                            (feedback.tone === 'error'
-                                ? 'content-feedback-error'
-                                : 'content-feedback-success')
-                        }
-                        role={feedback.tone === 'error' ? 'alert' : 'status'}
-                    >
-                        {feedback.text}
-                    </p>
-                ) : null}
-
                 <div className="editor-layout">
                     <div className="editor-primary">
                         <section className="editor-card editor-title-card">

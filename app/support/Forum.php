@@ -66,6 +66,9 @@ final class Forum
     /** @var array<int, array<string, mixed>> */
     private static array $circleCache = [];
 
+    /** @var array<string, mixed>|null */
+    private static ?array $viewerCache = null;
+
     public static function register(): void
     {
         Hooks::addFilter('customizer.block_fields', [self::class, 'customizerBlockFields']);
@@ -75,7 +78,19 @@ final class Forum
             'auth' => 'user',
             'method' => 'POST',
         ]);
+        Endpoint::register('forum-topic-update', [self::class, 'handleTopicUpdate'], [
+            'auth' => 'user',
+            'method' => 'POST',
+        ]);
+        Endpoint::register('forum-topic-delete', [self::class, 'handleTopicDelete'], [
+            'auth' => 'user',
+            'method' => 'POST',
+        ]);
         Endpoint::register('forum-circle-create', [self::class, 'handleCircleCreate'], [
+            'auth' => 'user',
+            'method' => 'POST',
+        ]);
+        Endpoint::register('forum-circle-update', [self::class, 'handleCircleUpdate'], [
             'auth' => 'user',
             'method' => 'POST',
         ]);
@@ -149,7 +164,7 @@ final class Forum
         try {
             $db = Db::get();
             $row = $db->fetchRow(
-                $db->select('slug')->from('table.forum_circles')
+                $db->select('slug')->from('table.sunken_forum_circles')
                     ->where('status = ?', 'publish')
                     ->order('sort', Db::SORT_DESC)
                     ->order('id', Db::SORT_ASC)
@@ -195,7 +210,7 @@ final class Forum
      *
      * @return list<array<string, mixed>>
      */
-    public static function feedSummaries(int $limit = 30, string $circleSlug = ''): array
+    public static function feedSummaries(int $limit = 30, string $circleSlug = '', string $sort = ''): array
     {
         if (!self::enabled()) {
             return [];
@@ -219,6 +234,7 @@ final class Forum
             'viewer' => (int) $viewer['uid'],
             'page' => 1,
             'perPage' => $limit,
+            'sort' => $sort,
         ]);
         $items = [];
 
@@ -280,8 +296,8 @@ final class Forum
     }
 
     /**
-     * Create the forum tables. This is idempotent and deliberately limited to
-     * admin theme-settings requests.
+     * Create and migrate the forum tables. This is idempotent and only runs on
+     * admin settings reads plus circle create/update requests.
      */
     public static function install(): bool
     {
@@ -308,6 +324,9 @@ final class Forum
             }
 
             self::ensureTopicTagsColumn($db, $driver, $prefix);
+            self::ensureCircleBackgroundColumn($db, $driver, $prefix);
+            self::ensureTopicSoftDeleteColumns($db, $driver, $prefix);
+            self::migrateLegacyTables($db, $driver, $prefix);
             self::$installed = true;
 
             return true;
@@ -434,6 +453,7 @@ final class Forum
 
         $db = Db::get();
         $updated = 0;
+        $purged = 0;
         $status = null;
         $fields = [];
 
@@ -467,6 +487,10 @@ final class Forum
                 }
                 $fields = ['kind' => $kind];
                 break;
+            case 'delete':
+            case 'restore':
+            case 'purge':
+                break;
             default:
                 Response::error('未知的批量操作', 422);
         }
@@ -477,8 +501,75 @@ final class Forum
         $fields['updated'] = time();
 
         foreach ($ids as $id) {
+            if (in_array($action, ['delete', 'restore', 'purge'], true)) {
+                try {
+                    $row = $db->fetchRow(
+                        $db->select('circle_id', 'status', 'deleted_from')
+                            ->from('table.sunken_forum_topics')
+                            ->where('id = ?', $id)
+                            ->limit(1)
+                    );
+                } catch (\Throwable) {
+                    $row = null;
+                }
+
+                if (!is_array($row)) {
+                    continue;
+                }
+
+                if ($action === 'purge') {
+                    $db->query($db->delete('table.sunken_forum_replies')->where('topic_id = ?', $id));
+                    $db->query($db->delete('table.sunken_forum_reactions')->where('topic_id = ?', $id));
+                    $db->query($db->delete('table.sunken_forum_ratings')->where('topic_id = ?', $id));
+                    $purged += (int) $db->query(
+                        $db->delete('table.sunken_forum_topics')->where('id = ?', $id)
+                    );
+                    $circleId = (int) ($row['circle_id'] ?? 0);
+                    if ($circleId > 0) {
+                        self::recountCircle($circleId);
+                    }
+                    continue;
+                }
+
+                if ($action === 'restore') {
+                    $previous = (string) ($row['deleted_from'] ?? '');
+                    $restoreStatus = in_array($previous, ['publish', 'waiting', 'rejected'], true)
+                        ? $previous
+                        : 'publish';
+                    $updated += (int) $db->query(
+                        $db->update('table.sunken_forum_topics')
+                            ->rows([
+                                'status' => $restoreStatus,
+                                'deleted_at' => 0,
+                                'deleted_from' => '',
+                                'updated' => time(),
+                            ])
+                            ->where('id = ?', $id)
+                    );
+                    self::recountCircleByTopic($id);
+                    continue;
+                }
+
+                $current = (string) ($row['status'] ?? 'publish');
+                if ($current === 'deleted') {
+                    continue;
+                }
+                $updated += (int) $db->query(
+                    $db->update('table.sunken_forum_topics')
+                        ->rows([
+                            'status' => 'deleted',
+                            'deleted_at' => time(),
+                            'deleted_from' => $current,
+                            'updated' => time(),
+                        ])
+                        ->where('id = ?', $id)
+                );
+                self::recountCircleByTopic($id);
+                continue;
+            }
+
             $updated += (int) $db->query(
-                $db->update('table.forum_topics')
+                $db->update('table.sunken_forum_topics')
                     ->rows($fields)
                     ->where('id = ?', $id)
             );
@@ -487,10 +578,14 @@ final class Forum
 
         return [
             'updated' => $updated,
+            'purged' => $purged,
             'items' => self::moderationTopics(),
             'message' => match ($action) {
                 'approve' => '已通过所选帖子',
                 'reject' => '已驳回所选帖子',
+                'delete' => '已移入回收站',
+                'restore' => '已恢复所选帖子',
+                'purge' => '已彻底删除所选帖子',
                 'pin' => '已置顶所选帖子',
                 'unpin' => '已取消置顶',
                 'feature' => '已设为精华',
@@ -511,7 +606,7 @@ final class Forum
             $db = Db::get();
             $rows = $db->fetchAll(
                 $db->select('*')
-                    ->from('table.forum_topics')
+                    ->from('table.sunken_forum_topics')
                     ->order('created', Db::SORT_DESC)
                     ->limit(100)
             );
@@ -571,12 +666,12 @@ final class Forum
             'circles' => $circles,
             'stats' => [
                 'topics' => self::countRows(
-                    'table.forum_topics',
+                    'table.sunken_forum_topics',
                     'author_id = ? AND status = ?',
                     [$uid, 'publish']
                 ),
                 'replies' => self::countRows(
-                    'table.forum_replies',
+                    'table.sunken_forum_replies',
                     'author_id = ? AND status = ?',
                     [$uid, 'approved']
                 ),
@@ -712,6 +807,37 @@ final class Forum
             return self::joinGatePage($forumConfig, $topicCircle, 'view');
         }
 
+        if (($topic['restricted'] ?? false) === true) {
+            $restricted = [
+                'type' => 'forum-topic',
+                'variant' => 'default',
+                'width' => 'content',
+                'forum' => $forumConfig,
+                'topic' => $topic,
+                'circle' => $topicCircle,
+                'breadcrumbs' => self::topicBreadcrumbs($topic),
+                'contentHtml' => '',
+                'replies' => [],
+                'replyCount' => 0,
+                'showAuthor' => false,
+                'showAuthorTopics' => false,
+                'authorTopics' => [],
+                'hotCircles' => [],
+                'hotTopics' => [],
+                'restricted' => true,
+                'restrictedText' => '这篇帖子已被作者或管理员移入回收站，仅保留标题与发布时间，正文内容暂不可查看。',
+            ];
+
+            return PageData::forumPage(
+                'forum-topic',
+                $topic['title'],
+                [$restricted],
+                $topic['title'],
+                $topic['url'],
+                '帖子已移入回收站'
+            );
+        }
+
         self::recordTopicView((int) $topic['id']);
         $topic = self::topicByValue($value, (int) $viewer['uid']) ?? $topic;
         $replies = self::replies((int) $topic['id'], (int) $viewer['uid']);
@@ -742,6 +868,7 @@ final class Forum
             'width' => 'content',
             'forum' => $forumConfig,
             'topic' => $topic,
+            'circle' => $topicCircle,
             'breadcrumbs' => self::topicBreadcrumbs($topic),
             'contentHtml' => self::markdown((string) $topic['rawContent']),
             'replies' => $replies,
@@ -908,6 +1035,26 @@ final class Forum
         $create = isset($forum['copy']['create']) && is_array($forum['copy']['create'])
             ? $forum['copy']['create']
             : [];
+        $moduleSort = trim((string) ($data['sort'] ?? 'inherit'));
+        if (
+            $name === 'forum-topic-list'
+            && in_array($moduleSort, ['latest', 'recommended', 'random'], true)
+        ) {
+            $moduleLimit = self::limit($data['limit'] ?? null, 0, 0, 30);
+            $modulePerPage = $moduleLimit > 0
+                ? $moduleLimit
+                : max(1, (int) ($pager['perPage'] ?? 12));
+            $modulePage = $moduleSort === 'random' ? 1 : max(1, (int) ($pager['page'] ?? 1));
+            $moduleTopics = self::topics([
+                'circle' => (int) ($circle['id'] ?? 0),
+                'viewer' => (int) ($forum['viewer']['uid'] ?? 0),
+                'page' => $modulePage,
+                'perPage' => $modulePerPage,
+                'sort' => $moduleSort,
+            ]);
+            $topics = $moduleTopics['items'];
+            $pager = $moduleTopics['pager'];
+        }
 
         $block = match ($name) {
             'forum-home-header' => [
@@ -1097,7 +1244,7 @@ final class Forum
      *
      * @return array<string, mixed>
      */
-    public static function editorPage(string $circleValue = ''): array
+    public static function editorPage(string $circleValue = '', int $topicId = 0): array
     {
         if (!self::enabled()) {
             return self::notFoundPage('论坛尚未开启', '管理员开启论坛&圈子后，才能进入发帖编辑器。');
@@ -1107,7 +1254,27 @@ final class Forum
         $viewer = self::currentUser();
         $viewerUid = (int) ($viewer['uid'] ?? 0);
         $permissions = self::permissions($viewer);
+        $topicRow = $topicId > 0 ? self::topicRowById($topicId, $viewerUid) : null;
+        $editing = $topicRow !== null;
+
+        if ($topicId > 0 && $topicRow === null) {
+            return self::notFoundPage('帖子不存在', '帖子可能已被删除，或你没有查看该帖子的权限。');
+        }
+
+        if ($editing && !self::canManageTopic($viewer, $topicRow)) {
+            return self::notFoundPage('无法编辑帖子', '只有帖子作者或管理员可以编辑这篇帖子。');
+        }
+        if ($editing && (string) ($topicRow['status'] ?? '') === 'deleted') {
+            return self::notFoundPage(
+                '帖子在回收站',
+                '这篇帖子已移入回收站，管理员恢复后才能继续编辑。'
+            );
+        }
+
         $circles = self::circles(0, $viewerUid);
+        if ($editing && $circleValue === '') {
+            $circleValue = (string) ($topicRow['circle_id'] ?? '');
+        }
 
         $selected = null;
         $circleValue = trim($circleValue);
@@ -1139,13 +1306,17 @@ final class Forum
                     ? '先创建一个圈子，再回来发布第一个帖子。'
                     : '管理员创建圈子后，这里会出现可选的板块。',
             ];
-        } elseif (!$permissions['createTopic']) {
+        } elseif (!$editing && !$permissions['createTopic']) {
             $gate = [
                 'type' => 'denied',
                 'title' => '当前账号没有发帖权限',
                 'text' => '你仍然可以浏览圈子与帖子，但不能发布新主题。',
             ];
-        } elseif ($selected !== null && !self::canAccessCircle($selected, $viewer, 'post')) {
+        } elseif (
+            !$editing
+            && $selected !== null
+            && !self::canAccessCircle($selected, $viewer, 'post')
+        ) {
             $label = self::followLabel($values);
             $gate = [
                 'type' => 'denied',
@@ -1160,14 +1331,42 @@ final class Forum
             true
         );
 
+        $kindMap = self::topicKinds($values);
+        $defaultKind = (string) (array_key_first($kindMap) ?? '讨论');
+        $topicDraft = null;
+        if ($editing) {
+            $rawKind = trim((string) ($topicRow['kind'] ?? ''));
+            $kind = self::LEGACY_TOPIC_KIND_LABELS[$rawKind] ?? $rawKind;
+            if (!isset($kindMap[$kind])) {
+                $kind = $defaultKind;
+            }
+            $topicDraft = [
+                'id' => (int) ($topicRow['id'] ?? 0),
+                'title' => (string) ($topicRow['title'] ?? ''),
+                'slug' => (string) ($topicRow['slug'] ?? ''),
+                'content' => (string) ($topicRow['content'] ?? ''),
+                'kind' => $kind,
+                'tags' => self::topicTags($topicRow['tags'] ?? ''),
+                'circleId' => (int) ($topicRow['circle_id'] ?? 0),
+                'status' => (string) ($topicRow['status'] ?? 'publish'),
+                'pinned' => (int) ($topicRow['pinned'] ?? 0) === 1,
+                'featured' => (int) ($topicRow['featured'] ?? 0) === 1,
+                'url' => self::topicUrl($topicRow),
+            ];
+        }
+
         $editor = [
+            'mode' => 'forum-topic',
+            'isEdit' => $editing,
+            'topic' => $topicDraft,
             'gate' => $gate,
             'circle' => $selected === null ? null : self::editorCircle($selected),
             'circles' => array_map([self::class, 'editorCircle'], $circles),
             'topicKinds' => self::topicKindOptions($values),
             'tagSuggestions' => self::popularTags(),
             'showTagInput' => ($values['Forum_Tag_Input'] ?? true) === true,
-            'requiresReview' => ($values['Forum_Topic_Review'] ?? false) === true
+            'requiresReview' => !$editing
+                && ($values['Forum_Topic_Review'] ?? false) === true
                 && !in_array((string) ($viewer['group'] ?? ''), ['administrator', 'editor'], true),
             'displayName' => self::displayName($values),
             'maxLength' => 20000,
@@ -1179,14 +1378,24 @@ final class Forum
             'canCreateCircle' => $permissions['createCircle'],
             'viewer' => $viewer,
             'permissions' => $permissions,
+            'canModerate' => $permissions['moderate'],
+            'statusOptions' => [
+                ['value' => 'publish', 'label' => '已发布'],
+                ['value' => 'waiting', 'label' => '待审核'],
+                ['value' => 'rejected', 'label' => '已驳回'],
+            ],
             'canUseMedia' => $mediaEnabled,
             'mediaEndpoint' => self::mediaEndpoint(),
             'endpoints' => [
                 'topicCreate' => Endpoint::url('forum-topic-create'),
+                'topicUpdate' => Endpoint::url('forum-topic-update'),
+                'topicDelete' => Endpoint::url('forum-topic-delete'),
             ],
         ];
 
-        $title = $gate === null ? '发布帖子' : (string) $gate['title'];
+        $title = $gate === null
+            ? ($editing ? '编辑帖子' : '发布帖子')
+            : (string) $gate['title'];
 
         return PageData::editorPage($title, $editor);
     }
@@ -1203,6 +1412,7 @@ final class Forum
             'slug' => (string) ($circle['slug'] ?? ''),
             'url' => (string) ($circle['url'] ?? ''),
             'icon' => (string) ($circle['icon'] ?? ''),
+            'background' => (string) ($circle['background'] ?? ''),
             'description' => (string) ($circle['description'] ?? ''),
         ];
     }
@@ -1240,6 +1450,7 @@ final class Forum
     public static function handleCircleCreate(array $data): array
     {
         $viewer = self::requireViewer();
+        self::install();
         $permissions = self::permissions($viewer);
         if (!$permissions['createCircle']) {
             Response::error('你没有创建圈子的权限', 403);
@@ -1252,14 +1463,16 @@ final class Forum
 
         $description = self::plainText($data['description'] ?? '', 200);
         $icon = self::safeImageUrl($data['icon'] ?? '');
+        $background = self::safeImageUrl($data['background'] ?? '');
         $slug = self::uniqueSlug((string) ($data['slug'] ?? ''), $name, 'circles');
         $now = time();
         $db = Db::get();
-        $id = (int) $db->query($db->insert('table.forum_circles')->rows([
+        $id = (int) $db->query($db->insert('table.sunken_forum_circles')->rows([
             'name' => $name,
             'slug' => $slug,
             'description' => $description,
             'icon' => $icon,
+            'background' => $background,
             'owner_id' => (int) $viewer['uid'],
             'status' => 'publish',
             'sort' => 0,
@@ -1281,6 +1494,86 @@ final class Forum
             'slug' => $slug,
             'url' => self::circleUrl(['slug' => $slug]),
             'message' => '圈子创建成功',
+        ];
+    }
+
+    /**
+     * Circle owners and forum administrators can update the presentation data
+     * used by the forum sidebar and circle banner.
+     *
+     * @param array<string, mixed> $data
+     * @return array<string, mixed>
+     */
+    public static function handleCircleUpdate(array $data): array
+    {
+        $viewer = self::requireViewer();
+        self::install();
+        $id = self::intValue($data['id'] ?? 0);
+        if ($id <= 0) {
+            Response::error('圈子不存在', 404);
+        }
+
+        try {
+            $db = Db::get();
+            $row = $db->fetchRow(
+                $db->select('*')
+                    ->from('table.sunken_forum_circles')
+                    ->where('id = ?', $id)
+                    ->limit(1)
+            );
+        } catch (\Throwable) {
+            $row = null;
+        }
+
+        if (!is_array($row)) {
+            Response::error('圈子不存在', 404);
+        }
+
+        $uid = (int) ($viewer['uid'] ?? 0);
+        $isOwner = $uid > 0 && (int) ($row['owner_id'] ?? 0) === $uid;
+        if (!$isOwner && !self::permissions($viewer)['moderate']) {
+            Response::error('你没有管理这个圈子的权限', 403);
+        }
+
+        $name = self::plainText($data['name'] ?? '', 40);
+        if (self::length($name) < 2) {
+            Response::error('圈子名称至少需要 2 个字符', 422, ['name' => '请输入圈子名称']);
+        }
+
+        $currentSlug = (string) ($row['slug'] ?? '');
+        $requestedSlug = trim((string) ($data['slug'] ?? ''));
+        $slug = $requestedSlug !== '' && $requestedSlug !== $currentSlug
+            ? self::uniqueSlug($requestedSlug, $name, 'circles', $id)
+            : $currentSlug;
+        if ($slug === '') {
+            $slug = self::uniqueSlug('', $name, 'circles', $id);
+        }
+
+        try {
+            Db::get()->query(
+                Db::get()->update('table.sunken_forum_circles')
+                    ->rows([
+                        'name' => $name,
+                        'slug' => $slug,
+                        'description' => self::plainText($data['description'] ?? '', 200),
+                        'icon' => self::safeImageUrl($data['icon'] ?? ''),
+                        'background' => self::safeImageUrl($data['background'] ?? ''),
+                        'updated' => time(),
+                    ])
+                    ->where('id = ?', $id)
+            );
+        } catch (\Throwable $exception) {
+            error_log('SunkenBoat forum circle update failed: ' . $exception->getMessage());
+            Response::error('保存圈子失败，请稍后再试', 500);
+        }
+
+        unset(self::$circleCache[$id]);
+
+        return [
+            'id' => $id,
+            'slug' => $slug,
+            'url' => self::circleUrl(['slug' => $slug]),
+            'message' => '圈子已更新',
         ];
     }
 
@@ -1331,7 +1624,7 @@ final class Forum
         $status = $review ? 'waiting' : 'publish';
         $now = time();
         $db = Db::get();
-        $id = (int) $db->query($db->insert('table.forum_topics')->rows([
+        $id = (int) $db->query($db->insert('table.sunken_forum_topics')->rows([
             'circle_id' => $circleId,
             'author_id' => (int) $viewer['uid'],
             'title' => $title,
@@ -1370,6 +1663,181 @@ final class Forum
     }
 
     /**
+     * Update an existing topic. Ownership is checked against the database row,
+     * never against a client-supplied author id.
+     *
+     * @param array<string, mixed> $data
+     * @return array<string, mixed>
+     */
+    public static function handleTopicUpdate(array $data): array
+    {
+        $viewer = self::requireViewer();
+        $viewerUid = (int) ($viewer['uid'] ?? 0);
+        $topicId = self::intValue($data['topic_id'] ?? 0);
+        $row = self::topicRowById($topicId, $viewerUid);
+        if ($row === null) {
+            Response::error('帖子不存在', 404);
+        }
+        if (!self::canManageTopic($viewer, $row)) {
+            Response::error('你没有编辑这篇帖子的权限', 403);
+        }
+        if ((string) ($row['status'] ?? '') === 'deleted') {
+            Response::error('帖子在回收站中，需管理员恢复后才能编辑', 403);
+        }
+
+        $currentCircleId = (int) ($row['circle_id'] ?? 0);
+        $circleId = self::intValue($data['circle_id'] ?? $currentCircleId);
+        if ($circleId <= 0) {
+            $circleId = $currentCircleId;
+        }
+        $circle = self::circleById($circleId, $viewerUid);
+        if ($circle === null) {
+            Response::error('圈子不存在', 404, ['circle_id' => '请选择有效的圈子']);
+        }
+        if (
+            $circleId !== $currentCircleId
+            && !self::canAccessCircle($circle, $viewer, 'post')
+        ) {
+            $label = self::followLabel(Settings::values());
+            Response::error('请先' . $label . '圈子后再发布帖子', 403);
+        }
+
+        $title = self::plainText($data['title'] ?? '', 100);
+        if (self::length($title) < 2) {
+            Response::error('标题至少需要 2 个字符', 422, ['title' => '请输入帖子标题']);
+        }
+
+        $content = self::longText($data['content'] ?? '', 20000);
+        if ($content === '') {
+            Response::error('正文不能为空', 422, ['content' => '请输入正文']);
+        }
+
+        $topicKinds = self::topicKinds(Settings::values());
+        $defaultKind = (string) (array_key_first($topicKinds) ?? '讨论');
+        $kind = trim((string) ($data['kind'] ?? $defaultKind));
+        if (!isset($topicKinds[$kind])) {
+            $kind = $defaultKind;
+        }
+
+        $tags = self::topicTags($data['tags'] ?? []);
+        $slugInput = trim((string) ($data['slug'] ?? ''));
+        $slug = $slugInput === ''
+            ? (string) ($row['slug'] ?? '')
+            : self::uniqueSlug($slugInput, $title, 'topics', $topicId);
+        if ($slug === '') {
+            $slug = self::uniqueSlug('', $title, 'topics', $topicId);
+        }
+
+        $fields = [
+            'circle_id' => $circleId,
+            'title' => $title,
+            'slug' => $slug,
+            'content' => $content,
+            'kind' => $kind,
+            'tags' => self::encodeTopicTags($tags),
+            'updated' => time(),
+        ];
+        $oldStatus = (string) ($row['status'] ?? 'publish');
+        if (self::permissions($viewer)['moderate']) {
+            if (array_key_exists('status', $data)) {
+                $newStatus = trim((string) $data['status']);
+                if (!in_array($newStatus, ['publish', 'waiting', 'rejected'], true)) {
+                    Response::error('帖子状态无效', 422, ['status' => '请选择有效的帖子状态']);
+                }
+                $fields['status'] = $newStatus;
+            }
+            if (array_key_exists('pinned', $data)) {
+                $fields['pinned'] = ($data['pinned'] === true || $data['pinned'] === 1) ? 1 : 0;
+            }
+            if (array_key_exists('featured', $data)) {
+                $fields['featured'] = ($data['featured'] === true || $data['featured'] === 1) ? 1 : 0;
+            }
+        } elseif ($oldStatus === 'rejected') {
+            // Re-submitting a rejected topic always returns to the review queue.
+            $fields['status'] = 'waiting';
+        }
+
+        $db = Db::get();
+        $db->query(
+            $db->update('table.sunken_forum_topics')
+                ->rows($fields)
+                ->where('id = ?', $topicId)
+        );
+
+        $statusChanged = isset($fields['status']) && $fields['status'] !== $oldStatus;
+        if ($currentCircleId !== $circleId) {
+            self::recountCircle($currentCircleId);
+            self::recountCircle($circleId);
+        } elseif ($statusChanged) {
+            self::recountCircle($circleId);
+        }
+
+        $fresh = self::topicRowById($topicId, $viewerUid) ?? $row;
+        $reactions = self::viewerReactions($viewerUid, [$topicId]);
+        $ratings = self::ratingsForTopics([$topicId], $viewerUid);
+        $topic = self::formatTopic($fresh, $reactions, $ratings);
+
+        return [
+            'id' => $topicId,
+            'slug' => $slug,
+            'status' => (string) ($fresh['status'] ?? 'publish'),
+            'url' => $topic['url'],
+            'message' => '帖子已保存',
+            'topic' => $topic,
+        ];
+    }
+
+    /**
+     * @param array<string, mixed> $data
+     * @return array<string, mixed>
+     */
+    public static function handleTopicDelete(array $data): array
+    {
+        $viewer = self::requireViewer();
+        $viewerUid = (int) ($viewer['uid'] ?? 0);
+        $topicId = self::intValue($data['topic_id'] ?? 0);
+        $row = self::topicRowById($topicId, $viewerUid);
+        if ($row === null) {
+            Response::error('帖子不存在', 404);
+        }
+        if (!self::canManageTopic($viewer, $row)) {
+            Response::error('你没有删除这篇帖子的权限', 403);
+        }
+        if ((string) ($row['status'] ?? '') === 'deleted') {
+            return [
+                'id' => $topicId,
+                'deleted' => true,
+                'status' => 'deleted',
+                'message' => '帖子已在回收站中',
+            ];
+        }
+
+        $circleId = (int) ($row['circle_id'] ?? 0);
+        $db = Db::get();
+        $db->query(
+            $db->update('table.sunken_forum_topics')
+                ->rows([
+                    'status' => 'deleted',
+                    'deleted_from' => (string) ($row['status'] ?? 'publish'),
+                    'deleted_at' => time(),
+                    'updated' => time(),
+                ])
+                ->where('id = ?', $topicId)
+        );
+
+        if ($circleId > 0) {
+            self::recountCircle($circleId);
+        }
+
+        return [
+            'id' => $topicId,
+            'deleted' => true,
+            'status' => 'deleted',
+            'message' => '帖子已移入回收站',
+        ];
+    }
+
+    /**
      * @param array<string, mixed> $data
      * @return array<string, mixed>
      */
@@ -1385,6 +1853,9 @@ final class Forum
         $topic = self::topicRowById($topicId, (int) $viewer['uid']);
         if ($topic === null) {
             Response::error('帖子不存在', 404);
+        }
+        if ((string) ($topic['status'] ?? '') === 'deleted') {
+            Response::error('帖子在回收站中，暂时无法回复', 403);
         }
 
         $content = self::longText($data['content'] ?? '', 5000);
@@ -1404,7 +1875,7 @@ final class Forum
 
         $now = time();
         $db = Db::get();
-        $id = (int) $db->query($db->insert('table.forum_replies')->rows([
+        $id = (int) $db->query($db->insert('table.sunken_forum_replies')->rows([
             'topic_id' => $topicId,
             'author_id' => (int) $viewer['uid'],
             'parent_id' => $parentId,
@@ -1419,7 +1890,7 @@ final class Forum
 
         self::recountTopic($topicId);
         $db->query(
-            $db->update('table.forum_topics')
+            $db->update('table.sunken_forum_topics')
                 ->rows(['last_reply_at' => $now, 'updated' => $now])
                 ->where('id = ?', $topicId)
         );
@@ -1452,7 +1923,7 @@ final class Forum
         $db = Db::get();
         $row = $db->fetchRow(
             $db->select('id')
-                ->from('table.forum_members')
+                ->from('table.sunken_forum_members')
                 ->where('circle_id = ?', $circleId)
                 ->where('uid = ?', $uid)
                 ->limit(1)
@@ -1463,7 +1934,7 @@ final class Forum
             self::joinCircleRow($circleId, $uid);
         } else {
             $db->query(
-                $db->delete('table.forum_members')
+                $db->delete('table.sunken_forum_members')
                     ->where('circle_id = ?', $circleId)
                     ->where('uid = ?', $uid)
             );
@@ -1491,8 +1962,12 @@ final class Forum
         }
 
         $topicId = self::intValue($data['topic_id'] ?? 0);
-        if (self::topicRowById($topicId, (int) $viewer['uid']) === null) {
+        $topic = self::topicRowById($topicId, (int) $viewer['uid']);
+        if ($topic === null) {
             Response::error('帖子不存在', 404);
+        }
+        if ((string) ($topic['status'] ?? '') === 'deleted') {
+            Response::error('帖子在回收站中，暂时无法互动', 403);
         }
 
         $type = strtolower(trim((string) ($data['type'] ?? 'like')));
@@ -1504,7 +1979,7 @@ final class Forum
         $db = Db::get();
         $row = $db->fetchRow(
             $db->select('id')
-                ->from('table.forum_reactions')
+                ->from('table.sunken_forum_reactions')
                 ->where('topic_id = ?', $topicId)
                 ->where('uid = ?', $uid)
                 ->where('type = ?', $type)
@@ -1513,7 +1988,7 @@ final class Forum
 
         $active = !is_array($row);
         if ($active) {
-            $db->query($db->insert('table.forum_reactions')->rows([
+            $db->query($db->insert('table.sunken_forum_reactions')->rows([
                 'topic_id' => $topicId,
                 'uid' => $uid,
                 'type' => $type,
@@ -1521,7 +1996,7 @@ final class Forum
             ]));
         } else {
             $db->query(
-                $db->delete('table.forum_reactions')
+                $db->delete('table.sunken_forum_reactions')
                     ->where('topic_id = ?', $topicId)
                     ->where('uid = ?', $uid)
                     ->where('type = ?', $type)
@@ -1555,8 +2030,12 @@ final class Forum
         }
 
         $topicId = self::intValue($data['topic_id'] ?? 0);
-        if (self::topicRowById($topicId, (int) $viewer['uid']) === null) {
+        $topic = self::topicRowById($topicId, (int) $viewer['uid']);
+        if ($topic === null) {
             Response::error('帖子不存在', 404);
+        }
+        if ((string) ($topic['status'] ?? '') === 'deleted') {
+            Response::error('帖子在回收站中，暂时无法评分', 403);
         }
 
         $value = self::intValue($data['value'] ?? 0);
@@ -1572,7 +2051,7 @@ final class Forum
             $db = Db::get();
             $row = $db->fetchRow(
                 $db->select('id', 'value')
-                    ->from('table.forum_ratings')
+                    ->from('table.sunken_forum_ratings')
                     ->where('topic_id = ?', $topicId)
                     ->where('uid = ?', $uid)
                     ->limit(1)
@@ -1582,7 +2061,7 @@ final class Forum
             if ($value === 0) {
                 if (is_array($row)) {
                     $db->query(
-                        $db->delete('table.forum_ratings')
+                        $db->delete('table.sunken_forum_ratings')
                             ->where('id = ?', (int) ($row['id'] ?? 0))
                     );
                 }
@@ -1591,20 +2070,20 @@ final class Forum
                 $current = self::normalizeRatingValue($row['value'] ?? 0);
                 if ($current === $value) {
                     $db->query(
-                        $db->delete('table.forum_ratings')
+                        $db->delete('table.sunken_forum_ratings')
                             ->where('id = ?', (int) ($row['id'] ?? 0))
                     );
                     $active = false;
                     $value = 0;
                 } else {
                     $db->query(
-                        $db->update('table.forum_ratings')
+                        $db->update('table.sunken_forum_ratings')
                             ->rows(['value' => $value, 'created' => time()])
                             ->where('id = ?', (int) ($row['id'] ?? 0))
                     );
                 }
             } else {
-                $db->query($db->insert('table.forum_ratings')->rows([
+                $db->query($db->insert('table.sunken_forum_ratings')->rows([
                     'topic_id' => $topicId,
                     'uid' => $uid,
                     'value' => $value,
@@ -1633,9 +2112,13 @@ final class Forum
      */
     private static function currentUser(): array
     {
+        if (self::$viewerCache !== null) {
+            return self::$viewerCache;
+        }
+
         $uid = UserProfile::viewerUid();
         if ($uid <= 0) {
-            return [
+            self::$viewerCache = [
                 'uid' => 0,
                 'loggedIn' => false,
                 'name' => '',
@@ -1644,12 +2127,15 @@ final class Forum
                 'group' => 'visitor',
                 'groupLabel' => self::GROUP_LABELS['visitor'],
             ];
+
+            return self::$viewerCache;
         }
 
         $user = self::userInfo($uid);
         $user['loggedIn'] = true;
+        self::$viewerCache = $user;
 
-        return $user;
+        return self::$viewerCache;
     }
 
     /**
@@ -1697,6 +2183,27 @@ final class Forum
             'react' => ($values['Forum_Allow_Reactions'] ?? true) === true,
             'moderate' => $group === 'administrator',
         ];
+    }
+
+    /**
+     * Authors can maintain their own topics; only forum administrators can
+     * maintain someone else's topic.
+     *
+     * @param array<string, mixed> $viewer
+     * @param array<string, mixed> $topic
+     */
+    private static function canManageTopic(array $viewer, array $topic): bool
+    {
+        if (($viewer['loggedIn'] ?? false) !== true) {
+            return false;
+        }
+
+        $uid = (int) ($viewer['uid'] ?? 0);
+        if ($uid > 0 && (int) ($topic['author_id'] ?? 0) === $uid) {
+            return true;
+        }
+
+        return self::permissions($viewer)['moderate'];
     }
 
     private static function groupAtLeast(string $group, string $minimum): bool
@@ -1784,7 +2291,11 @@ final class Forum
     {
         return [
             'circleCreate' => Endpoint::url('forum-circle-create'),
+            'circleUpdate' => Endpoint::url('forum-circle-update'),
             'topicCreate' => Endpoint::url('forum-topic-create'),
+            'topicUpdate' => Endpoint::url('forum-topic-update'),
+            'topicDelete' => Endpoint::url('forum-topic-delete'),
+            'moderation' => Endpoint::url('forum-moderation'),
             'replyCreate' => Endpoint::url('forum-reply-create'),
             'join' => Endpoint::url('forum-join'),
             'react' => Endpoint::url('forum-react'),
@@ -2006,7 +2517,7 @@ final class Forum
             $db = Db::get();
             $rows = $db->fetchAll(
                 $db->select('tags')
-                    ->from('table.forum_topics')
+                    ->from('table.sunken_forum_topics')
                     ->where('status = ?', 'publish')
                     ->order('last_reply_at', Db::SORT_DESC)
                     ->limit(200)
@@ -2117,7 +2628,7 @@ final class Forum
         try {
             $db = Db::get();
             $query = $db->select('*')
-                ->from('table.forum_circles')
+                ->from('table.sunken_forum_circles')
                 ->where('status = ?', 'publish')
                 ->order('sort', Db::SORT_DESC)
                 ->order('topic_count', Db::SORT_DESC)
@@ -2163,20 +2674,20 @@ final class Forum
             $db = Db::get();
             $created = (int) ($db->fetchObject(
                 $db->select('COUNT(*) AS num')
-                    ->from('table.forum_circles')
+                    ->from('table.sunken_forum_circles')
                     ->where('owner_id = ?', $uid)
                     ->where('status = ?', 'publish')
             )->num ?? 0);
             $joined = (int) ($db->fetchObject(
                 $db->select('COUNT(*) AS num')
-                    ->from('table.forum_circles')
+                    ->from('table.sunken_forum_circles')
                     ->join(
-                        'table.forum_members',
-                        'table.forum_members.circle_id = table.forum_circles.id'
+                        'table.sunken_forum_members',
+                        'table.sunken_forum_members.circle_id = table.sunken_forum_circles.id'
                     )
-                    ->where('table.forum_members.uid = ?', $uid)
-                    ->where('table.forum_circles.owner_id <> ?', $uid)
-                    ->where('table.forum_circles.status = ?', 'publish')
+                    ->where('table.sunken_forum_members.uid = ?', $uid)
+                    ->where('table.sunken_forum_circles.owner_id <> ?', $uid)
+                    ->where('table.sunken_forum_circles.status = ?', 'publish')
             )->num ?? 0);
         } catch (\Throwable) {
             return ['enabled' => true, 'joined' => 0, 'created' => 0];
@@ -2202,7 +2713,7 @@ final class Forum
             $db = Db::get();
             $createdRows = $db->fetchAll(
                 $db->select('*')
-                    ->from('table.forum_circles')
+                    ->from('table.sunken_forum_circles')
                     ->where('owner_id = ?', $uid)
                     ->where('status = ?', 'publish')
                     ->order('topic_count', Db::SORT_DESC)
@@ -2210,17 +2721,17 @@ final class Forum
                     ->limit($limit)
             );
             $joinedRows = $db->fetchAll(
-                $db->select('table.forum_circles.*')
-                    ->from('table.forum_circles')
+                $db->select('table.sunken_forum_circles.*')
+                    ->from('table.sunken_forum_circles')
                     ->join(
-                        'table.forum_members',
-                        'table.forum_members.circle_id = table.forum_circles.id'
+                        'table.sunken_forum_members',
+                        'table.sunken_forum_members.circle_id = table.sunken_forum_circles.id'
                     )
-                    ->where('table.forum_members.uid = ?', $uid)
-                    ->where('table.forum_circles.owner_id <> ?', $uid)
-                    ->where('table.forum_circles.status = ?', 'publish')
-                    ->order('table.forum_circles.topic_count', Db::SORT_DESC)
-                    ->order('table.forum_circles.id', Db::SORT_ASC)
+                    ->where('table.sunken_forum_members.uid = ?', $uid)
+                    ->where('table.sunken_forum_circles.owner_id <> ?', $uid)
+                    ->where('table.sunken_forum_circles.status = ?', 'publish')
+                    ->order('table.sunken_forum_circles.topic_count', Db::SORT_DESC)
+                    ->order('table.sunken_forum_circles.id', Db::SORT_ASC)
                     ->limit($limit)
             );
         } catch (\Throwable) {
@@ -2261,6 +2772,7 @@ final class Forum
             'slug' => $slug,
             'description' => (string) ($row['description'] ?? ''),
             'icon' => self::safeImageUrl($row['icon'] ?? ''),
+            'background' => self::safeImageUrl($row['background'] ?? ''),
             'url' => self::circleUrl(['slug' => $slug]),
             'topicCount' => (int) ($row['topic_count'] ?? 0),
             'memberCount' => (int) ($row['member_count'] ?? 0),
@@ -2280,7 +2792,7 @@ final class Forum
             $db = Db::get();
             $row = $db->fetchRow(
                 $db->select('*')
-                    ->from('table.forum_circles')
+                    ->from('table.sunken_forum_circles')
                     ->where('slug = ?', $slug)
                     ->where('status = ?', 'publish')
                     ->limit(1)
@@ -2316,7 +2828,7 @@ final class Forum
             $db = Db::get();
             $row = $db->fetchRow(
                 $db->select('*')
-                    ->from('table.forum_circles')
+                    ->from('table.sunken_forum_circles')
                     ->where('id = ?', $id)
                     ->where('status = ?', 'publish')
                     ->limit(1)
@@ -2346,14 +2858,19 @@ final class Forum
         $authorId = (int) ($options['author'] ?? 0);
         $ownPending = ($options['ownPending'] ?? false) === true;
         $values = Settings::values();
-        $recommended = (string) ($values['Forum_Sort_Mode'] ?? 'latest') === 'recommended';
+        $sort = strtolower(trim((string) ($options['sort'] ?? $values['Forum_Sort_Mode'] ?? 'latest')));
+        if (!in_array($sort, ['latest', 'recommended', 'random'], true)) {
+            $sort = 'latest';
+        }
+        $recommended = $sort === 'recommended';
+        $random = $sort === 'random';
 
         try {
             $db = Db::get();
             $query = $db->select('*')
-                ->from('table.forum_topics');
+                ->from('table.sunken_forum_topics');
             $countQuery = $db->select('COUNT(*) AS num')
-                ->from('table.forum_topics');
+                ->from('table.sunken_forum_topics');
 
             if ($ownPending && $viewerUid > 0) {
                 $query->where('(status = ? OR author_id = ?)', 'publish', $viewerUid);
@@ -2375,6 +2892,8 @@ final class Forum
 
             $query->order('pinned', Db::SORT_DESC);
             if ($recommended) {
+                $query->order('created', Db::SORT_DESC)->limit(400);
+            } elseif ($random) {
                 $query->order('created', Db::SORT_DESC)->limit(400);
             } else {
                 $query->order('last_reply_at', Db::SORT_DESC)
@@ -2418,6 +2937,24 @@ final class Forum
                 return $scoreRight <=> $scoreLeft;
             });
             $rows = array_slice($rows, $offset, $perPage);
+        } elseif ($random && $rows !== []) {
+            $pinnedRows = [];
+            $regularRows = [];
+            foreach ($rows as $row) {
+                if (!is_array($row)) {
+                    continue;
+                }
+
+                if ((int) ($row['pinned'] ?? 0) === 1) {
+                    $pinnedRows[] = $row;
+                } else {
+                    $regularRows[] = $row;
+                }
+            }
+
+            shuffle($regularRows);
+            $rows = array_merge($pinnedRows, $regularRows);
+            $rows = array_slice($rows, $offset, $perPage);
         }
 
         $topicIds = array_map(
@@ -2435,9 +2972,15 @@ final class Forum
             $items[] = self::formatTopic($row, $reactions, $ratings);
         }
 
+        $pager = self::pager($page, $perPage, $total);
+        if ($random) {
+            $pager['hasMore'] = false;
+            $pager['nextUrl'] = '';
+        }
+
         return [
             'items' => $items,
-            'pager' => self::pager($page, $perPage, $total),
+            'pager' => $pager,
         ];
     }
 
@@ -2500,6 +3043,11 @@ final class Forum
         $circle = self::circleById($circleId, 0);
         $content = (string) ($row['content'] ?? '');
         $created = (int) ($row['created'] ?? 0);
+        $viewer = self::currentUser();
+        $isManager = in_array((string) ($viewer['group'] ?? ''), ['editor', 'administrator'], true);
+        $status = (string) ($row['status'] ?? 'publish');
+        $deleted = $status === 'deleted';
+        $restricted = $deleted && !$isManager;
         $topicKinds = self::topicKinds(Settings::values());
         $defaultKind = (string) (array_key_first($topicKinds) ?? '讨论');
         $rawKind = trim((string) ($row['kind'] ?? ''));
@@ -2511,10 +3059,12 @@ final class Forum
             'id' => $id,
             'slug' => (string) ($row['slug'] ?? ''),
             'title' => (string) ($row['title'] ?? ''),
-            'status' => (string) ($row['status'] ?? 'publish'),
+            'status' => $status,
+            'deleted' => $deleted,
+            'restricted' => $restricted,
             'url' => self::topicUrl($row),
-            'excerpt' => self::excerpt($content, 150),
-            'thumbnail' => self::firstImage($content),
+            'excerpt' => $restricted ? '' : self::excerpt($content, 150),
+            'thumbnail' => $restricted ? '' : self::firstImage($content),
             'kind' => $kind,
             'kindLabel' => $topicKinds[$kind] ?? ($kind !== '' ? $kind : $defaultKind),
             'tags' => $tags,
@@ -2589,7 +3139,7 @@ final class Forum
             $isManager = in_array((string) ($viewer['group'] ?? ''), ['editor', 'administrator'], true);
             $row = $db->fetchRow(
                 $db->select('*')
-                    ->from('table.forum_topics')
+                    ->from('table.sunken_forum_topics')
                     ->where('id = ?', $id)
                     ->where(
                         $isManager ? '1 = 1' : '(status = ? OR author_id = ?)',
@@ -2619,7 +3169,7 @@ final class Forum
             $isManager = in_array((string) ($viewer['group'] ?? ''), ['editor', 'administrator'], true);
             $row = $db->fetchRow(
                 $db->select('*')
-                    ->from('table.forum_topics')
+                    ->from('table.sunken_forum_topics')
                     ->where('slug = ?', $slug)
                     ->where(
                         $isManager ? '1 = 1' : '(status = ? OR author_id = ?)',
@@ -2643,7 +3193,7 @@ final class Forum
             $db = Db::get();
             $rows = $db->fetchAll(
                 $db->select('*')
-                    ->from('table.forum_topics')
+                    ->from('table.sunken_forum_topics')
                     ->where('status = ?', 'publish')
                     ->order('views', Db::SORT_DESC)
                     ->order('comments', Db::SORT_DESC)
@@ -2679,7 +3229,7 @@ final class Forum
             $db = Db::get();
             $rows = $db->fetchAll(
                 $db->select('*')
-                    ->from('table.forum_replies')
+                    ->from('table.sunken_forum_replies')
                     ->where('topic_id = ?', $topicId)
                     ->where('status = ?', 'approved')
                     ->order('created', Db::SORT_ASC)
@@ -2739,7 +3289,7 @@ final class Forum
             $db = Db::get();
             $row = $db->fetchRow(
                 $db->select('*')
-                    ->from('table.forum_replies')
+                    ->from('table.sunken_forum_replies')
                     ->where('id = ?', $id)
                     ->limit(1)
             );
@@ -2769,7 +3319,7 @@ final class Forum
             $db = Db::get();
             $rows = $db->fetchAll(
                 $db->select('topic_id', 'type')
-                    ->from('table.forum_reactions')
+                    ->from('table.sunken_forum_reactions')
                     ->where('uid = ?', $viewerUid)
                     ->where('topic_id IN ?', $topicIds)
             );
@@ -2809,7 +3359,7 @@ final class Forum
             $db = Db::get();
             $rows = $db->fetchAll(
                 $db->select('topic_id', 'uid', 'value')
-                    ->from('table.forum_ratings')
+                    ->from('table.sunken_forum_ratings')
                     ->where('topic_id IN ?', $topicIds)
             );
         } catch (\Throwable) {
@@ -2883,7 +3433,7 @@ final class Forum
             $db = Db::get();
             $rows = $db->fetchAll(
                 $db->select('uid', 'value', 'created')
-                    ->from('table.forum_ratings')
+                    ->from('table.sunken_forum_ratings')
                     ->where('topic_id = ?', $topicId)
                     ->order('created', Db::SORT_DESC)
                     ->limit(12)
@@ -2935,7 +3485,7 @@ final class Forum
             $db = Db::get();
             $rows = $db->fetchAll(
                 $db->select('circle_id')
-                    ->from('table.forum_members')
+                    ->from('table.sunken_forum_members')
                     ->where('uid = ?', $uid)
             );
         } catch (\Throwable) {
@@ -2958,12 +3508,12 @@ final class Forum
     private static function stats(): array
     {
         return [
-            'circles' => self::countRows('table.forum_circles', 'status = ?', ['publish']),
-            'topics' => self::countRows('table.forum_topics', 'status = ?', ['publish']),
-            'replies' => self::countRows('table.forum_replies', 'status = ?', ['approved']),
-            'members' => self::countRows('table.forum_members'),
+            'circles' => self::countRows('table.sunken_forum_circles', 'status = ?', ['publish']),
+            'topics' => self::countRows('table.sunken_forum_topics', 'status = ?', ['publish']),
+            'replies' => self::countRows('table.sunken_forum_replies', 'status = ?', ['approved']),
+            'members' => self::countRows('table.sunken_forum_members'),
             'todayTopics' => self::countRows(
-                'table.forum_topics',
+                'table.sunken_forum_topics',
                 'status = ? AND created >= ?',
                 ['publish', strtotime('today') ?: 0]
             ),
@@ -2998,7 +3548,7 @@ final class Forum
             $db = Db::get();
             $rows = $db->fetchAll(
                 $db->select('author_id', 'COUNT(*) AS num')
-                    ->from('table.forum_topics')
+                    ->from('table.sunken_forum_topics')
                     ->where('status = ?', 'publish')
                     ->group('author_id')
                     ->order('num', Db::SORT_DESC)
@@ -3086,7 +3636,7 @@ final class Forum
     {
         try {
             $db = Db::get();
-            $db->query($db->insert('table.forum_members')->rows([
+            $db->query($db->insert('table.sunken_forum_members')->rows([
                 'circle_id' => $circleId,
                 'uid' => $uid,
                 'joined' => time(),
@@ -3101,10 +3651,10 @@ final class Forum
         try {
             $db = Db::get();
             $db->query(
-                $db->update('table.forum_circles')
+                $db->update('table.sunken_forum_circles')
                     ->rows([
                         'topic_count' => self::countRows(
-                            'table.forum_topics',
+                            'table.sunken_forum_topics',
                             'circle_id = ? AND status = ?',
                             [$circleId, 'publish']
                         ),
@@ -3120,7 +3670,7 @@ final class Forum
 
     private static function countCircleMembers(int $circleId): int
     {
-        return self::countRows('table.forum_members', 'circle_id = ?', [$circleId]);
+        return self::countRows('table.sunken_forum_members', 'circle_id = ?', [$circleId]);
     }
 
     private static function recountCircleByTopic(int $topicId): void
@@ -3129,7 +3679,7 @@ final class Forum
             $db = Db::get();
             $row = $db->fetchRow(
                 $db->select('circle_id')
-                    ->from('table.forum_topics')
+                    ->from('table.sunken_forum_topics')
                     ->where('id = ?', $topicId)
                     ->limit(1)
             );
@@ -3148,10 +3698,10 @@ final class Forum
         try {
             $db = Db::get();
             $db->query(
-                $db->update('table.forum_topics')
+                $db->update('table.sunken_forum_topics')
                     ->rows([
                         'comments' => self::countRows(
-                            'table.forum_replies',
+                            'table.sunken_forum_replies',
                             'topic_id = ? AND status = ?',
                             [$topicId, 'approved']
                         ),
@@ -3169,7 +3719,7 @@ final class Forum
     private static function countReactions(int $topicId, string $type): int
     {
         return self::countRows(
-            'table.forum_reactions',
+            'table.sunken_forum_reactions',
             'topic_id = ? AND type = ?',
             [$topicId, $type]
         );
@@ -3185,13 +3735,13 @@ final class Forum
             $db = Db::get();
             $row = $db->fetchRow(
                 $db->select('views')
-                    ->from('table.forum_topics')
+                    ->from('table.sunken_forum_topics')
                     ->where('id = ?', $topicId)
                     ->limit(1)
             );
             $views = is_array($row) ? (int) ($row['views'] ?? 0) : 0;
             $db->query(
-                $db->update('table.forum_topics')
+                $db->update('table.sunken_forum_topics')
                     ->rows(['views' => $views + 1])
                     ->where('id = ?', $topicId)
             );
@@ -3200,7 +3750,12 @@ final class Forum
         }
     }
 
-    private static function uniqueSlug(string $value, string $fallback, string $table): string
+    private static function uniqueSlug(
+        string $value,
+        string $fallback,
+        string $table,
+        int $ignoreId = 0
+    ): string
     {
         $value = trim($value);
         $slug = $value !== ''
@@ -3226,7 +3781,7 @@ final class Forum
 
         $base = $slug;
         $suffix = 1;
-        while (self::slugExists($table, $slug)) {
+        while (self::slugExists($table, $slug, $ignoreId)) {
             $suffix++;
             $slug = substr($base, 0, 56) . '-' . $suffix;
             if ($suffix > 20) {
@@ -3238,18 +3793,19 @@ final class Forum
         return $slug;
     }
 
-    private static function slugExists(string $table, string $slug): bool
+    private static function slugExists(string $table, string $slug, int $ignoreId = 0): bool
     {
-        $table = $table === 'circles' ? 'table.forum_circles' : 'table.forum_topics';
+        $table = $table === 'circles' ? 'table.sunken_forum_circles' : 'table.sunken_forum_topics';
 
         try {
             $db = Db::get();
-            $row = $db->fetchRow(
-                $db->select('id')
-                    ->from($table)
-                    ->where('slug = ?', $slug)
-                    ->limit(1)
-            );
+            $query = $db->select('id')
+                ->from($table)
+                ->where('slug = ?', $slug);
+            if ($ignoreId > 0) {
+                $query->where('id <> ?', $ignoreId);
+            }
+            $row = $db->fetchRow($query->limit(1));
         } catch (\Throwable) {
             return false;
         }
@@ -3452,7 +4008,7 @@ final class Forum
         $prefix = Db::get()->getPrefix();
         $names = [];
         foreach (['circles', 'topics', 'replies', 'members', 'reactions', 'ratings'] as $name) {
-            $names[$name] = $prefix . 'forum_' . $name;
+            $names[$name] = $prefix . 'sunken_forum_' . $name;
         }
 
         return $names;
@@ -3460,7 +4016,7 @@ final class Forum
 
     private static function ensureTopicTagsColumn(Db $db, string $driver, string $prefix): void
     {
-        $table = $prefix . 'forum_topics';
+        $table = $prefix . 'sunken_forum_topics';
         $exists = false;
 
         if ($driver === 'sqlite') {
@@ -3507,6 +4063,179 @@ final class Forum
         }
     }
 
+    private static function ensureCircleBackgroundColumn(Db $db, string $driver, string $prefix): void
+    {
+        $table = $prefix . 'sunken_forum_circles';
+        $exists = false;
+
+        if ($driver === 'sqlite') {
+            $name = str_replace('"', '', $table);
+            $columns = $db->fetchAll('PRAGMA table_info("' . $name . '")');
+            foreach ($columns as $column) {
+                if (is_array($column) && ($column['name'] ?? '') === 'background') {
+                    $exists = true;
+                    break;
+                }
+            }
+        } elseif ($driver === 'mysql') {
+            $name = str_replace('`', '', $table);
+            $exists = $db->fetchRow("SHOW COLUMNS FROM `{$name}` LIKE 'background'") !== null;
+        } elseif ($driver === 'pgsql') {
+            $name = str_replace("'", "''", $table);
+            $exists = $db->fetchRow(
+                "SELECT column_name FROM information_schema.columns
+                WHERE table_schema = current_schema()
+                  AND table_name = '{$name}'
+                  AND column_name = 'background'
+                LIMIT 1"
+            ) !== null;
+        } else {
+            return;
+        }
+
+        if ($exists) {
+            return;
+        }
+
+        $sql = match ($driver) {
+            'sqlite' => 'ALTER TABLE "' . str_replace('"', '', $table)
+                . '" ADD COLUMN "background" TEXT NOT NULL DEFAULT \'\'',
+            'mysql' => 'ALTER TABLE `' . str_replace('`', '', $table)
+                . '` ADD COLUMN `background` VARCHAR(255) NOT NULL DEFAULT \'\' AFTER `icon`',
+            'pgsql' => 'ALTER TABLE "' . str_replace('"', '', $table)
+                . '" ADD COLUMN "background" VARCHAR(255) NOT NULL DEFAULT \'\'',
+            default => '',
+        };
+
+        if ($sql !== '') {
+            $db->query($sql, Db::WRITE, '');
+        }
+    }
+
+    private static function ensureTopicSoftDeleteColumns(Db $db, string $driver, string $prefix): void
+    {
+        $table = $prefix . 'sunken_forum_topics';
+        $columns = [
+            'deleted_at' => [
+                'sqlite' => 'INTEGER NOT NULL DEFAULT 0',
+                'mysql' => 'INT UNSIGNED NOT NULL DEFAULT 0 AFTER `status`',
+                'pgsql' => 'INTEGER NOT NULL DEFAULT 0',
+            ],
+            'deleted_from' => [
+                'sqlite' => 'TEXT NOT NULL DEFAULT \'\'',
+                'mysql' => 'VARCHAR(16) NOT NULL DEFAULT \'\' AFTER `deleted_at`',
+                'pgsql' => 'VARCHAR(16) NOT NULL DEFAULT \'\'',
+            ],
+        ];
+
+        foreach ($columns as $column => $definitions) {
+            $exists = false;
+
+            if ($driver === 'sqlite') {
+                $name = str_replace('"', '', $table);
+                $rows = $db->fetchAll('PRAGMA table_info("' . $name . '")');
+                foreach ($rows as $row) {
+                    if (is_array($row) && ($row['name'] ?? '') === $column) {
+                        $exists = true;
+                        break;
+                    }
+                }
+            } elseif ($driver === 'mysql') {
+                $name = str_replace('`', '', $table);
+                $exists = $db->fetchRow(
+                    "SHOW COLUMNS FROM `{$name}` LIKE '" . str_replace("'", "''", $column) . "'"
+                ) !== null;
+            } elseif ($driver === 'pgsql') {
+                $name = str_replace("'", "''", $table);
+                $exists = $db->fetchRow(
+                    "SELECT column_name FROM information_schema.columns
+                    WHERE table_schema = current_schema()
+                      AND table_name = '{$name}'
+                      AND column_name = '" . str_replace("'", "''", $column) . "'
+                    LIMIT 1"
+                ) !== null;
+            }
+
+            if ($exists || !isset($definitions[$driver])) {
+                continue;
+            }
+
+            $quoted = $driver === 'mysql'
+                ? '`' . str_replace('`', '', $table) . '`'
+                : '"' . str_replace('"', '', $table) . '"';
+            $columnSql = $driver === 'mysql'
+                ? '`' . str_replace('`', '', $column) . '`'
+                : '"' . str_replace('"', '', $column) . '"';
+            $db->query(
+                'ALTER TABLE ' . $quoted . ' ADD COLUMN ' . $columnSql . ' ' . $definitions[$driver],
+                Db::WRITE,
+                ''
+            );
+        }
+    }
+
+    /**
+     * Copy legacy forum rows into the new sunken_* tables. Old tables are kept
+     * untouched so the migration stays reversible for site owners.
+     */
+    private static function migrateLegacyTables(Db $db, string $driver, string $prefix): void
+    {
+        foreach (['circles', 'topics', 'replies', 'members', 'reactions', 'ratings'] as $name) {
+            try {
+                $target = 'table.sunken_forum_' . $name;
+                $targetRows = $db->fetchObject(
+                    $db->select('COUNT(*) AS num')->from($target)
+                );
+                if ((int) ($targetRows->num ?? 0) > 0) {
+                    continue;
+                }
+
+                try {
+                    $db->fetchRow(
+                        $db->select('id')->from('table.forum_' . $name)->limit(1)
+                    );
+                } catch (\Throwable) {
+                    continue;
+                }
+
+                $legacyRows = $db->fetchAll(
+                    $db->select('*')->from('table.forum_' . $name)
+                );
+                if ($legacyRows === []) {
+                    continue;
+                }
+
+                $inserted = [];
+                foreach ($legacyRows as $row) {
+                    if (!is_array($row)) {
+                        continue;
+                    }
+
+                    $db->query($db->insert($target)->rows($row));
+                    $id = (int) ($row['id'] ?? 0);
+                    if ($id > 0) {
+                        $inserted[] = $id;
+                    }
+                }
+
+                if ($driver === 'pgsql' && $inserted !== []) {
+                    $safe = str_replace('"', '', $prefix . 'sunken_forum_' . $name);
+                    $max = max($inserted);
+                    $db->query(
+                        "SELECT setval(pg_get_serial_sequence('\"{$safe}\"', 'id'), {$max}, true)",
+                        Db::READ,
+                        ''
+                    );
+                }
+            } catch (\Throwable $exception) {
+                error_log(
+                    'SunkenBoat legacy forum migration skipped for ' . $name . ': '
+                    . $exception->getMessage()
+                );
+            }
+        }
+    }
+
     /**
      * @return list<string>
      */
@@ -3516,12 +4245,12 @@ final class Forum
             ? '`' . str_replace('`', '', $name) . '`'
             : '"' . str_replace('"', '', $name) . '"';
 
-        $circles = $prefix . 'forum_circles';
-        $topics = $prefix . 'forum_topics';
-        $replies = $prefix . 'forum_replies';
-        $members = $prefix . 'forum_members';
-        $reactions = $prefix . 'forum_reactions';
-        $ratings = $prefix . 'forum_ratings';
+        $circles = $prefix . 'sunken_forum_circles';
+        $topics = $prefix . 'sunken_forum_topics';
+        $replies = $prefix . 'sunken_forum_replies';
+        $members = $prefix . 'sunken_forum_members';
+        $reactions = $prefix . 'sunken_forum_reactions';
+        $ratings = $prefix . 'sunken_forum_ratings';
 
         if ($driver === 'sqlite') {
             return [
@@ -3531,6 +4260,7 @@ final class Forum
                     "slug" TEXT NOT NULL,
                     "description" TEXT NOT NULL DEFAULT \'\',
                     "icon" TEXT NOT NULL DEFAULT \'\',
+                    "background" TEXT NOT NULL DEFAULT \'\',
                     "owner_id" INTEGER NOT NULL DEFAULT 0,
                     "status" TEXT NOT NULL DEFAULT \'publish\',
                     "sort" INTEGER NOT NULL DEFAULT 0,
@@ -3551,6 +4281,8 @@ final class Forum
                     "kind" TEXT NOT NULL DEFAULT \'discussion\',
                     "tags" TEXT NOT NULL DEFAULT \'\',
                     "status" TEXT NOT NULL DEFAULT \'publish\',
+                    "deleted_at" INTEGER NOT NULL DEFAULT 0,
+                    "deleted_from" TEXT NOT NULL DEFAULT \'\',
                     "pinned" INTEGER NOT NULL DEFAULT 0,
                     "featured" INTEGER NOT NULL DEFAULT 0,
                     "views" INTEGER NOT NULL DEFAULT 0,
@@ -3563,7 +4295,8 @@ final class Forum
                     UNIQUE ("slug")
                 )',
                 'CREATE INDEX IF NOT EXISTS ' . $quote($topics . '_feed') . ' ON ' . $quote($topics) . ' ("circle_id", "status", "pinned", "last_reply_at")',
-                'CREATE INDEX IF NOT EXISTS ' . $quote($topics . '_author') . ' ON ' . $quote($topics) . ' ("author_id", "created")',
+                'CREATE INDEX IF NOT EXISTS ' . $quote($topics . '_author') . ' ON ' . $quote($topics) . ' ("author_id", "status", "created")',
+                'CREATE INDEX IF NOT EXISTS ' . $quote($topics . '_status') . ' ON ' . $quote($topics) . ' ("status", "pinned", "last_reply_at")',
                 'CREATE INDEX IF NOT EXISTS ' . $quote($topics . '_hot') . ' ON ' . $quote($topics) . ' ("views", "comments")',
                 'CREATE TABLE IF NOT EXISTS ' . $quote($replies) . ' (
                     "id" INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -3583,6 +4316,7 @@ final class Forum
                     "joined" INTEGER NOT NULL DEFAULT 0,
                     UNIQUE ("circle_id", "uid")
                 )',
+                'CREATE INDEX IF NOT EXISTS ' . $quote($members . '_uid') . ' ON ' . $quote($members) . ' ("uid", "circle_id")',
                 'CREATE TABLE IF NOT EXISTS ' . $quote($reactions) . ' (
                     "id" INTEGER PRIMARY KEY AUTOINCREMENT,
                     "topic_id" INTEGER NOT NULL DEFAULT 0,
@@ -3591,6 +4325,8 @@ final class Forum
                     "created" INTEGER NOT NULL DEFAULT 0,
                     UNIQUE ("topic_id", "uid", "type")
                 )',
+                'CREATE INDEX IF NOT EXISTS ' . $quote($reactions . '_topic') . ' ON ' . $quote($reactions) . ' ("topic_id", "type")',
+                'CREATE INDEX IF NOT EXISTS ' . $quote($reactions . '_uid') . ' ON ' . $quote($reactions) . ' ("uid", "type")',
                 'CREATE TABLE IF NOT EXISTS ' . $quote($ratings) . ' (
                     "id" INTEGER PRIMARY KEY AUTOINCREMENT,
                     "topic_id" INTEGER NOT NULL DEFAULT 0,
@@ -3611,6 +4347,7 @@ final class Forum
                     "slug" VARCHAR(64) NOT NULL UNIQUE,
                     "description" VARCHAR(280) NOT NULL DEFAULT \'\',
                     "icon" VARCHAR(255) NOT NULL DEFAULT \'\',
+                    "background" VARCHAR(255) NOT NULL DEFAULT \'\',
                     "owner_id" INTEGER NOT NULL DEFAULT 0,
                     "status" VARCHAR(16) NOT NULL DEFAULT \'publish\',
                     "sort" INTEGER NOT NULL DEFAULT 0,
@@ -3630,6 +4367,8 @@ final class Forum
                     "kind" VARCHAR(16) NOT NULL DEFAULT \'discussion\',
                     "tags" TEXT NOT NULL DEFAULT \'\',
                     "status" VARCHAR(16) NOT NULL DEFAULT \'publish\',
+                    "deleted_at" INTEGER NOT NULL DEFAULT 0,
+                    "deleted_from" VARCHAR(16) NOT NULL DEFAULT \'\',
                     "pinned" SMALLINT NOT NULL DEFAULT 0,
                     "featured" SMALLINT NOT NULL DEFAULT 0,
                     "views" INTEGER NOT NULL DEFAULT 0,
@@ -3641,7 +4380,8 @@ final class Forum
                     "last_reply_at" INTEGER NOT NULL DEFAULT 0
                 )',
                 'CREATE INDEX IF NOT EXISTS ' . $quote($topics . '_feed') . ' ON ' . $quote($topics) . ' ("circle_id", "status", "pinned", "last_reply_at")',
-                'CREATE INDEX IF NOT EXISTS ' . $quote($topics . '_author') . ' ON ' . $quote($topics) . ' ("author_id", "created")',
+                'CREATE INDEX IF NOT EXISTS ' . $quote($topics . '_author') . ' ON ' . $quote($topics) . ' ("author_id", "status", "created")',
+                'CREATE INDEX IF NOT EXISTS ' . $quote($topics . '_status') . ' ON ' . $quote($topics) . ' ("status", "pinned", "last_reply_at")',
                 'CREATE INDEX IF NOT EXISTS ' . $quote($topics . '_hot') . ' ON ' . $quote($topics) . ' ("views", "comments")',
                 'CREATE TABLE IF NOT EXISTS ' . $quote($replies) . ' (
                     "id" SERIAL PRIMARY KEY,
@@ -3661,6 +4401,7 @@ final class Forum
                     "joined" INTEGER NOT NULL DEFAULT 0,
                     UNIQUE ("circle_id", "uid")
                 )',
+                'CREATE INDEX IF NOT EXISTS ' . $quote($members . '_uid') . ' ON ' . $quote($members) . ' ("uid", "circle_id")',
                 'CREATE TABLE IF NOT EXISTS ' . $quote($reactions) . ' (
                     "id" SERIAL PRIMARY KEY,
                     "topic_id" INTEGER NOT NULL DEFAULT 0,
@@ -3669,6 +4410,8 @@ final class Forum
                     "created" INTEGER NOT NULL DEFAULT 0,
                     UNIQUE ("topic_id", "uid", "type")
                 )',
+                'CREATE INDEX IF NOT EXISTS ' . $quote($reactions . '_topic') . ' ON ' . $quote($reactions) . ' ("topic_id", "type")',
+                'CREATE INDEX IF NOT EXISTS ' . $quote($reactions . '_uid') . ' ON ' . $quote($reactions) . ' ("uid", "type")',
                 'CREATE TABLE IF NOT EXISTS ' . $quote($ratings) . ' (
                     "id" SERIAL PRIMARY KEY,
                     "topic_id" INTEGER NOT NULL DEFAULT 0,
@@ -3688,6 +4431,7 @@ final class Forum
                 `slug` VARCHAR(64) NOT NULL,
                 `description` VARCHAR(280) NOT NULL DEFAULT \'\',
                 `icon` VARCHAR(255) NOT NULL DEFAULT \'\',
+                `background` VARCHAR(255) NOT NULL DEFAULT \'\',
                 `owner_id` INT UNSIGNED NOT NULL DEFAULT 0,
                 `status` VARCHAR(16) NOT NULL DEFAULT \'publish\',
                 `sort` INT NOT NULL DEFAULT 0,
@@ -3709,6 +4453,8 @@ final class Forum
                 `kind` VARCHAR(16) NOT NULL DEFAULT \'discussion\',
                 `tags` TEXT NULL,
                 `status` VARCHAR(16) NOT NULL DEFAULT \'publish\',
+                `deleted_at` INT UNSIGNED NOT NULL DEFAULT 0,
+                `deleted_from` VARCHAR(16) NOT NULL DEFAULT \'\',
                 `pinned` TINYINT UNSIGNED NOT NULL DEFAULT 0,
                 `featured` TINYINT UNSIGNED NOT NULL DEFAULT 0,
                 `views` INT UNSIGNED NOT NULL DEFAULT 0,
@@ -3721,7 +4467,8 @@ final class Forum
                 PRIMARY KEY (`id`),
                 UNIQUE KEY `' . $topics . '_slug` (`slug`),
                 KEY `' . $topics . '_feed` (`circle_id`, `status`, `pinned`, `last_reply_at`),
-                KEY `' . $topics . '_author` (`author_id`, `created`),
+                KEY `' . $topics . '_author` (`author_id`, `status`, `created`),
+                KEY `' . $topics . '_status` (`status`, `pinned`, `last_reply_at`),
                 KEY `' . $topics . '_hot` (`views`, `comments`)
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci',
             'CREATE TABLE IF NOT EXISTS ' . $quote($replies) . ' (
@@ -3742,7 +4489,8 @@ final class Forum
                 `uid` INT UNSIGNED NOT NULL DEFAULT 0,
                 `joined` INT UNSIGNED NOT NULL DEFAULT 0,
                 PRIMARY KEY (`id`),
-                UNIQUE KEY `' . $members . '_uniq` (`circle_id`, `uid`)
+                UNIQUE KEY `' . $members . '_uniq` (`circle_id`, `uid`),
+                KEY `' . $members . '_uid` (`uid`, `circle_id`)
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci',
             'CREATE TABLE IF NOT EXISTS ' . $quote($reactions) . ' (
                 `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
@@ -3751,7 +4499,9 @@ final class Forum
                 `type` VARCHAR(16) NOT NULL DEFAULT \'like\',
                 `created` INT UNSIGNED NOT NULL DEFAULT 0,
                 PRIMARY KEY (`id`),
-                UNIQUE KEY `' . $reactions . '_uniq` (`topic_id`, `uid`, `type`)
+                UNIQUE KEY `' . $reactions . '_uniq` (`topic_id`, `uid`, `type`),
+                KEY `' . $reactions . '_topic` (`topic_id`, `type`),
+                KEY `' . $reactions . '_uid` (`uid`, `type`)
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci',
             'CREATE TABLE IF NOT EXISTS ' . $quote($ratings) . ' (
                 `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,

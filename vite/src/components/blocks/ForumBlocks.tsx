@@ -2,7 +2,10 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import type { FormEvent, ReactNode } from 'react';
 import {
     ArrowUpRight,
+    BadgeCheck,
+    Ban,
     Bookmark,
+    Check,
     ChevronRight,
     CircleDot,
     Clock3,
@@ -12,8 +15,12 @@ import {
     Hash,
     ImagePlus,
     Layers3,
+    LoaderCircle,
     MessageCircle,
     MessageSquareText,
+    MoreHorizontal,
+    Pencil,
+    Pin,
     Plus,
     Search,
     Share2,
@@ -21,16 +28,40 @@ import {
     Tag as TagIcon,
     ThumbsUp,
     TrendingUp,
+    Trash2,
+    UserPlus,
     Users,
 } from 'lucide-react';
-import MarkdownToolbar from '../content/MarkdownToolbar';
+import {
+    CommentComposer,
+    CommentEmpty,
+    CommentEntry,
+    CommentSection,
+} from '../content/CommentSection';
 import MediaLibrary from '../content/MediaLibrary';
 import ShareSheet from '../content/ShareSheet';
 import UserAvatar from '../layout/UserAvatar';
 import BreadcrumbsBlock from './BreadcrumbsBlock';
+import {
+    AlertDialog,
+    AlertDialogAction,
+    AlertDialogCancel,
+    AlertDialogContent,
+    AlertDialogDescription,
+    AlertDialogFooter,
+    AlertDialogHeader,
+    AlertDialogTitle,
+} from '../ui/alert-dialog';
 import { Badge } from '../ui/badge';
 import { Button } from '../ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '../ui/dialog';
+import {
+    DropdownMenu,
+    DropdownMenuContent,
+    DropdownMenuItem,
+    DropdownMenuSeparator,
+    DropdownMenuTrigger,
+} from '../ui/dropdown-menu';
 import { Input } from '../ui/input';
 import { Popover, PopoverContent, PopoverTrigger } from '../ui/popover';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../ui/tabs';
@@ -46,9 +77,31 @@ import type {
     ForumTopicBlock,
     MediaItem,
 } from '../../types';
+import {
+    flashNotify,
+    notifyError,
+    notifySuccess,
+} from '../../lib/notify';
+import { navigateApp, refreshApp } from '../../lib/appNavigation';
 
 function cx(...parts: Array<string | false | null | undefined>): string {
     return parts.filter(Boolean).join(' ');
+}
+
+function mediaFileName(value: string): string {
+    if (value === '') {
+        return '';
+    }
+
+    try {
+        const url = new URL(value, window.location.href);
+        const filename = decodeURIComponent(
+            url.pathname.split('/').filter(Boolean).pop() || ''
+        );
+        return filename || url.hostname;
+    } catch {
+        return value.split(/[?#]/)[0].split('/').filter(Boolean).pop() || value;
+    }
 }
 
 function requestLogin(): void {
@@ -81,21 +134,23 @@ async function forumRequest<T>(endpoint: string, nonce: string, body: Record<str
     return (payload.data ?? payload) as T;
 }
 
-export function openTopicEditor(forum: ForumConfig, circleId = 0): void {
+export function openTopicEditor(forum: ForumConfig, circleId = 0, topicId = 0): void {
     if (!forum.viewer.loggedIn) {
         requestLogin();
         return;
     }
-    if (!forum.permissions.createTopic) {
+    if (topicId <= 0 && !forum.permissions.createTopic) {
         return;
     }
 
     const url = new URL(forum.editorUrl, window.location.href);
     url.searchParams.set('type', 'forum-topic');
-    if (circleId > 0) {
+    if (topicId > 0) {
+        url.searchParams.set('id', String(topicId));
+    } else if (circleId > 0) {
         url.searchParams.set('circle', String(circleId));
     }
-    window.location.assign(url.toString());
+    navigateApp(url.toString());
 }
 
 function insertText(
@@ -216,12 +271,18 @@ function TopicThumb({ topic }: { topic: ForumTopic }) {
 
 function TopicRow({
     topic,
+    forum,
     onTagClick,
 }: {
     topic: ForumTopic;
+    forum?: ForumConfig;
     onTagClick?: (tag: string) => void;
 }) {
     const author = topic.author;
+    const canManage =
+        forum !== undefined
+        && forum.viewer.loggedIn
+        && (forum.permissions.moderate || forum.viewer.uid === author.uid);
 
     return (
         <article className="group relative border-b border-line px-1 py-3.5 last:border-b-0">
@@ -309,6 +370,18 @@ function TopicRow({
                             <MessageCircle className="size-3" strokeWidth={1.7} aria-hidden="true" />
                             {topic.comments}
                         </span>
+                        {canManage && forum ? (
+                            <button
+                                type="button"
+                                className="inline-flex items-center gap-0.5 text-ink-faint hover:text-brand"
+                                onClick={() =>
+                                    openTopicEditor(forum, topic.circle?.id ?? 0, topic.id)
+                                }
+                            >
+                                <Pencil className="size-3" strokeWidth={1.8} aria-hidden="true" />
+                                编辑
+                            </button>
+                        ) : null}
                         <a className="ml-auto inline-flex items-center gap-0.5 text-brand" href={topic.url}>
                             参与讨论
                             <ArrowUpRight className="size-3" strokeWidth={1.8} aria-hidden="true" />
@@ -347,30 +420,40 @@ interface CircleDialogProps {
     onOpenChange: (open: boolean) => void;
     forum: ForumConfig;
     onCreated: (url: string) => void;
+    circle?: ForumCircle | null;
+    onUpdated?: () => void;
 }
 
-export function CircleDialog({ open, onOpenChange, forum, onCreated }: CircleDialogProps) {
+export function CircleDialog({
+    open,
+    onOpenChange,
+    forum,
+    onCreated,
+    circle = null,
+    onUpdated,
+}: CircleDialogProps) {
+    const editing = Boolean(circle && circle.id > 0);
     const [name, setName] = useState('');
     const [slug, setSlug] = useState('');
     const [description, setDescription] = useState('');
     const [icon, setIcon] = useState('');
-    const [mediaOpen, setMediaOpen] = useState(false);
+    const [background, setBackground] = useState('');
+    const [mediaTarget, setMediaTarget] = useState<'icon' | 'background' | null>(null);
     const [busy, setBusy] = useState(false);
-    const [error, setError] = useState('');
 
     useEffect(() => {
         if (!open) {
             return;
         }
 
-        setName('');
-        setSlug('');
-        setDescription('');
-        setIcon('');
-        setMediaOpen(false);
+        setName(circle?.name ?? '');
+        setSlug(circle?.slug ?? '');
+        setDescription(circle?.description ?? '');
+        setIcon(circle?.icon ?? '');
+        setBackground(circle?.background ?? '');
+        setMediaTarget(null);
         setBusy(false);
-        setError('');
-    }, [open]);
+    }, [open, circle]);
 
     const submit = async (event: FormEvent) => {
         event.preventDefault();
@@ -379,17 +462,26 @@ export function CircleDialog({ open, onOpenChange, forum, onCreated }: CircleDia
         }
 
         setBusy(true);
-        setError('');
         try {
-            const result = await forumRequest<{ url: string }>(forum.endpoints.circleCreate, forum.nonce, {
+            const endpoint = editing ? forum.endpoints.circleUpdate : forum.endpoints.circleCreate;
+            const result = await forumRequest<{ url: string }>(endpoint, forum.nonce, {
+                id: circle?.id ?? 0,
                 name,
                 slug,
                 description,
                 icon,
+                background,
             });
-            onCreated(result.url);
+            if (editing) {
+                flashNotify('success', `圈子「${name.trim()}」已更新。`);
+                onUpdated?.();
+                onOpenChange(false);
+            } else {
+                flashNotify('success', `圈子「${name.trim()}」已创建。`);
+                onCreated(result.url);
+            }
         } catch (reason) {
-            setError(errorMessage(reason));
+            notifyError(errorMessage(reason));
         } finally {
             setBusy(false);
         }
@@ -397,13 +489,17 @@ export function CircleDialog({ open, onOpenChange, forum, onCreated }: CircleDia
 
     return (
         <Dialog open={open} onOpenChange={onOpenChange}>
-            <DialogContent className="border-line bg-surface sm:max-w-[520px]">
+            <DialogContent className="max-h-[90dvh] overflow-y-auto overscroll-contain border-line bg-surface sm:max-w-[520px]">
                 <DialogHeader>
-                    <DialogTitle>{forum.copy.create.action}</DialogTitle>
-                    <DialogDescription>{forum.copy.create.hint}</DialogDescription>
+                    <DialogTitle>{editing ? '编辑圈子' : forum.copy.create.action}</DialogTitle>
+                    <DialogDescription>
+                        {editing
+                            ? '修改圈子名称、图标与背景，保存后会同步到圈子广场和帖子侧栏。'
+                            : forum.copy.create.hint}
+                    </DialogDescription>
                 </DialogHeader>
 
-                <form className="grid gap-3" onSubmit={submit}>
+                <form className="grid min-w-0 gap-3" onSubmit={submit}>
                     <label className="grid gap-1.5 text-[12px] text-ink-mute">
                         名称
                         <Input value={name} onChange={(event) => setName(event.target.value)} maxLength={40} required />
@@ -421,9 +517,9 @@ export function CircleDialog({ open, onOpenChange, forum, onCreated }: CircleDia
                             maxLength={200}
                         />
                     </label>
-                    <div className="grid gap-2 text-[12px] text-ink-mute">
+                    <div className="grid min-w-0 gap-2 text-[12px] text-ink-mute">
                         <span>圈子图标（可选）</span>
-                        <div className="flex items-center gap-3 rounded-[6px] border border-line bg-surface-2 p-2.5">
+                        <div className="flex min-w-0 flex-wrap items-center gap-2.5 rounded-[6px] border border-line bg-surface-2 p-2.5">
                             <span className="grid size-12 shrink-0 place-items-center overflow-hidden rounded-[9px] bg-surface-3">
                                 {icon !== '' ? (
                                     <img className="size-full object-cover" src={icon} alt="" />
@@ -431,17 +527,22 @@ export function CircleDialog({ open, onOpenChange, forum, onCreated }: CircleDia
                                     <ImagePlus className="size-5 text-ink-faint" strokeWidth={1.6} aria-hidden="true" />
                                 )}
                             </span>
-                            <div className="min-w-0 flex-1">
-                                <p className="truncate text-[11.5px] text-ink-mute">
-                                    {icon !== '' ? icon : '从媒体库选择一张图片作为圈子图标'}
+                            <div className="min-w-0 flex-1 basis-40">
+                                <p
+                                    className="truncate text-[11.5px] text-ink-mute"
+                                    title={icon || undefined}
+                                >
+                                    {icon !== ''
+                                        ? mediaFileName(icon)
+                                        : '从媒体库选择一张图片作为圈子图标'}
                                 </p>
-                                <p className="mt-0.5 text-[10.5px] text-ink-faint">
+                                <p className="mt-0.5 line-clamp-2 text-[10.5px] text-ink-faint">
                                     {forum.canUseMedia
                                         ? '支持选择或上传图片。'
                                         : '当前账号没有媒体库权限，可暂不设置图标。'}
                                 </p>
                             </div>
-                            <div className="flex shrink-0 items-center gap-1">
+                            <div className="ml-auto flex w-full shrink-0 flex-wrap items-center justify-end gap-1 sm:w-auto">
                                 {icon !== '' ? (
                                     <Button
                                         type="button"
@@ -457,7 +558,61 @@ export function CircleDialog({ open, onOpenChange, forum, onCreated }: CircleDia
                                     variant="secondary"
                                     className="h-7 px-2 text-[11px]"
                                     disabled={!forum.canUseMedia}
-                                    onClick={() => setMediaOpen(true)}
+                                    onClick={() => setMediaTarget('icon')}
+                                >
+                                    <ImagePlus className="size-3.5" strokeWidth={1.8} aria-hidden="true" />
+                                    媒体库
+                                </Button>
+                            </div>
+                        </div>
+                    </div>
+                    <div className="grid min-w-0 gap-2 text-[12px] text-ink-mute">
+                        <span>圈子背景（可选）</span>
+                        <div className="flex min-w-0 flex-wrap items-center gap-2.5 rounded-[6px] border border-line bg-surface-2 p-2.5">
+                            <span
+                                className="forum-circle-cover grid h-12 w-16 shrink-0 place-items-center overflow-hidden rounded-[9px] bg-surface-3"
+                                style={
+                                    background !== ''
+                                        ? {
+                                              backgroundImage: `linear-gradient(135deg, rgba(15, 23, 42, 0.12), rgba(15, 23, 42, 0.48)), url("${background}")`,
+                                          }
+                                        : undefined
+                                }
+                            >
+                                {background === '' ? (
+                                    <ImagePlus className="size-5 text-ink-faint" strokeWidth={1.6} aria-hidden="true" />
+                                ) : null}
+                            </span>
+                            <div className="min-w-0 flex-1 basis-40">
+                                <p
+                                    className="truncate text-[11.5px] text-ink-mute"
+                                    title={background || undefined}
+                                >
+                                    {background !== ''
+                                        ? mediaFileName(background)
+                                        : '用于帖子侧栏和圈子横幅的背景图'}
+                                </p>
+                                <p className="mt-0.5 line-clamp-2 text-[10.5px] text-ink-faint">
+                                    建议使用横向图片，系统会自动裁切并叠加暗色遮罩。
+                                </p>
+                            </div>
+                            <div className="ml-auto flex w-full shrink-0 flex-wrap items-center justify-end gap-1 sm:w-auto">
+                                {background !== '' ? (
+                                    <Button
+                                        type="button"
+                                        variant="ghost"
+                                        className="h-7 px-2 text-[11px]"
+                                        onClick={() => setBackground('')}
+                                    >
+                                        移除
+                                    </Button>
+                                ) : null}
+                                <Button
+                                    type="button"
+                                    variant="secondary"
+                                    className="h-7 px-2 text-[11px]"
+                                    disabled={!forum.canUseMedia}
+                                    onClick={() => setMediaTarget('background')}
                                 >
                                     <ImagePlus className="size-3.5" strokeWidth={1.8} aria-hidden="true" />
                                     媒体库
@@ -466,29 +621,27 @@ export function CircleDialog({ open, onOpenChange, forum, onCreated }: CircleDia
                         </div>
                     </div>
 
-                    {error !== '' ? (
-                        <p className="rounded-[4px] bg-destructive/10 px-3 py-2 text-[12px] text-destructive" role="alert">
-                            {error}
-                        </p>
-                    ) : null}
-
                     <div className="flex justify-end gap-2 pt-1">
                         <Button type="button" variant="secondary" onClick={() => onOpenChange(false)}>
                             取消
                         </Button>
                         <Button type="submit" disabled={busy || name.trim() === ''}>
-                            {busy ? '创建中…' : forum.copy.create.action}
+                            {busy ? '保存中…' : editing ? '保存圈子' : forum.copy.create.action}
                         </Button>
                     </div>
                 </form>
                 <MediaLibrary
-                    open={mediaOpen}
-                    onOpenChange={setMediaOpen}
+                    open={mediaTarget !== null}
+                    onOpenChange={(next) => setMediaTarget(next ? mediaTarget : null)}
                     mediaEndpoint={forum.mediaEndpoint}
-                    uploadPurpose="topic"
+                    uploadPurpose={mediaTarget === 'background' ? 'background' : 'topic'}
                     onSelect={(item) => {
-                        setIcon(item.url);
-                        setMediaOpen(false);
+                        if (mediaTarget === 'background') {
+                            setBackground(item.url);
+                        } else {
+                            setIcon(item.url);
+                        }
+                        setMediaTarget(null);
                     }}
                 />
             </DialogContent>
@@ -500,7 +653,6 @@ export function JoinButton({ forum, circle }: { forum: ForumConfig; circle: Foru
     const [joined, setJoined] = useState(circle.joined);
     const [count, setCount] = useState(circle.memberCount);
     const [busy, setBusy] = useState(false);
-    const [error, setError] = useState('');
 
     useEffect(() => {
         setJoined(circle.joined);
@@ -521,7 +673,6 @@ export function JoinButton({ forum, circle }: { forum: ForumConfig; circle: Foru
         }
 
         setBusy(true);
-        setError('');
         try {
             const result = await forumRequest<{ joined: boolean; memberCount: number }>(
                 forum.endpoints.join,
@@ -530,8 +681,13 @@ export function JoinButton({ forum, circle }: { forum: ForumConfig; circle: Foru
             );
             setJoined(result.joined);
             setCount(result.memberCount);
+            notifySuccess(
+                result.joined
+                    ? `${forum.followLabel}成功。`
+                    : `已取消${forum.followLabel}。`
+            );
         } catch (reason) {
-            setError(errorMessage(reason));
+            notifyError(errorMessage(reason));
         } finally {
             setBusy(false);
         }
@@ -550,13 +706,13 @@ export function JoinButton({ forum, circle }: { forum: ForumConfig; circle: Foru
                 {busy ? '处理中…' : joined ? `已${forum.followLabel}` : `${forum.followLabel}圈子`}
                 <span className="ml-1 text-[10px] opacity-70">{count}</span>
             </Button>
-            {error !== '' ? <p className="text-[10.5px] text-destructive">{error}</p> : null}
         </div>
     );
 }
 
 export function TopicList({
     topics,
+    forum,
     pager,
     emptyTitle,
     emptyText,
@@ -564,6 +720,7 @@ export function TopicList({
     onTagClick,
 }: {
     topics: ForumTopic[];
+    forum?: ForumConfig;
     pager?: { hasMore: boolean; nextUrl: string; total: number };
     emptyTitle: string;
     emptyText: string;
@@ -577,7 +734,12 @@ export function TopicList({
     return (
         <div>
             {topics.map((topic) => (
-                <TopicRow key={topic.id} topic={topic} onTagClick={onTagClick} />
+                <TopicRow
+                    key={topic.id}
+                    topic={topic}
+                    forum={forum}
+                    onTagClick={onTagClick}
+                />
             ))}
             {pager?.hasMore && pager.nextUrl !== '' ? (
                 <div className="pt-4">
@@ -632,6 +794,49 @@ function SidebarHot({
                 </ul>
             </Panel>
         </div>
+    );
+}
+
+function HotTopicList({ topics, empty }: { topics: ForumTopic[]; empty: string }) {
+    if (topics.length === 0) {
+        return <p className="px-1 py-5 text-center text-[11px] text-ink-faint">{empty}</p>;
+    }
+
+    return (
+        <ol className="grid gap-0.5">
+            {topics.slice(0, 8).map((topic, index) => (
+                <li key={topic.id} className="min-w-0">
+                    <a
+                        className="group flex items-start gap-2 rounded-[5px] px-1.5 py-1.5 transition-colors hover:bg-surface-2"
+                        href={topic.url}
+                    >
+                        <span
+                            className={cx(
+                                'mt-0.5 grid size-[18px] shrink-0 place-items-center rounded-[4px] text-[9.5px] font-bold leading-none',
+                                index === 0
+                                    ? 'bg-[#ff5c8a] text-white'
+                                    : index === 1
+                                      ? 'bg-[#ff9f43] text-white'
+                                      : index === 2
+                                        ? 'bg-[#f7c948] text-[#5a4300]'
+                                        : 'bg-surface-2 text-ink-faint'
+                            )}
+                        >
+                            {index + 1}
+                        </span>
+                        <span className="min-w-0 flex-1">
+                            <span className="line-clamp-2 text-[12px] leading-[1.55] text-ink-soft group-hover:text-brand">
+                                {topic.title}
+                            </span>
+                            <span className="mt-0.5 flex flex-wrap items-center gap-x-2 text-[10px] text-ink-faint">
+                                <span>{topic.views} 浏览</span>
+                                <span>{topic.comments} 回复</span>
+                            </span>
+                        </span>
+                    </a>
+                </li>
+            ))}
+        </ol>
     );
 }
 
@@ -982,6 +1187,7 @@ export function ForumHomeBlock({
 
                         <TopicList
                             topics={visible}
+                            forum={forum}
                             pager={pager}
                             emptyTitle={
                                 tagFilter !== ''
@@ -1051,7 +1257,7 @@ export function ForumHomeBlock({
                 open={circleOpen}
                 onOpenChange={setCircleOpen}
                 forum={forum}
-                onCreated={(url) => window.location.assign(url)}
+                onCreated={(url) => navigateApp(url)}
             />
         </section>
     );
@@ -1132,7 +1338,16 @@ export function ForumCircleBlock({
 
                 <div className="order-1 min-w-0 lg:order-2">
                     <div className="surface-card overflow-hidden">
-                        <div className="forum-circle-banner flex items-center gap-3 px-[18px] py-5 text-white">
+                        <div
+                            className="forum-circle-banner flex items-center gap-3 px-[18px] py-5 text-white"
+                            style={
+                                circle.background !== ''
+                                    ? {
+                                          backgroundImage: `linear-gradient(100deg, rgba(8, 15, 30, 0.82), rgba(8, 15, 30, 0.38)), url("${circle.background}")`,
+                                      }
+                                    : undefined
+                            }
+                        >
                             <CircleMark circle={circle} size="size-12" />
                             <div className="min-w-0 flex-1">
                                 <p className="text-[10px] font-medium tracking-[0.16em] text-white/60 uppercase">
@@ -1203,6 +1418,7 @@ export function ForumCircleBlock({
                             ) : null}
                             <TopicList
                                 topics={visibleTopics}
+                                forum={forum}
                                 pager={pager}
                                 emptyTitle={
                                     tagFilter === '' ? '这个圈子还没有帖子' : `没有话题 #${tagFilter} 的帖子`
@@ -1275,45 +1491,48 @@ function RailAction({
             disabled={disabled}
             onClick={onClick}
         >
-            <span className="forum-rail-icon">
-                {icon}
-                {value !== undefined ? <span className="forum-rail-badge">{value}</span> : null}
-            </span>
-            <span className="forum-rail-text">{label}</span>
+            <span className="forum-rail-icon">{icon}</span>
+            {value !== undefined ? <span className="forum-rail-count">{value}</span> : null}
         </button>
     );
 }
 
-function ReplyItem({ reply, depth = 0 }: { reply: ForumReply; depth?: number }) {
+function ForumReplyEntry({
+    reply,
+    depth = 0,
+    onReply,
+}: {
+    reply: ForumReply;
+    depth?: number;
+    onReply?: (reply: ForumReply) => void;
+}) {
     return (
-        <li className={cx('border-t border-line pt-3 first:border-t-0 first:pt-0', depth > 0 ? 'ml-5' : '')}>
-            <div className="flex items-start gap-2.5">
-                <UserAvatar
-                    name={reply.author.screenName || reply.author.name}
-                    avatar={reply.author.avatar}
-                    className="size-8"
+        <CommentEntry
+            commentId={reply.id}
+            author={{
+                name: reply.author.screenName || reply.author.name,
+                avatar: reply.author.avatar,
+                url: reply.author.url,
+                verified:
+                    reply.author.group === 'administrator'
+                    || reply.author.group === 'editor',
+                groupLabel: reply.author.groupLabel,
+            }}
+            contentHtml={reply.contentHtml}
+            createdText={reply.createdText}
+            depth={depth}
+            childCount={reply.children.length}
+            onReply={onReply ? () => onReply(reply) : undefined}
+        >
+            {reply.children.map((child) => (
+                <ForumReplyEntry
+                    key={child.id}
+                    reply={child}
+                    depth={depth + 1}
+                    onReply={onReply}
                 />
-                <div className="min-w-0 flex-1">
-                    <div className="flex flex-wrap items-center gap-1.5">
-                        <span className="text-[12.5px] font-medium text-ink">
-                            {reply.author.screenName || reply.author.name}
-                        </span>
-                        <span className="ml-auto text-[10.5px] text-ink-faint">{reply.createdText}</span>
-                    </div>
-                    <div
-                        className="prose forum-prose forum-reply-prose mt-1 text-[13px]"
-                        dangerouslySetInnerHTML={{ __html: reply.contentHtml }}
-                    />
-                    {reply.children.length > 0 ? (
-                        <ul className="mt-3 grid gap-3">
-                            {reply.children.map((child) => (
-                                <ReplyItem key={child.id} reply={child} depth={depth + 1} />
-                            ))}
-                        </ul>
-                    ) : null}
-                </div>
-            </div>
-        </li>
+            ))}
+        </CommentEntry>
     );
 }
 
@@ -1412,69 +1631,55 @@ function RatingWidget({
 
     return (
         <section id="forum-rating" className="forum-rating-card" aria-label="帖子评分">
-            <div className="forum-rating-head">
-                <div className="forum-rating-summary" aria-live="polite">
-                    <div className="forum-rating-average">
+            <div className="forum-rating-average" aria-live="polite">
+                <Star
+                    className="size-[18px]"
+                    strokeWidth={1.7}
+                    fill="currentColor"
+                    aria-hidden="true"
+                />
+                <strong>{averageValue.toFixed(1)}</strong>
+                <span>/ 5</span>
+            </div>
+            <div
+                className="forum-rating-stars"
+                role="group"
+                aria-label="选择 1 到 5 星"
+                onMouseLeave={() => setHoverValue(0)}
+            >
+                {[1, 2, 3, 4, 5].map((value) => (
+                    <button
+                        key={value}
+                        type="button"
+                        className={cx(
+                            'forum-rating-star',
+                            value <= visibleValue ? 'is-active' : ''
+                        )}
+                        aria-label={`${value} 星`}
+                        aria-pressed={mine === value}
+                        disabled={disabled || busy}
+                        onMouseEnter={() => setHoverValue(value)}
+                        onFocus={() => setHoverValue(value)}
+                        onBlur={() => setHoverValue(0)}
+                        onClick={() => {
+                            setHoverValue(0);
+                            onRate(value as 1 | 2 | 3 | 4 | 5);
+                        }}
+                    >
                         <Star
                             className="size-[18px]"
-                            strokeWidth={1.7}
-                            fill="currentColor"
+                            strokeWidth={1.6}
+                            fill={value <= visibleValue ? 'currentColor' : 'none'}
                             aria-hidden="true"
                         />
-                        <strong>{averageValue.toFixed(1)}</strong>
-                        <span>/ 5</span>
-                    </div>
-                    <p className="forum-rating-count">
-                        {count > 0 ? `${count} 人已评分` : '暂无评分'}
-                    </p>
-                </div>
-
-                <div className="forum-rating-control">
-                    <div className="forum-rating-copy">
-                        <p className="forum-rating-title">为这个帖子打分</p>
-                        <p className="forum-rating-hint">
-                            {mine > 0
-                                ? `你的评分是 ${mine} 星，再次点击同一星级可取消。`
-                                : '点击星星提交评分，支持 1–5 星。'}
-                        </p>
-                    </div>
-                    <div
-                        className="forum-rating-stars"
-                        role="group"
-                        aria-label="选择 1 到 5 星"
-                        onMouseLeave={() => setHoverValue(0)}
-                    >
-                        {[1, 2, 3, 4, 5].map((value) => (
-                            <button
-                                key={value}
-                                type="button"
-                                className={cx(
-                                    'forum-rating-star',
-                                    value <= visibleValue ? 'is-active' : ''
-                                )}
-                                aria-label={`${value} 星`}
-                                aria-pressed={mine === value}
-                                disabled={disabled || busy}
-                                onMouseEnter={() => setHoverValue(value)}
-                                onFocus={() => setHoverValue(value)}
-                                onBlur={() => setHoverValue(0)}
-                                onClick={() => {
-                                    setHoverValue(0);
-                                    onRate(value as 1 | 2 | 3 | 4 | 5);
-                                }}
-                            >
-                                <Star
-                                    className="size-[21px]"
-                                    strokeWidth={1.6}
-                                    fill={value <= visibleValue ? 'currentColor' : 'none'}
-                                    aria-hidden="true"
-                                />
-                            </button>
-                        ))}
-                    </div>
-                    {busy ? <span className="forum-rating-busy">同步中…</span> : null}
-                </div>
+                    </button>
+                ))}
             </div>
+            <p className="forum-rating-count">
+                {count > 0 ? `${count} 人已评分` : '暂无评分'}
+                {mine > 0 ? ` · 你的评分 ${mine} 星` : ' · 点击星星评分'}
+                {busy ? ' · 同步中…' : ''}
+            </p>
 
             {raters.length > 0 ? (
                 <div className="forum-rating-people" aria-label="最近评分用户">
@@ -1488,7 +1693,7 @@ function RatingWidget({
                             <UserAvatar
                                 name={rater.screenName || rater.name}
                                 avatar={rater.avatar}
-                                className="size-8"
+                                className="size-7"
                             />
                             <span className="forum-rating-badge">
                                 {rater.value}
@@ -1507,6 +1712,7 @@ function RatingWidget({
 export function ForumTopicBlock({
     forum,
     topic,
+    circle,
     breadcrumbs,
     contentHtml,
     replies,
@@ -1514,26 +1720,39 @@ export function ForumTopicBlock({
     showAuthor,
     showAuthorTopics,
     authorTopics,
-    hotCircles,
     hotTopics,
+    restricted = false,
+    restrictedText = '',
 }: ForumTopicBlock) {
     const viewer = forum.viewer;
+    const canEditCircle = Boolean(
+        circle
+        && viewer.loggedIn
+        && (circle.ownerId === viewer.uid || viewer.group === 'administrator' || forum.permissions.moderate)
+    );
     const [liked, setLiked] = useState(topic.liked);
     const [favorited, setFavorited] = useState(topic.favorited);
     const [likes, setLikes] = useState(topic.likes);
     const [favorites, setFavorites] = useState(topic.favorites);
+    const [pinned, setPinned] = useState(topic.pinned);
+    const [featured, setFeatured] = useState(topic.featured);
+    const [topicStatus, setTopicStatus] = useState(topic.status);
     const [ratingAverage, setRatingAverage] = useState(topic.ratingAverage);
     const [ratingCount, setRatingCount] = useState(topic.ratingCount);
     const [ratingMine, setRatingMine] = useState(topic.ratingMine);
     const [raters, setRaters] = useState<ForumRater[]>(topic.ratingUsers ?? []);
     const [ratingBusy, setRatingBusy] = useState(false);
-    const [shareText, setShareText] = useState('');
     const [shareOpen, setShareOpen] = useState(false);
     const [comment, setComment] = useState('');
     const [replyTo, setReplyTo] = useState<ForumReply | null>(null);
     const [busy, setBusy] = useState(false);
-    const [error, setError] = useState('');
+    const [manageBusy, setManageBusy] = useState('');
+    const [deleteOpen, setDeleteOpen] = useState(false);
     const [mediaOpen, setMediaOpen] = useState(false);
+    const [joined, setJoined] = useState(circle?.joined ?? false);
+    const [memberCount, setMemberCount] = useState(circle?.memberCount ?? 0);
+    const [joinBusy, setJoinBusy] = useState(false);
+    const [circleEditOpen, setCircleEditOpen] = useState(false);
     const [quickRecent, setQuickRecent] = useState<string[]>(() => {
         try {
             const stored = JSON.parse(window.localStorage.getItem('ttdf:forum-quick-replies') ?? '[]');
@@ -1594,19 +1813,27 @@ export function ForumTopicBlock({
                 setFavorited(result.active);
                 setFavorites(result.favorites);
             }
+            notifySuccess(
+                type === 'like'
+                    ? result.active
+                        ? '已点赞。'
+                        : '已取消点赞。'
+                    : result.active
+                      ? '已收藏。'
+                      : '已取消收藏。'
+            );
         } catch (reason) {
-            setError(errorMessage(reason));
+            notifyError(errorMessage(reason));
         }
     };
 
     const copyShareLink = async () => {
         try {
             await navigator.clipboard.writeText(window.location.href);
-            setShareText('链接已复制');
+            notifySuccess('链接已复制。');
         } catch {
-            setShareText('请复制地址栏链接');
+            notifyError('复制失败，请手动复制地址栏链接。');
         }
-        window.setTimeout(() => setShareText(''), 2400);
     };
 
     const share = () => {
@@ -1628,7 +1855,6 @@ export function ForumTopicBlock({
         }
 
         setRatingBusy(true);
-        setError('');
         try {
             const result = await forumRequest<{
                 average: number;
@@ -1640,8 +1866,9 @@ export function ForumTopicBlock({
             setRatingCount(result.count);
             setRatingMine(result.mine);
             setRaters(Array.isArray(result.raters) ? result.raters : []);
+            notifySuccess('评分已更新。');
         } catch (reason) {
-            setError(errorMessage(reason));
+            notifyError(errorMessage(reason));
         } finally {
             setRatingBusy(false);
         }
@@ -1657,6 +1884,105 @@ export function ForumTopicBlock({
         window.location.href = `mailto:${forum.reportEmail}?subject=${subject}&body=${body}`;
     };
 
+    const canManage = viewer.loggedIn
+        && (forum.permissions.moderate || viewer.uid === topic.author.uid);
+
+    const moderate = async (op: string) => {
+        if (manageBusy !== '') {
+            return;
+        }
+
+        setManageBusy(op);
+        try {
+            const result = await forumRequest<{ items?: ForumTopic[] }>(
+                forum.endpoints.moderation,
+                forum.nonce,
+                { op, ids: [topic.id] }
+            );
+            const updated = Array.isArray(result.items)
+                ? result.items.find((item) => item.id === topic.id)
+                : undefined;
+            if (updated) {
+                setPinned(updated.pinned);
+                setFeatured(updated.featured);
+                setTopicStatus(updated.status);
+            } else if (op === 'pin' || op === 'unpin') {
+                setPinned(op === 'pin');
+            } else if (op === 'feature' || op === 'unfeature') {
+                setFeatured(op === 'feature');
+            } else if (op === 'approve') {
+                setTopicStatus('publish');
+            } else if (op === 'reject') {
+                setTopicStatus('rejected');
+            }
+            const messages: Record<string, string> = {
+                approve: '帖子已通过审核。',
+                reject: '帖子已驳回。',
+                pin: '帖子已置顶。',
+                unpin: '已取消置顶。',
+                feature: '帖子已设为精华。',
+                unfeature: '已取消精华。',
+            };
+            notifySuccess(messages[op] ?? '帖子状态已更新。');
+        } catch (reason) {
+            notifyError(errorMessage(reason));
+        } finally {
+            setManageBusy('');
+        }
+    };
+
+    const removeTopic = async () => {
+        if (manageBusy !== '') {
+            return;
+        }
+
+        setManageBusy('delete');
+        try {
+            await forumRequest(forum.endpoints.topicDelete, forum.nonce, {
+                topic_id: topic.id,
+            });
+            flashNotify('success', `《${topic.title}》已移入回收站。`);
+            navigateApp(topic.circle?.url || forum.homeUrl);
+        } catch (reason) {
+            notifyError(errorMessage(reason));
+            setDeleteOpen(false);
+        } finally {
+            setManageBusy('');
+        }
+    };
+
+    const toggleJoin = async () => {
+        if (circle === null || joinBusy) {
+            return;
+        }
+        if (!viewer.loggedIn) {
+            requestLogin();
+            return;
+        }
+        if (!forum.permissions.join) {
+            return;
+        }
+
+        setJoinBusy(true);
+        try {
+            const result = await forumRequest<{
+                joined: boolean;
+                memberCount: number;
+                message?: string;
+            }>(forum.endpoints.join, forum.nonce, { circle_id: circle.id });
+            setJoined(result.joined);
+            setMemberCount(result.memberCount);
+            notifySuccess(
+                result.message
+                    || (result.joined ? '已加入圈子。' : '已退出圈子。')
+            );
+        } catch (reason) {
+            notifyError(errorMessage(reason));
+        } finally {
+            setJoinBusy(false);
+        }
+    };
+
     const submitReply = async (event: FormEvent) => {
         event.preventDefault();
         if (busy) {
@@ -1668,16 +1994,16 @@ export function ForumTopicBlock({
         }
 
         setBusy(true);
-        setError('');
         try {
             await forumRequest(forum.endpoints.replyCreate, forum.nonce, {
                 topic_id: topic.id,
                 parent_id: replyTo?.id ?? 0,
                 content: comment,
             });
-            window.location.reload();
+            notifySuccess('评论已发布。');
+            refreshApp();
         } catch (reason) {
-            setError(errorMessage(reason));
+            notifyError(errorMessage(reason));
         } finally {
             setBusy(false);
         }
@@ -1687,146 +2013,259 @@ export function ForumTopicBlock({
 
     return (
         <section className="forum-page" aria-labelledby="forum-topic-title">
-            <div className="grid gap-[15px] lg:grid-cols-[72px_minmax(0,1fr)_270px]">
-                <aside className="hidden lg:order-1 lg:block">
+            <div className="grid gap-[15px] lg:grid-cols-[56px_minmax(0,1fr)_282px]">
+                <aside className="order-1 min-w-0 lg:sticky lg:top-[92px] lg:self-start">
                     <div
-                        className="forum-action-rail grid grid-cols-3 gap-1.5 sm:grid-cols-6 lg:grid-cols-1"
+                        className="forum-action-rail grid grid-cols-3 justify-items-center gap-3 lg:grid-cols-1 lg:gap-2.5"
                         role="toolbar"
                         aria-label="帖子操作"
                     >
                         <RailAction
-                            icon={<ThumbsUp className="size-5" strokeWidth={1.7} />}
+                            icon={<ThumbsUp className="size-[19px]" strokeWidth={1.8} />}
                             label="点赞"
                             value={likes}
                             active={liked}
                             onClick={() => void react('like')}
                         />
                         <RailAction
-                            icon={<Star className="size-5" strokeWidth={1.7} />}
-                            label="评分"
-                            value={ratingAverage.toFixed(1)}
-                            active={ratingMine > 0}
-                            onClick={() => {
-                                document
-                                    .getElementById('forum-rating')
-                                    ?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                            }}
-                        />
-                        <RailAction
-                            icon={<MessageCircle className="size-5" strokeWidth={1.7} />}
-                            label="评论"
-                            value={replyCount}
-                            onClick={() => {
-                                document.getElementById('forum-replies')?.scrollIntoView({ behavior: 'smooth' });
-                                textarea.current?.focus();
-                            }}
-                        />
-                        <RailAction
-                            icon={<Bookmark className="size-5" strokeWidth={1.7} />}
+                            icon={<Star className="size-[19px]" strokeWidth={1.8} />}
                             label="收藏"
                             value={favorites}
                             active={favorited}
                             onClick={() => void react('favorite')}
                         />
                         <RailAction
-                            icon={<Share2 className="size-5" strokeWidth={1.7} />}
+                            icon={<Share2 className="size-[19px]" strokeWidth={1.8} />}
                             label="分享"
                             onClick={() => void share()}
                         />
-                        {forum.reportEmail !== '' ? (
-                            <RailAction
-                                icon={<Flag className="size-5" strokeWidth={1.7} />}
-                                label="举报"
-                                onClick={report}
-                            />
-                        ) : null}
                     </div>
-                    {shareText !== '' ? (
-                        <p className="forum-rail-toast hidden lg:block" role="status">
-                            {shareText}
-                        </p>
-                    ) : null}
                 </aside>
 
-                <div className="order-1 min-w-0 lg:order-2">
+                <div className="order-2 min-w-0">
                     {breadcrumbs.length > 0 ? (
-                        <div className="mb-[15px]">
+                        <div className="mb-[14px]">
                             <BreadcrumbsBlock items={breadcrumbs} />
                         </div>
                     ) : null}
+
                     <article className="surface-card overflow-hidden">
-                        <div className="border-b border-line px-4 py-4 sm:px-6 sm:py-5">
-                            <div className="flex flex-wrap items-center gap-2">
-                                <UserAvatar
-                                    name={author.screenName || author.name}
-                                    avatar={author.avatar}
-                                    className="size-10"
-                                />
-                                <div className="min-w-0">
-                                    <div className="flex flex-wrap items-center gap-1.5">
-                                        <span className="text-[13px] font-medium text-ink">
-                                            {author.screenName || author.name}
-                                        </span>
-                                        <span className="text-[10px] text-ink-faint">{author.groupLabel}</span>
-                                    </div>
-                                    <p className="mt-0.5 flex flex-wrap items-center gap-x-2 text-[10.5px] text-ink-faint">
-                                        <span>{topic.createdText}</span>
-                                        <span className="inline-flex items-center gap-0.5">
-                                            <Eye className="size-3" strokeWidth={1.7} />
-                                            {topic.views}
-                                        </span>
-                                    </p>
-                                </div>
-                                {topic.circle ? (
-                                    <a
-                                        className="ml-auto inline-flex items-center gap-1 rounded-[4px] bg-surface-2 px-2.5 py-1 text-[11px] text-ink-mute hover:text-brand"
-                                        href={topic.circle.url}
-                                    >
-                                        <CircleDot className="size-3.5" strokeWidth={1.8} aria-hidden="true" />
-                                        {topic.circle.name}
-                                    </a>
+                        <div className="px-4 pb-4 pt-5 sm:px-6">
+                            <div className="flex items-start gap-2">
+                                <h1
+                                    id="forum-topic-title"
+                                    className="min-w-0 flex-1 text-[22px] font-semibold leading-[1.4] text-ink sm:text-[24px]"
+                                >
+                                    {topic.title}
+                                </h1>
+                                {canManage ? (
+                                    <DropdownMenu modal={false}>
+                                        <DropdownMenuTrigger asChild>
+                                            <Button
+                                                type="button"
+                                                size="icon-sm"
+                                                variant="ghost"
+                                                className="mt-0.5 shrink-0"
+                                                disabled={manageBusy !== ''}
+                                                aria-label="帖子管理操作"
+                                            >
+                                                {manageBusy !== '' ? (
+                                                    <LoaderCircle
+                                                        className="animate-spin"
+                                                        aria-hidden="true"
+                                                    />
+                                                ) : (
+                                                    <MoreHorizontal aria-hidden="true" />
+                                                )}
+                                            </Button>
+                                        </DropdownMenuTrigger>
+                                        <DropdownMenuContent align="end" className="w-44">
+                                            <DropdownMenuItem
+                                                onSelect={() =>
+                                                    openTopicEditor(
+                                                        forum,
+                                                        topic.circle?.id ?? 0,
+                                                        topic.id
+                                                    )
+                                                }
+                                            >
+                                                <Pencil aria-hidden="true" />
+                                                编辑帖子
+                                            </DropdownMenuItem>
+                                            {forum.permissions.moderate ? (
+                                                <>
+                                                    <DropdownMenuItem
+                                                        onSelect={() =>
+                                                            void moderate(
+                                                                pinned ? 'unpin' : 'pin'
+                                                            )
+                                                        }
+                                                    >
+                                                        <Pin aria-hidden="true" />
+                                                        {pinned ? '取消置顶' : '置顶'}
+                                                    </DropdownMenuItem>
+                                                    <DropdownMenuItem
+                                                        onSelect={() =>
+                                                            void moderate(
+                                                                featured
+                                                                    ? 'unfeature'
+                                                                    : 'feature'
+                                                            )
+                                                        }
+                                                    >
+                                                        <Star aria-hidden="true" />
+                                                        {featured ? '取消精华' : '设为精华'}
+                                                    </DropdownMenuItem>
+                                                    {topicStatus !== 'publish' ? (
+                                                        <DropdownMenuItem
+                                                            onSelect={() =>
+                                                                void moderate('approve')
+                                                            }
+                                                        >
+                                                            <Check aria-hidden="true" />
+                                                            通过审核
+                                                        </DropdownMenuItem>
+                                                    ) : null}
+                                                    {topicStatus !== 'rejected' ? (
+                                                        <DropdownMenuItem
+                                                            onSelect={() =>
+                                                                void moderate('reject')
+                                                            }
+                                                        >
+                                                            <Ban aria-hidden="true" />
+                                                            驳回
+                                                        </DropdownMenuItem>
+                                                    ) : null}
+                                                </>
+                                            ) : null}
+                                            {forum.reportEmail !== '' ? (
+                                                <DropdownMenuItem onSelect={report}>
+                                                    <Flag aria-hidden="true" />
+                                                    举报帖子
+                                                </DropdownMenuItem>
+                                            ) : null}
+                                            <DropdownMenuSeparator />
+                                            <DropdownMenuItem
+                                                variant="destructive"
+                                                onSelect={() => setDeleteOpen(true)}
+                                            >
+                                                <Trash2 aria-hidden="true" />
+                                                删除
+                                            </DropdownMenuItem>
+                                        </DropdownMenuContent>
+                                    </DropdownMenu>
                                 ) : null}
                             </div>
 
-                            <div className="mt-3 flex flex-wrap items-center gap-1.5">
-                                {topic.pinned ? (
-                                    <Badge className="rounded-[3px] border-0 bg-[rgba(229,72,77,0.1)] px-1.5 py-0 text-[10px] font-normal text-[#d94848]">
-                                        置顶
-                                    </Badge>
-                                ) : null}
-                                {topic.featured ? (
-                                    <Badge className="rounded-[3px] border-0 bg-[rgba(245,158,11,0.12)] px-1.5 py-0 text-[10px] font-normal text-[#b45309]">
-                                        精华
-                                    </Badge>
-                                ) : null}
-                                <Badge variant="secondary" className="rounded-[3px] border-0 bg-surface-2 px-1.5 py-0 text-[10px] font-normal text-ink-mute">
+                            <div className="mt-3 flex flex-wrap items-center gap-x-2.5 gap-y-1.5 text-[10.5px] text-ink-faint">
+                                <a
+                                    className="inline-flex items-center gap-1.5 text-[11.5px] font-medium text-ink-soft hover:text-brand"
+                                    href={author.url || '#'}
+                                >
+                                    <UserAvatar
+                                        name={author.screenName || author.name}
+                                        avatar={author.avatar}
+                                        className="size-[22px]"
+                                    />
+                                    {author.screenName || author.name}
+                                    {author.group === 'administrator'
+                                    || author.group === 'editor' ? (
+                                        <BadgeCheck
+                                            className="size-3.5 text-[#4da3ff]"
+                                            strokeWidth={2.1}
+                                            aria-label={author.groupLabel}
+                                        />
+                                    ) : null}
+                                </a>
+                                <span className="rounded-full bg-[rgba(255,138,61,0.12)] px-1.5 py-0.5 text-[9.5px] font-medium text-[#ff8a3d]">
+                                    {author.groupLabel}
+                                </span>
+                                <span className="rounded-[3px] bg-surface-2 px-1.5 py-0.5 text-[9.5px] text-ink-mute">
                                     {topic.kindLabel}
-                                </Badge>
-                                {topic.tags.map((tag) => (
+                                </span>
+                                {pinned ? (
+                                    <span className="rounded-[3px] bg-[rgba(229,72,77,0.1)] px-1.5 py-0.5 text-[9.5px] text-[#d94848]">
+                                        置顶
+                                    </span>
+                                ) : null}
+                                {featured ? (
+                                    <span className="rounded-[3px] bg-[rgba(245,158,11,0.12)] px-1.5 py-0.5 text-[9.5px] text-[#b45309]">
+                                        精华
+                                    </span>
+                                ) : null}
+                                {topicStatus !== 'publish' ? (
+                                    <span className="rounded-[3px] bg-[rgba(229,72,77,0.1)] px-1.5 py-0.5 text-[9.5px] text-[#d94848]">
+                                        {topicStatus === 'waiting'
+                                            ? '待审核'
+                                            : topicStatus === 'rejected'
+                                              ? '已驳回'
+                                              : topicStatus === 'deleted'
+                                                ? '回收站'
+                                              : topicStatus}
+                                    </span>
+                                ) : null}
+                                {topic.tags.slice(0, 4).map((tag) => (
                                     <span
                                         key={tag}
-                                        className="inline-flex items-center gap-1 rounded-[3px] bg-brand-soft px-1.5 py-0.5 text-[10px] text-brand"
+                                        className="inline-flex items-center gap-0.5 rounded-[3px] bg-brand-soft px-1.5 py-0.5 text-[9.5px] text-brand"
                                     >
                                         <TagIcon className="size-2.5" strokeWidth={2} aria-hidden="true" />
                                         {tag}
                                     </span>
                                 ))}
+                                <span className="inline-flex items-center gap-1">
+                                    <Clock3 className="size-3" strokeWidth={1.8} aria-hidden="true" />
+                                    {topic.createdText}
+                                </span>
+                                <span className="ml-auto inline-flex items-center gap-3">
+                                    <span className="inline-flex items-center gap-1">
+                                        <Eye className="size-3.5" strokeWidth={1.8} aria-hidden="true" />
+                                        {topic.views}
+                                    </span>
+                                    <button
+                                        type="button"
+                                        className="inline-flex items-center gap-1 hover:text-brand"
+                                        onClick={() =>
+                                            document
+                                                .getElementById('forum-replies')
+                                                ?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+                                        }
+                                    >
+                                        <MessageCircle
+                                            className="size-3.5"
+                                            strokeWidth={1.8}
+                                            aria-hidden="true"
+                                        />
+                                        {replyCount}
+                                    </button>
+                                </span>
                             </div>
-
-                            <h1
-                                id="forum-topic-title"
-                                className="mt-2 text-[24px] font-semibold leading-[1.35] text-ink"
-                            >
-                                {topic.title}
-                            </h1>
                         </div>
 
-                        <div
-                            ref={contentRef}
-                            className="prose forum-prose px-4 py-4 sm:px-6 sm:py-5"
-                            dangerouslySetInnerHTML={{ __html: contentHtml }}
-                        />
+                        {restricted ? (
+                            <div className="forum-topic-restricted px-4 py-8 text-center sm:px-6">
+                                <Ban
+                                    className="mx-auto size-7 text-ink-faint"
+                                    strokeWidth={1.5}
+                                    aria-hidden="true"
+                                />
+                                <p className="mt-3 text-[13px] font-medium text-ink-soft">
+                                    帖子已移入回收站
+                                </p>
+                                <p className="mx-auto mt-1 max-w-md text-[12px] leading-6 text-ink-mute">
+                                    {restrictedText
+                                        || '这篇帖子仅保留标题与发布时间，正文内容暂不可查看。'}
+                                </p>
+                            </div>
+                        ) : (
+                            <div
+                                ref={contentRef}
+                                className="prose forum-prose px-4 py-4 sm:px-6 sm:py-5"
+                                dangerouslySetInnerHTML={{ __html: contentHtml }}
+                            />
+                        )}
 
+                        {!restricted ? (
                         <div className="border-t border-line px-4 py-4 sm:px-6">
                             <RatingWidget
                                 average={ratingAverage}
@@ -1838,8 +2277,10 @@ export function ForumTopicBlock({
                                 onRate={(value) => void rate(value)}
                             />
                         </div>
+                        ) : null}
 
-                        <div className="flex flex-wrap items-center gap-3 border-t border-line px-[18px] py-3 text-[11px] text-ink-faint">
+                        {!restricted ? (
+                        <div className="flex flex-wrap items-center gap-3 border-t border-line px-4 py-3 text-[11px] text-ink-faint">
                             <button
                                 type="button"
                                 className={cx(
@@ -1877,10 +2318,18 @@ export function ForumTopicBlock({
                                 <Star className="size-3.5" strokeWidth={1.8} />
                                 {ratingCount > 0 ? `${ratingAverage.toFixed(1)} 评分` : '评分'}
                             </button>
-                            <span className="inline-flex items-center gap-1">
+                            <button
+                                type="button"
+                                className="inline-flex items-center gap-1 hover:text-brand"
+                                onClick={() =>
+                                    document
+                                        .getElementById('forum-replies')
+                                        ?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+                                }
+                            >
                                 <MessageCircle className="size-3.5" strokeWidth={1.8} />
                                 {replyCount} 回复
-                            </span>
+                            </button>
                             <button
                                 type="button"
                                 className="inline-flex items-center gap-1 hover:text-brand"
@@ -1889,88 +2338,158 @@ export function ForumTopicBlock({
                                 <Share2 className="size-3.5" strokeWidth={1.8} />
                                 分享
                             </button>
-                            {shareText !== '' ? (
-                                <span role="status" className="text-brand">
-                                    {shareText}
-                                </span>
-                            ) : null}
                             {topic.circle ? (
-                                <a className="ml-auto inline-flex items-center gap-1 text-brand" href={topic.circle.url}>
+                                <a
+                                    className="ml-auto inline-flex items-center gap-1 text-brand"
+                                    href={topic.circle.url}
+                                >
                                     进入圈子
                                     <ArrowUpRight className="size-3" strokeWidth={1.8} />
                                 </a>
                             ) : null}
                         </div>
+                        ) : null}
                     </article>
 
-                    <section id="forum-replies" className="surface-card mt-[15px] p-[18px]">
-                        <div className="mb-3 flex items-center gap-2">
-                            <h2 className="text-[15px] font-medium text-ink">评论（{replyCount}）</h2>
-                            <span className="text-[10.5px] text-ink-faint">友善交流，支持 Markdown</span>
-                        </div>
-
-                        {viewer.loggedIn && forum.permissions.reply ? (
-                            <form className="mb-4" onSubmit={submitReply}>
-                                {replyTo ? (
-                                    <div className="mb-2 flex items-center gap-2 rounded-[4px] bg-surface-2 px-2.5 py-1.5 text-[11px] text-ink-mute">
-                                        正在回复 {replyTo.author.screenName || replyTo.author.name}
-                                        <button
-                                            type="button"
-                                            className="ml-auto text-brand"
-                                            onClick={() => setReplyTo(null)}
+                    {showAuthor && !restricted ? (
+                        <section className="surface-card mt-[15px] overflow-hidden">
+                            <div className="flex items-start gap-3 px-4 py-4">
+                                <UserAvatar
+                                    name={author.screenName || author.name}
+                                    avatar={author.avatar}
+                                    className="size-[52px]"
+                                />
+                                <div className="min-w-0 flex-1">
+                                    <div className="flex flex-wrap items-center gap-1.5">
+                                        <a
+                                            className="truncate text-[14px] font-semibold text-ink hover:text-brand"
+                                            href={author.url || '#'}
                                         >
-                                            取消
-                                        </button>
-                                    </div>
-                                ) : null}
-                                {forum.quickReply.enabled ? (
-                                    <div className="mb-1.5 flex items-center justify-between gap-2">
-                                        <span className="text-[10.5px] text-ink-faint">
-                                            可插入系统短语或自己最近使用的内容
+                                            {author.screenName || author.name}
+                                        </a>
+                                        {author.group === 'administrator'
+                                        || author.group === 'editor' ? (
+                                            <BadgeCheck
+                                                className="size-4 text-[#4da3ff]"
+                                                strokeWidth={2.1}
+                                                aria-label={author.groupLabel}
+                                            />
+                                        ) : null}
+                                        <span className="rounded-full bg-[rgba(255,138,61,0.12)] px-2 py-0.5 text-[9.5px] font-medium text-[#ff8a3d]">
+                                            {author.groupLabel}
                                         </span>
+                                    </div>
+                                    <p className="mt-1 text-[10.5px] text-ink-faint">
+                                        近期发布 {authorTopics.length} 篇帖子
+                                    </p>
+                                </div>
+                                {author.url ? (
+                                    <a
+                                        className="hidden shrink-0 items-center gap-0.5 text-[10.5px] text-ink-faint hover:text-brand sm:inline-flex"
+                                        href={author.url}
+                                    >
+                                        个人空间
+                                        <ArrowUpRight className="size-3" strokeWidth={1.8} />
+                                    </a>
+                                ) : null}
+                            </div>
+                            {showAuthorTopics && authorTopics.length > 0 ? (
+                                <ul className="border-t border-line px-3 py-2">
+                                    {authorTopics.map((item) => (
+                                        <li key={item.id}>
+                                            <a
+                                                className="group flex items-start gap-2 rounded-[5px] px-1.5 py-1.5 transition-colors hover:bg-surface-2"
+                                                href={item.url}
+                                            >
+                                                <CircleDot
+                                                    className="mt-[3px] size-3 shrink-0 text-brand"
+                                                    strokeWidth={2}
+                                                    aria-hidden="true"
+                                                />
+                                                <span className="min-w-0 flex-1">
+                                                    <span className="line-clamp-1 text-[12px] leading-5 text-ink-soft group-hover:text-brand">
+                                                        {item.title}
+                                                    </span>
+                                                    <span className="mt-0.5 block text-[10px] text-ink-faint">
+                                                        {item.createdText} · {item.comments} 回复
+                                                    </span>
+                                                </span>
+                                            </a>
+                                        </li>
+                                    ))}
+                                </ul>
+                            ) : null}
+                        </section>
+                    ) : null}
+
+                    {!restricted ? (
+                    <CommentSection
+                        id="forum-replies"
+                        title="回复"
+                        count={replyCount}
+                        hint="友善交流，支持 Markdown"
+                        className="mt-[15px]"
+                    >
+                        {viewer.loggedIn && forum.permissions.reply ? (
+                            <CommentComposer
+                                textareaRef={textarea}
+                                avatar={{
+                                    name: viewer.screenName || viewer.name,
+                                    avatar: viewer.avatar,
+                                }}
+                                value={comment}
+                                onChange={setComment}
+                                onSubmit={submitReply}
+                                busy={busy}
+                                placeholder="友善交流，请勿发表情、请勿灌水，违者封号"
+                                submitLabel="提交回复"
+                                replyTo={
+                                    replyTo
+                                        ? {
+                                              label:
+                                                  replyTo.author.screenName
+                                                  || replyTo.author.name,
+                                              onCancel: () =>
+                                                  setReplyTo(null),
+                                          }
+                                        : null
+                                }
+                                onImage={
+                                    forum.canUseMedia
+                                        ? () => setMediaOpen(true)
+                                        : undefined
+                                }
+                                quickReply={
+                                    forum.quickReply.enabled ? (
                                         <QuickReplyPicker
                                             items={forum.quickReply.items}
                                             recent={quickRecent}
-                                            onPick={(text) => insertText(textarea.current, setComment, text)}
+                                            onPick={(text) =>
+                                                insertText(
+                                                    textarea.current,
+                                                    setComment,
+                                                    text
+                                                )
+                                            }
                                             onRemember={rememberQuickReply}
                                         />
-                                    </div>
-                                ) : null}
-                                <MarkdownToolbar
-                                    target={textarea}
-                                    onChange={setComment}
-                                    onImage={forum.canUseMedia ? () => setMediaOpen(true) : undefined}
-                                    disabled={busy}
-                                />
-                                <Textarea
-                                    ref={textarea}
-                                    className="min-h-[96px] resize-y rounded-[6px]"
-                                    value={comment}
-                                    onChange={(event) => setComment(event.target.value)}
-                                    placeholder="写下你的回复…"
-                                />
-                                {error !== '' ? (
-                                    <p className="mt-2 rounded-[4px] bg-destructive/10 px-3 py-2 text-[12px] text-destructive">
-                                        {error}
-                                    </p>
-                                ) : null}
-                                <div className="mt-2 flex items-center justify-between">
-                                    <span className="text-[10.5px] text-ink-faint">请勿发布违法或侵权内容。</span>
-                                    <Button type="submit" className="h-8 rounded-[4px]" disabled={busy || comment.trim() === ''}>
-                                        {busy ? '发送中…' : '发表评论'}
-                                    </Button>
-                                </div>
-                            </form>
+                                    ) : null
+                                }
+                            />
                         ) : (
-                            <div className="mb-4 rounded-[6px] border border-dashed border-line px-4 py-5 text-center">
-                                <p className="text-[12px] text-ink-mute">
-                                    {viewer.loggedIn ? '当前圈子暂不开放回复。' : '登录后即可参与评论。'}
-                                </p>
-                                {!viewer.loggedIn ? (
-                                    <div className="mt-3 flex justify-center">
-                                        <LoginHint />
-                                    </div>
-                                ) : null}
+                            <div className="px-4 py-4">
+                                <div className="rounded-[8px] border border-dashed border-line px-4 py-5 text-center">
+                                    <p className="text-[12px] text-ink-mute">
+                                        {viewer.loggedIn
+                                            ? '当前圈子暂不开放回复。'
+                                            : '登录后即可参与评论。'}
+                                    </p>
+                                    {!viewer.loggedIn ? (
+                                        <div className="mt-3 flex justify-center">
+                                            <LoginHint />
+                                        </div>
+                                    ) : null}
+                                </div>
                             </div>
                         )}
                         <MediaLibrary
@@ -1979,116 +2498,170 @@ export function ForumTopicBlock({
                             mediaEndpoint={forum.mediaEndpoint}
                             uploadPurpose="topic"
                             onSelect={(item: MediaItem) => {
-                                insertText(textarea.current, setComment, `\n![${item.title}](${item.url})\n`);
+                                insertText(
+                                    textarea.current,
+                                    setComment,
+                                    `\n![${item.title}](${item.url})\n`
+                                );
                                 setMediaOpen(false);
                             }}
                         />
 
                         {replies.length > 0 ? (
-                            <ul className="grid gap-3">
+                            <ul className="border-t border-line">
                                 {replies.map((reply) => (
-                                    <ReplyItem key={reply.id} reply={reply} />
+                                    <ForumReplyEntry
+                                        key={reply.id}
+                                        reply={reply}
+                                        onReply={(target) => {
+                                            setReplyTo(target);
+                                            textarea.current?.focus();
+                                        }}
+                                    />
                                 ))}
                             </ul>
                         ) : (
-                            <div className="forum-empty-replies">
-                                {forum.nullImage !== '' ? (
-                                    <img
-                                        src={forum.nullImage}
-                                        alt=""
-                                        loading="lazy"
-                                        decoding="async"
-                                    />
-                                ) : null}
-                                <p>还没有评论，来抢沙发吧。</p>
-                            </div>
+                            <CommentEmpty
+                                image={forum.nullImage}
+                                text="还没有评论，来抢沙发吧。"
+                            />
                         )}
-                    </section>
+                    </CommentSection>
+                    ) : null}
                 </div>
 
                 <aside className="order-3 grid content-start gap-[15px] lg:sticky lg:top-[88px] lg:self-start">
-                    {showAuthor ? (
-                        <Panel title="关于作者">
-                            <div className="flex items-center gap-2.5">
-                                <UserAvatar
-                                    name={author.screenName || author.name}
-                                    avatar={author.avatar}
-                                    className="size-10"
-                                />
-                                <div className="min-w-0">
-                                    <a
-                                        className="block truncate text-[13px] font-medium text-ink hover:text-brand"
-                                        href={author.url || '#'}
+                    {circle ? (
+                        <section className="surface-card overflow-hidden">
+                            <div
+                                className="forum-circle-cover relative h-[104px]"
+                                style={
+                                    circle.background !== ''
+                                        ? {
+                                              backgroundImage: `linear-gradient(180deg, rgba(10, 18, 35, 0.08), rgba(10, 18, 35, 0.58)), url("${circle.background}")`,
+                                          }
+                                        : undefined
+                                }
+                            >
+                                <span className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/20 via-transparent to-transparent" />
+                                {canEditCircle ? (
+                                    <button
+                                        type="button"
+                                        className="absolute left-2.5 top-2.5 inline-flex items-center gap-1 rounded-[4px] bg-black/35 px-2 py-1 text-[10px] text-white backdrop-blur-sm transition-colors hover:bg-black/50"
+                                        onClick={() => setCircleEditOpen(true)}
                                     >
-                                        {author.screenName || author.name}
-                                    </a>
-                                    <p className="text-[10.5px] text-ink-faint">
-                                        {author.groupLabel}
-                                    </p>
+                                        <Pencil className="size-3" strokeWidth={2} aria-hidden="true" />
+                                        编辑圈子
+                                    </button>
+                                ) : null}
+                                <a
+                                    className="absolute right-2.5 top-2.5 inline-flex items-center gap-1 rounded-[4px] bg-black/35 px-2 py-1 text-[10px] text-white backdrop-blur-sm"
+                                    href={circle.url}
+                                >
+                                    <CircleDot className="size-3" strokeWidth={2} aria-hidden="true" />
+                                    进入圈子
+                                </a>
+                                <div className="absolute inset-x-3 bottom-2 flex items-end justify-between">
+                                    <CircleMark
+                                        circle={circle}
+                                        size="size-12 border-2 border-white/85 shadow-[0_8px_22px_-10px_rgba(0,0,0,0.8)]"
+                                    />
                                 </div>
                             </div>
-                            {author.url ? (
-                                <a
-                                    className="mt-3 inline-flex h-7 items-center rounded-[4px] bg-surface-2 px-2.5 text-[11px] text-ink-mute hover:text-brand"
-                                    href={author.url}
-                                >
-                                    访问个人空间
-                                </a>
-                            ) : null}
-                        </Panel>
+                            <div className="px-4 pb-4 pt-2.5">
+                                <h2 className="truncate text-[14px] font-semibold text-ink">
+                                    {circle.name}
+                                </h2>
+                                <p className="mt-1 line-clamp-2 text-[11px] leading-[1.6] text-ink-faint">
+                                    {circle.description.trim() !== ''
+                                        ? circle.description
+                                        : `欢迎来到「${circle.name}」，一起参与讨论。`}
+                                </p>
+                                <dl className="mt-3 grid grid-cols-2 divide-x divide-line border-y border-line py-2 text-center">
+                                    <div>
+                                        <dd className="text-[14px] font-semibold text-ink">
+                                            {circle.topicCount}
+                                        </dd>
+                                        <dt className="text-[10px] text-ink-faint">帖子</dt>
+                                    </div>
+                                    <div>
+                                        <dd className="text-[14px] font-semibold text-ink">
+                                            {memberCount}
+                                        </dd>
+                                        <dt className="text-[10px] text-ink-faint">圈友</dt>
+                                    </div>
+                                </dl>
+                                <div className="mt-3 grid grid-cols-2 gap-2">
+                                    <button
+                                        type="button"
+                                        className="inline-flex h-8 items-center justify-center gap-1 rounded-[5px] bg-brand px-2 text-[11.5px] font-medium text-brand-contrast transition-colors hover:bg-brand-strong disabled:cursor-not-allowed disabled:opacity-50"
+                                        disabled={
+                                            viewer.loggedIn && !forum.permissions.createTopic
+                                        }
+                                        onClick={() => openTopicEditor(forum, circle.id)}
+                                    >
+                                        <Plus className="size-3.5" strokeWidth={2.2} aria-hidden="true" />
+                                        发布
+                                    </button>
+                                    <button
+                                        type="button"
+                                        className={
+                                            joined
+                                                ? 'inline-flex h-8 items-center justify-center gap-1 rounded-[5px] border border-line bg-surface-2 px-2 text-[11.5px] font-medium text-ink-mute transition-colors hover:text-ink disabled:cursor-not-allowed disabled:opacity-50'
+                                                : 'inline-flex h-8 items-center justify-center gap-1 rounded-[5px] bg-brand px-2 text-[11.5px] font-medium text-brand-contrast transition-colors hover:bg-brand-strong disabled:cursor-not-allowed disabled:opacity-50'
+                                        }
+                                        disabled={
+                                            joinBusy
+                                            || (viewer.loggedIn && !forum.permissions.join)
+                                        }
+                                        onClick={() => void toggleJoin()}
+                                    >
+                                        {joined ? (
+                                            <Check className="size-3.5" strokeWidth={2.2} aria-hidden="true" />
+                                        ) : (
+                                            <UserPlus className="size-3.5" strokeWidth={2.1} aria-hidden="true" />
+                                        )}
+                                        {joinBusy
+                                            ? '处理中'
+                                            : joined
+                                              ? '已关注'
+                                              : forum.followLabel}
+                                    </button>
+                                </div>
+                            </div>
+                        </section>
                     ) : null}
-                    {showAuthorTopics && authorTopics.length > 0 ? (
-                        <Panel title="作者的其他帖子">
-                            <ul className="grid gap-2.5">
-                                {authorTopics.map((item) => (
-                                    <li key={item.id} className="min-w-0">
-                                        <a
-                                            className="line-clamp-2 text-[12px] leading-[1.55] text-ink-mute hover:text-brand"
-                                            href={item.url}
-                                        >
-                                            {item.title}
-                                        </a>
-                                        <p className="mt-0.5 text-[10px] text-ink-faint">
-                                            {item.createdText} · {item.comments} 回复
-                                        </p>
-                                    </li>
-                                ))}
-                            </ul>
-                        </Panel>
-                    ) : null}
-                    <Panel title="帖子信息">
-                        <dl className="grid gap-2 text-[11.5px]">
-                            <div className="flex items-center justify-between gap-2">
-                                <dt className="text-ink-faint">浏览</dt>
-                                <dd className="text-ink-mute">{topic.views}</dd>
-                            </div>
-                            <div className="flex items-center justify-between gap-2">
-                                <dt className="text-ink-faint">点赞</dt>
-                                <dd className="text-ink-mute">{likes}</dd>
-                            </div>
-                            <div className="flex items-center justify-between gap-2">
-                                <dt className="text-ink-faint">评分</dt>
-                                <dd className="text-ink-mute">
-                                    {ratingCount > 0
-                                        ? `${ratingAverage.toFixed(1)} / 5 · ${ratingCount} 人`
-                                        : '暂无评分'}
-                                </dd>
-                            </div>
-                            <div className="flex items-center justify-between gap-2">
-                                <dt className="text-ink-faint">收藏</dt>
-                                <dd className="text-ink-mute">{favorites}</dd>
-                            </div>
-                            <div className="flex items-center justify-between gap-2">
-                                <dt className="text-ink-faint">发布</dt>
-                                <dd className="text-ink-mute">{topic.createdText}</dd>
-                            </div>
-                        </dl>
+
+                    <Panel title="热门推荐">
+                        <Tabs defaultValue="hot" className="gap-2">
+                            <TabsList className="grid h-8 w-full grid-cols-3">
+                                <TabsTrigger value="hot" className="text-[11px]">
+                                    热门
+                                </TabsTrigger>
+                                <TabsTrigger value="featured" className="text-[11px]">
+                                    精华
+                                </TabsTrigger>
+                                <TabsTrigger value="pinned" className="text-[11px]">
+                                    置顶
+                                </TabsTrigger>
+                            </TabsList>
+                            <TabsContent value="hot" className="mt-1">
+                                <HotTopicList topics={hotTopics} empty="暂无热门帖子" />
+                            </TabsContent>
+                            <TabsContent value="featured" className="mt-1">
+                                <HotTopicList
+                                    topics={hotTopics.filter((item) => item.featured)}
+                                    empty="暂无精华帖子"
+                                />
+                            </TabsContent>
+                            <TabsContent value="pinned" className="mt-1">
+                                <HotTopicList
+                                    topics={hotTopics.filter((item) => item.pinned)}
+                                    empty="暂无置顶帖子"
+                                />
+                            </TabsContent>
+                        </Tabs>
                     </Panel>
-                    <SidebarHot
-                        hotCircles={hotCircles}
-                        hotTopics={hotTopics}
-                        followLabel={forum.followLabel}
-                    />
                 </aside>
             </div>
             <ShareSheet
@@ -2099,6 +2672,40 @@ export function ForumTopicBlock({
                 title={topic.title}
                 siteName={document.title}
             />
+            <AlertDialog open={deleteOpen} onOpenChange={setDeleteOpen}>
+                <AlertDialogContent>
+                    <AlertDialogHeader>
+                        <AlertDialogTitle>删除这篇帖子？</AlertDialogTitle>
+                        <AlertDialogDescription>
+                            《{topic.title}》及其全部回复会被永久删除，此操作无法撤销。
+                        </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                        <AlertDialogCancel disabled={manageBusy === 'delete'}>
+                            取消
+                        </AlertDialogCancel>
+                        <AlertDialogAction
+                            disabled={manageBusy === 'delete'}
+                            onClick={(event) => {
+                                event.preventDefault();
+                                void removeTopic();
+                            }}
+                        >
+                            {manageBusy === 'delete' ? '删除中…' : '确认删除'}
+                        </AlertDialogAction>
+                    </AlertDialogFooter>
+                </AlertDialogContent>
+            </AlertDialog>
+            {circle ? (
+                <CircleDialog
+                    open={circleEditOpen}
+                    onOpenChange={setCircleEditOpen}
+                    forum={forum}
+                    circle={circle}
+                    onCreated={() => undefined}
+                    onUpdated={() => refreshApp()}
+                />
+            ) : null}
         </section>
     );
 }

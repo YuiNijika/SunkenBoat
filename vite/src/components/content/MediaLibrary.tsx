@@ -30,6 +30,7 @@ import {
 } from '../ui/dialog';
 import { Input } from '../ui/input';
 import { Skeleton } from '../ui/skeleton';
+import { notifyError, notifySuccess } from '../../lib/notify';
 import { errorMessage, readPayload } from '../../lib/user';
 import type { MediaItem, UploadPurpose, UserApiEndpoints } from '../../types';
 
@@ -96,7 +97,6 @@ export default function MediaLibrary({
     const [keyword, setKeyword] = useState('');
     const [loading, setLoading] = useState(false);
     const [uploading, setUploading] = useState(false);
-    const [error, setError] = useState('');
     const [deleteTarget, setDeleteTarget] = useState<MediaItem | null>(null);
     const [deleting, setDeleting] = useState(false);
     const [copied, setCopied] = useState<number | null>(null);
@@ -108,7 +108,6 @@ export default function MediaLibrary({
         async (nextPage: number, search: string) => {
             const current = ++requestId.current;
             setLoading(true);
-            setError('');
 
             try {
                 if (endpointUrl === '') {
@@ -144,7 +143,9 @@ export default function MediaLibrary({
                 setLastPage(Number(meta.lastPage) > 0 ? Number(meta.lastPage) : 1);
             } catch (reason) {
                 if (current === requestId.current) {
-                    setError(reason instanceof Error ? reason.message : '读取媒体库失败');
+                    notifyError(
+                        reason instanceof Error ? reason.message : '读取媒体库失败'
+                    );
                 }
             } finally {
                 if (current === requestId.current) {
@@ -174,7 +175,6 @@ export default function MediaLibrary({
         }
 
         setUploading(true);
-        setError('');
 
         try {
             for (const file of images) {
@@ -196,8 +196,9 @@ export default function MediaLibrary({
             }
 
             await load(1, keyword);
+            notifySuccess(`已上传 ${images.length} 张图片。`);
         } catch (reason) {
-            setError(reason instanceof Error ? reason.message : '图片上传失败');
+            notifyError(reason instanceof Error ? reason.message : '图片上传失败');
         } finally {
             setUploading(false);
             if (fileInput.current) {
@@ -212,7 +213,6 @@ export default function MediaLibrary({
         }
 
         setDeleting(true);
-        setError('');
 
         try {
             const response = await fetch(`${endpointUrl}/${deleteTarget.id}`, {
@@ -229,10 +229,11 @@ export default function MediaLibrary({
             }
 
             setDeleteTarget(null);
+            notifySuccess(`「${deleteTarget.title}」已删除。`);
             const nextPage = items.length === 1 && page > 1 ? page - 1 : page;
             await load(nextPage, keyword);
         } catch (reason) {
-            setError(reason instanceof Error ? reason.message : '删除图片失败');
+            notifyError(reason instanceof Error ? reason.message : '删除图片失败');
         } finally {
             setDeleting(false);
         }
@@ -242,9 +243,10 @@ export default function MediaLibrary({
         try {
             await navigator.clipboard.writeText(item.url);
             setCopied(item.id);
+            notifySuccess('图片地址已复制。');
             window.setTimeout(() => setCopied(null), 1500);
         } catch {
-            window.prompt('复制图片地址', item.url);
+            notifyError('复制失败，请手动选择图片地址。');
         }
     };
 
@@ -296,12 +298,6 @@ export default function MediaLibrary({
                             {uploading ? '上传中…' : '上传图片'}
                         </Button>
                     </div>
-
-                    {error !== '' ? (
-                        <p className="rounded-md bg-destructive/10 px-3 py-2 text-xs text-destructive" role="alert">
-                            {error}
-                        </p>
-                    ) : null}
 
                     <div
                         className="min-h-[260px] overflow-y-auto pr-1"

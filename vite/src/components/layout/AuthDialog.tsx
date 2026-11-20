@@ -10,6 +10,7 @@ import {
     DialogTitle,
 } from '../ui/dialog';
 import { Input } from '../ui/input';
+import { notifyError, notifySuccess } from '../../lib/notify';
 import {
     errorMessage,
     profileFrom,
@@ -50,8 +51,6 @@ export default function AuthDialog({
     const [phoneCode, setPhoneCode] = useState('');
     const [sendingSms, setSendingSms] = useState(false);
     const [smsCooldown, setSmsCooldown] = useState(0);
-    const [error, setError] = useState('');
-    const [notice, setNotice] = useState('');
 
     useEffect(() => {
         if (!open) {
@@ -67,8 +66,6 @@ export default function AuthDialog({
         setPassword('');
         setConfirm('');
         setRemember(false);
-        setError('');
-        setNotice('');
         setCooldown(0);
         setSmsCooldown(0);
     }, [open]);
@@ -106,13 +103,7 @@ export default function AuthDialog({
         }
     }, [api.registerEnabled, api.resetEnabled, mode]);
 
-    const clearFeedback = () => {
-        setError('');
-        setNotice('');
-    };
-
     const switchMode = () => {
-        clearFeedback();
         setPassword('');
         setConfirm('');
         setCode('');
@@ -121,7 +112,6 @@ export default function AuthDialog({
     };
 
     const startReset = () => {
-        clearFeedback();
         setPassword('');
         setConfirm('');
         setCode('');
@@ -130,7 +120,6 @@ export default function AuthDialog({
     };
 
     const backToLogin = () => {
-        clearFeedback();
         setPassword('');
         setConfirm('');
         setCode('');
@@ -144,13 +133,11 @@ export default function AuthDialog({
         }
 
         if (mail.trim() === '') {
-            setError('请先填写邮箱');
+            notifyError('请先填写邮箱。');
             return;
         }
 
         setSendingCode(true);
-        setError('');
-        setNotice('');
 
         try {
             const result = await requestEmailCode(
@@ -159,9 +146,13 @@ export default function AuthDialog({
                 mode === 'reset' ? 'reset' : 'register'
             );
             setCooldown(result.cooldown);
-            setNotice(`验证码已发送，${Math.max(1, Math.ceil(result.expiresIn / 60))} 分钟内有效。`);
+            notifySuccess(
+                `验证码已发送，${Math.max(1, Math.ceil(result.expiresIn / 60))} 分钟内有效。`
+            );
         } catch (reason) {
-            setError(reason instanceof Error ? reason.message : '验证码发送失败，请稍后再试');
+            notifyError(
+                reason instanceof Error ? reason.message : '验证码发送失败，请稍后再试'
+            );
         } finally {
             setSendingCode(false);
         }
@@ -172,20 +163,24 @@ export default function AuthDialog({
             return;
         }
         if (phone.trim() === '') {
-            setError('请先填写手机号');
+            notifyError('请先填写手机号。');
             return;
         }
 
         setSendingSms(true);
-        setError('');
-        setNotice('');
 
         try {
             const result = await requestSmsCode(api.smsCode, phone);
             setSmsCooldown(result.cooldown);
-            setNotice(`短信验证码已发送，${Math.max(1, Math.ceil(result.expiresIn / 60))} 分钟内有效。`);
+            notifySuccess(
+                `短信验证码已发送，${Math.max(1, Math.ceil(result.expiresIn / 60))} 分钟内有效。`
+            );
         } catch (reason) {
-            setError(reason instanceof Error ? reason.message : '短信验证码发送失败，请稍后再试');
+            notifyError(
+                reason instanceof Error
+                    ? reason.message
+                    : '短信验证码发送失败，请稍后再试'
+            );
         } finally {
             setSendingSms(false);
         }
@@ -198,8 +193,6 @@ export default function AuthDialog({
         }
 
         setSubmitting(true);
-        setError('');
-        setNotice('');
 
         try {
             if (mode === 'register') {
@@ -245,6 +238,7 @@ export default function AuthDialog({
 
                 onAuthenticated(profile);
                 onOpenChange(false);
+                notifySuccess('注册成功，已自动登录。');
                 return;
             }
 
@@ -276,7 +270,7 @@ export default function AuthDialog({
                 setConfirm('');
                 setCode('');
                 setMode('login');
-                setNotice('密码已重置，请使用新密码登录。');
+                notifySuccess('密码已重置，请使用新密码登录。');
                 return;
             }
 
@@ -301,8 +295,9 @@ export default function AuthDialog({
 
             onAuthenticated(profile);
             onOpenChange(false);
+            notifySuccess('登录成功。');
         } catch (reason) {
-            setError(
+            notifyError(
                 reason instanceof Error
                     ? reason.message
                     : mode === 'login'
@@ -563,24 +558,6 @@ export default function AuthDialog({
                                         </button>
                                     ) : null}
                                 </div>
-                            ) : null}
-
-                            {notice ? (
-                                <p
-                                    className="rounded-[4px] bg-brand-soft px-3 py-2 text-[12px] leading-5 text-brand"
-                                    role="status"
-                                >
-                                    {notice}
-                                </p>
-                            ) : null}
-
-                            {error ? (
-                                <p
-                                    className="rounded-[4px] bg-destructive/10 px-3 py-2 text-[12px] leading-5 text-destructive"
-                                    role="alert"
-                                >
-                                    {error}
-                                </p>
                             ) : null}
 
                             <Button type="submit" className="h-10 w-full" disabled={submitting}>
