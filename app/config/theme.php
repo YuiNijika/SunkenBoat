@@ -3232,6 +3232,87 @@ return [
             ],
         ],
     ],
+    'Download' => [
+        'title' => '下载&订单',
+        'tabs' => [
+            'downloads' => [
+                'title' => '下载设置',
+                'description' => '文章&帖子的资源下载。',
+                'fields' => [
+                    [
+                        'type' => 'Switch',
+                        'name' => 'Downloads_Enabled',
+                        'value' => false,
+                        'label' => '启用下载',
+                        'description' => '开启后，可为文章&帖子添加下载资源；用户登录后可领取，并在下载记录中查看订单。',
+                    ],
+                    [
+                        'type' => 'Text',
+                        'name' => 'Downloads_Free_Daily_Limit',
+                        'value' => '3',
+                        'show_when' => ['Downloads_Enabled' => true],
+                        'label' => '每日免费下载次数',
+                        'description' => '每位用户每天可免费下载的次数，文章&帖子共用；填写 0 表示不限次数。',
+                        'placeholder' => '3',
+                    ],
+                ],
+            ],
+            'payment' => [
+                'title' => '支付设置',
+                'description' => '付费资源的收款配置。',
+                'fields' => [
+                    [
+                        'type' => 'Switch',
+                        'name' => 'Downloads_Payment_Enabled',
+                        'value' => false,
+                        'show_when' => ['Downloads_Enabled' => true],
+                        'label' => '启用付费下载',
+                        'description' => '需先启用下载。用户付款后解锁资源，可在下载记录中查看订单&再次下载。',
+                    ],
+                    [
+                        'type' => 'Text',
+                        'name' => 'Downloads_Gateway',
+                        'value' => '',
+                        'show_when' => ['Downloads_Enabled' => true, 'Downloads_Payment_Enabled' => true],
+                        'label' => '支付网关地址',
+                        'description' => '填写兼容易支付的收款平台地址，需以 https:// 开头。',
+                        'placeholder' => 'https://pay.example.com/',
+                    ],
+                    [
+                        'type' => 'Text',
+                        'name' => 'Downloads_Merchant_ID',
+                        'value' => '',
+                        'inline' => true,
+                        'inline_group' => 'download-payment',
+                        'show_when' => ['Downloads_Enabled' => true, 'Downloads_Payment_Enabled' => true],
+                        'label' => '商户 ID',
+                    ],
+                    [
+                        'type' => 'Text',
+                        'name' => 'Downloads_Merchant_Key_Env',
+                        'value' => 'SUNKEN_PAY_KEY',
+                        'inline' => true,
+                        'inline_group' => 'download-payment',
+                        'show_when' => ['Downloads_Enabled' => true, 'Downloads_Payment_Enabled' => true],
+                        'label' => '支付密钥环境变量',
+                        'description' => '填写环境变量名，实际密钥请在站点运行环境中配置。',
+                    ],
+                    [
+                        'type' => 'Select',
+                        'name' => 'Downloads_Payment_Method',
+                        'value' => 'alipay',
+                        'show_when' => ['Downloads_Enabled' => true, 'Downloads_Payment_Enabled' => true],
+                        'label' => '付款方式',
+                        'options' => [
+                            'alipay' => '支付宝',
+                            'wxpay' => '微信支付',
+                            'qqpay' => 'QQ 钱包',
+                        ],
+                    ],
+                ],
+            ],
+        ],
+    ],
     'Runtime' => [
         'title' => '运行&扩展',
         'tabs' => [

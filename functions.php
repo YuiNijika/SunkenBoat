@@ -32,6 +32,7 @@ if (PHP_VERSION_ID < 80200) {
 \TTDF\Hooks\Hooks::addAction('framework.boot', [\SunkenBoat\Support\ArticleBatch::class, 'register']);
 \TTDF\Hooks\Hooks::addAction('framework.boot', [\SunkenBoat\Support\AuthHooks::class, 'register']);
 \TTDF\Hooks\Hooks::addAction('framework.boot', [\SunkenBoat\Support\CommentMarkup::class, 'register']);
+\TTDF\Hooks\Hooks::addAction('framework.boot', [\SunkenBoat\Support\Downloads::class, 'register']);
 \TTDF\Hooks\Hooks::addAction('framework.boot', [\SunkenBoat\Support\Forum::class, 'register']);
 \TTDF\Hooks\Hooks::addAction('framework.boot', [\SunkenBoat\Support\UserProfile::class, 'register']);
 \TTDF\Hooks\Hooks::addAction('framework.boot', [\SunkenBoat\Support\OAuth::class, 'register']);

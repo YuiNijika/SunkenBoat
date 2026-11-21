@@ -39,6 +39,7 @@ import { refreshApp } from '../../lib/appNavigation';
 import ContentManager from './ContentManager';
 import AuthDialog from './AuthDialog';
 import UserAvatar from './UserAvatar';
+import DownloadHistory from '../content/DownloadHistory';
 import MediaLibrary from '../content/MediaLibrary';
 
 const GROUP_LABELS: Record<string, string> = {
@@ -73,7 +74,7 @@ interface ProfileDetails {
     location: string;
 }
 
-type AccountSection = 'profile' | 'security' | 'social' | 'content';
+type AccountSection = 'profile' | 'security' | 'social' | 'content' | 'downloads';
 
 const EMPTY_DETAILS: ProfileDetails = {
     avatar: '',
@@ -1017,6 +1018,15 @@ export default function AccountPanel({ api, section = 'profile' }: Props) {
         });
     }
 
+    if (api.downloads.enabled) {
+        navItems.push({
+            id: 'downloads',
+            href: pageUrls.downloads,
+            label: '订单&下载',
+            icon: <FileText className="size-4" strokeWidth={1.8} aria-hidden="true" />,
+        });
+    }
+
     const socialCount = oauthProviders.filter((provider) => provider.bound).length;
     const sectionTitles: Record<AccountSection, { title: string; description: string }> = {
         profile: {
@@ -1035,10 +1045,14 @@ export default function AccountPanel({ api, section = 'profile' }: Props) {
             title: '内容管理',
             description: `统一管理文章、${forumLabel}帖子、${forumLabel}与历史评论，数据会随页面一起加载。`,
         },
+        downloads: {
+            title: '订单&下载',
+            description: '查看免费领取与付费购买的订单号、支付状态和下载记录。',
+        },
     };
 
     return (
-        <div className="grid gap-[15px]">
+        <div className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-[15px]">
             <section className="surface-card overflow-hidden">
                 <div className="account-cover" style={coverStyle} aria-label="个人主页背景">
                     {api.enhanced ? (
@@ -1056,14 +1070,14 @@ export default function AccountPanel({ api, section = 'profile' }: Props) {
                         </div>
                     ) : null}
                 </div>
-                <div className="card-pad relative -mt-12">
-                    <div className="flex flex-wrap items-end justify-between gap-4">
-                        <div className="flex min-w-0 items-end gap-4">
+                <div className="card-pad relative -mt-12 min-w-0">
+                    <div className="flex flex-col gap-4 sm:flex-row sm:flex-wrap sm:items-end sm:justify-between">
+                        <div className="flex min-w-0 flex-col items-start gap-3 sm:flex-row sm:items-end sm:gap-4">
                             <ProfileAvatar
                                 profile={profile}
-                                className="size-24 border-4 border-surface shadow-card"
+                                className="size-20 border-4 border-surface shadow-card sm:size-24"
                             />
-                            <div className="min-w-0 pb-1">
+                            <div className="min-w-0 w-full pb-1 sm:w-auto">
                                 <div className="flex flex-wrap items-center gap-2">
                                     <h2 className="min-w-0 truncate text-[22px] font-semibold leading-8">
                                         {profile.screenName || profile.name}
@@ -1081,7 +1095,7 @@ export default function AccountPanel({ api, section = 'profile' }: Props) {
                                         <ShieldCheck className="size-3.5" strokeWidth={1.8} aria-hidden="true" />
                                         {GROUP_LABELS[profile.group] ?? profile.group}
                                     </span>
-                                    <span className="ml-auto inline-flex flex-wrap items-center gap-2">
+                                    <span className="inline-flex flex-wrap items-center gap-2 sm:ml-auto">
                                         <span className="chip">
                                             <FileText className="size-3.5" strokeWidth={1.8} aria-hidden="true" />
                                             文章 {profile.posts ?? 0}
@@ -1137,7 +1151,7 @@ export default function AccountPanel({ api, section = 'profile' }: Props) {
                                 ) : null}
                             </div>
                         </div>
-                        <div className="flex flex-wrap items-center gap-2">
+                        <div className="flex flex-wrap items-center gap-2 sm:justify-end">
                             <Button asChild type="button" variant="outline" size="sm">
                                 <a href={spaceUrl}>
                                     <ExternalLink aria-hidden="true" />
@@ -1310,7 +1324,7 @@ export default function AccountPanel({ api, section = 'profile' }: Props) {
                                             <label className="grid gap-1.5">
                                                 <span className="text-[12px] font-medium text-ink-soft">性别</span>
                                                 <select
-                                                    className="h-10 rounded-[4px] border border-line bg-surface px-3 text-[13px] text-ink outline-none focus:border-brand"
+                                                    className="h-10 rounded-[4px] border border-line bg-surface px-3 text-[13px] text-ink outline-none transition-[border-color,box-shadow] focus-visible:border-brand focus-visible:ring-[3px] focus-visible:ring-brand/20"
                                                     value={details.gender}
                                                     onChange={(event) =>
                                                         setDetails((current) => ({
@@ -1329,7 +1343,7 @@ export default function AccountPanel({ api, section = 'profile' }: Props) {
                                             <label className="grid gap-1.5">
                                                 <span className="text-[12px] font-medium text-ink-soft">隐私设置</span>
                                                 <select
-                                                    className="h-10 rounded-[4px] border border-line bg-surface px-3 text-[13px] text-ink outline-none focus:border-brand"
+                                                    className="h-10 rounded-[4px] border border-line bg-surface px-3 text-[13px] text-ink outline-none transition-[border-color,box-shadow] focus-visible:border-brand focus-visible:ring-[3px] focus-visible:ring-brand/20"
                                                     value={details.privacy}
                                                     onChange={(event) =>
                                                         setDetails((current) => ({
@@ -1485,7 +1499,7 @@ export default function AccountPanel({ api, section = 'profile' }: Props) {
                                                 <label className="grid gap-1.5">
                                                     <span className="text-[12px] font-medium text-ink-soft">认证类型</span>
                                                     <select
-                                                        className="h-10 rounded-[4px] border border-line bg-surface px-3 text-[13px] text-ink outline-none focus:border-brand"
+                                                        className="h-10 rounded-[4px] border border-line bg-surface px-3 text-[13px] text-ink outline-none transition-[border-color,box-shadow] focus-visible:border-brand focus-visible:ring-[3px] focus-visible:ring-brand/20"
                                                         value={certType}
                                                         onChange={(event) =>
                                                             setCertType(
@@ -1519,7 +1533,7 @@ export default function AccountPanel({ api, section = 'profile' }: Props) {
                                             <label className="grid gap-1.5">
                                                 <span className="text-[12px] font-medium text-ink-soft">认证说明</span>
                                                 <textarea
-                                                    className="min-h-[88px] rounded-[4px] border border-line bg-surface px-3 py-2 text-[13px] text-ink outline-none focus:border-brand"
+                                                    className="min-h-[88px] rounded-[4px] border border-line bg-surface px-3 py-2 text-[13px] text-ink outline-none transition-[border-color,box-shadow] focus-visible:border-brand focus-visible:ring-[3px] focus-visible:ring-brand/20"
                                                     value={certNote}
                                                     onChange={(event) => setCertNote(event.target.value)}
                                                     maxLength={500}
@@ -1911,6 +1925,10 @@ export default function AccountPanel({ api, section = 'profile' }: Props) {
                                 ) : null}
                                 <ContentManager api={api} profile={profile} />
                             </div>
+                        ) : null}
+
+                        {section === 'downloads' ? (
+                            <DownloadHistory client={api.downloads} />
                         ) : null}
             </section>
 

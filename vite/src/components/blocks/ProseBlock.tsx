@@ -1,11 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { parseArticle } from '../../lib/article';
 import { Card } from '../ui/card';
+import DownloadCard from '../content/DownloadCard';
 import ImageLightbox from '../content/ImageLightbox';
 import PostMeta from '../content/PostMeta';
 import { ShareButton } from '../content/ShareSheet';
 import { notifyError, notifySuccess } from '../../lib/notify';
 import type { LightboxImage } from '../content/ImageLightbox';
+import type { DownloadOffer } from '../../lib/downloads';
 import type { PostCategory, ShareConfig } from '../../types';
 
 interface Props {
@@ -25,6 +27,7 @@ interface Props {
     layout: 'default' | 'wide' | 'narrow' | string;
     html: string;
     codeCopy: boolean;
+    download?: DownloadOffer | null;
 }
 
 /**
@@ -32,7 +35,7 @@ interface Props {
  * heading anchors come from `parseArticle()` and the table of contents is
  * rendered by the sidebar from the same parse result.
  */
-export default function ProseBlock({ title, meta, share, layout, html, codeCopy }: Props) {
+export default function ProseBlock({ title, meta, share, layout, html, codeCopy, download }: Props) {
     const parsed = useMemo(() => parseArticle(html), [html]);
     const bodyRef = useRef<HTMLDivElement>(null);
     const lightboxTrigger = useRef<HTMLImageElement | null>(null);
@@ -307,6 +310,7 @@ export default function ProseBlock({ title, meta, share, layout, html, codeCopy 
                     dangerouslySetInnerHTML={{ __html: parsed.html }}
                 />
             </Card>
+            {download ? <DownloadCard offer={download} /> : null}
             <ImageLightbox
                 images={lightboxImages}
                 index={lightboxIndex}

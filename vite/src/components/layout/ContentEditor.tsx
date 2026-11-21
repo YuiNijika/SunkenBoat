@@ -1,11 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import type { FormEvent, KeyboardEvent, ReactNode } from 'react';
+import type { FormEvent, KeyboardEvent } from 'react';
 import {
     ArrowLeft,
     Blocks,
     CalendarDays,
     CheckCircle2,
-    ChevronDown,
     Clock3,
     Columns2,
     Eye,
@@ -27,6 +26,8 @@ import { Checkbox } from '../ui/checkbox';
 import { Input } from '../ui/input';
 import { Textarea } from '../ui/textarea';
 import ComponentLibrary from '../content/ComponentLibrary';
+import DownloadSettings, { downloadConfigError } from '../content/DownloadSettings';
+import MetaBox from '../content/EditorMetaBox';
 import MarkdownToolbar from '../content/MarkdownToolbar';
 import MediaLibrary from '../content/MediaLibrary';
 import { renderMarkdown } from '../../lib/markdown';
@@ -34,6 +35,7 @@ import { notifyError, notifySuccess } from '../../lib/notify';
 import { errorMessage, readPayload } from '../../lib/user';
 import { termsFrom } from '../../lib/content';
 import type { ContentItem, TermItem } from '../../lib/content';
+import type { DownloadConfig } from '../../lib/downloads';
 import type { ArticleField, MediaItem, UserApiEndpoints, UserProfile } from '../../types';
 
 interface Props {
@@ -47,6 +49,12 @@ interface Props {
 type SaveState = 'draft' | 'publish' | null;
 type ViewMode = 'write' | 'split' | 'preview';
 const EMPTY_FIELDS: ArticleField[] = [];
+const DOWNLOAD_FIELDS = new Set([
+    'Download_Enabled',
+    'Download_Url',
+    'Download_Paid',
+    'Download_Price',
+]);
 
 interface SnapshotInput {
     title: string;
@@ -70,18 +78,6 @@ function snapshotOf(value: SnapshotInput): string {
         value.allowComment,
         Object.entries(value.fields).sort(([left], [right]) => left.localeCompare(right)),
     ]);
-}
-
-function MetaBox({ title, children }: { title: string; children: ReactNode }) {
-    return (
-        <details className="editor-meta-box" open>
-            <summary className="editor-meta-head">
-                <span>{title}</span>
-                <ChevronDown className="size-3.5" strokeWidth={1.8} aria-hidden="true" />
-            </summary>
-            <div className="editor-meta-body">{children}</div>
-        </details>
-    );
 }
 
 function countWords(value: string): number {
@@ -130,6 +126,13 @@ export default function ContentEditor({
     const [dirty, setDirty] = useState(false);
     const textareaRef = useRef<HTMLTextAreaElement>(null);
     const baseline = useRef('');
+    const articleFields = fields.filter((field) => !DOWNLOAD_FIELDS.has(field.name));
+    const download: DownloadConfig = {
+        enabled: ['1', 'true'].includes(fieldValues.Download_Enabled ?? ''),
+        url: fieldValues.Download_Url ?? '',
+        paid: ['1', 'true'].includes(fieldValues.Download_Paid ?? ''),
+        price: fieldValues.Download_Price ?? '0.00',
+    };
     const currentSnapshot = snapshotOf({
         title,
         text,
@@ -354,6 +357,16 @@ export default function ContentEditor({
         setFieldValues((current) => ({ ...current, [name]: value }));
     };
 
+    const setDownload = (next: DownloadConfig) => {
+        setFieldValues((current) => ({
+            ...current,
+            Download_Enabled: next.enabled ? '1' : '0',
+            Download_Url: next.url,
+            Download_Paid: next.paid ? '1' : '0',
+            Download_Price: next.price,
+        }));
+    };
+
     const uploadFiles = async (files: File[]) => {
         const images = files.filter((file) => file.type.startsWith('image/'));
         if (images.length === 0 || uploading) {
@@ -403,6 +416,12 @@ export default function ContentEditor({
 
         if (title.trim() === '') {
             notifyError('请先填写文章标题。');
+            return;
+        }
+
+        const downloadError = downloadConfigError(download);
+        if (downloadError) {
+            notifyError(downloadError);
             return;
         }
 
@@ -902,10 +921,18 @@ export default function ContentEditor({
                             </div>
                         </MetaBox>
 
-                        {fields.length > 0 ? (
+                        <DownloadSettings
+                            value={download}
+                            enabled={api.downloads.enabled}
+                            paymentEnabled={api.downloads.paymentEnabled}
+                            disabled={saving !== null}
+                            onChange={setDownload}
+                        />
+
+                        {articleFields.length > 0 ? (
                             <MetaBox title="文章字段">
                                 <div className="editor-fields">
-                                    {fields.map(renderArticleField)}
+                                    {articleFields.map(renderArticleField)}
                                 </div>
                             </MetaBox>
                         ) : null}

@@ -9,6 +9,7 @@ interface Props {
     variant?: string;
     title: string;
     anchor?: string;
+    source?: 'articles' | 'forum' | 'mixed';
     posts: PostSummary[];
     paginationHtml: string;
     empty: string;
@@ -117,6 +118,7 @@ export default function PostListBlock({
     variant,
     title,
     anchor,
+    source = 'articles',
     posts,
     paginationHtml,
     empty,
@@ -234,7 +236,10 @@ export default function PostListBlock({
     })();
 
     return (
-        <section id={anchor || 'latest'} className="grid gap-[15px]">
+        <section
+            id={anchor || (source === 'forum' ? undefined : 'latest')}
+            className="grid gap-[15px]"
+        >
             <SectionHeading title={title} count={items.length} />
             {body}
             {showPagination ? <Pagination html={paginationHtml} label="文章分页" /> : null}

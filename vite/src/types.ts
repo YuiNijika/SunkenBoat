@@ -1,3 +1,5 @@
+import type { DownloadConfig, DownloadsClient, DownloadOffer } from './lib/downloads';
+
 export type ThemeName = 'light' | 'dark';
 
 export interface NavItem {
@@ -131,6 +133,7 @@ export interface UserApiEndpoints {
     certificationNonce: string;
     avatarMedia: string;
     avatarMediaEnabled: boolean;
+    downloads: DownloadsClient;
     pages: {
         profile: string;
         account: string;
@@ -138,6 +141,7 @@ export interface UserApiEndpoints {
         content: string;
         editor: string;
         space: string;
+        downloads: string;
     };
     content: {
         enabled: boolean;
@@ -436,6 +440,7 @@ export interface ProseBlock extends BlockBase {
     toc: boolean;
     tocTitle: string;
     codeCopy: boolean;
+    download?: DownloadOffer | null;
 }
 
 export interface TagsBlock extends BlockBase {
@@ -1055,6 +1060,7 @@ export interface ForumTopicBlock extends BlockBase {
     circle: ForumCircle | null;
     breadcrumbs: BreadcrumbItem[];
     contentHtml: string;
+    download?: DownloadOffer | null;
     replies: ForumReply[];
     replyCount: number;
     showAuthor: boolean;
@@ -1201,6 +1207,7 @@ export interface ForumEditorTopic {
     pinned: boolean;
     featured: boolean;
     url: string;
+    download?: DownloadConfig;
 }
 
 export interface ForumEditorStatusOption {
@@ -1218,6 +1225,8 @@ export interface ForumEditorData {
     topicKinds: ForumTopicKind[];
     tagSuggestions: string[];
     showTagInput: boolean;
+    downloadEnabled: boolean;
+    paymentEnabled: boolean;
     requiresReview: boolean;
     displayName: string;
     maxLength: number;
@@ -1316,7 +1325,7 @@ export interface PageData {
         | 'forum-home'
         | 'forum-circle'
         | 'forum-topic';
-    userSection?: 'profile' | 'security' | 'social' | 'content';
+    userSection?: 'profile' | 'security' | 'social' | 'content' | 'downloads';
     userMode?: 'list' | 'editor';
     editorMode?: 'article' | 'forum-topic';
     forumEditor?: ForumEditorData;

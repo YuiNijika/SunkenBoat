@@ -131,6 +131,7 @@ final class PageData
             'security' => ['title' => '账号安全'],
             'social' => ['title' => '社交账号'],
             'content' => ['title' => '内容管理'],
+            'downloads' => ['title' => '订单&下载'],
         ];
 
         if (!isset($sections[$section])) {
@@ -1306,6 +1307,7 @@ final class PageData
     private static function proseBlock(Archive $archive, array &$cache, array $data = [], string $kind = 'page'): array
     {
         $theme = self::theme();
+        $cid = (int) ($archive->cid ?? 0);
         $meta = $kind === 'post'
             ? self::cached($cache, 'postMeta', static fn (): array => self::postMeta($archive))
             : null;
@@ -1327,6 +1329,9 @@ final class PageData
             'toc' => $theme['showToc'],
             'tocTitle' => self::text($data, 'toc_title', '本页目录'),
             'codeCopy' => true,
+            'download' => $kind === 'post' && $cid > 0
+                ? Downloads::offer('article', $cid, (string) ($archive->title ?? ''))
+                : null,
         ];
     }
 
@@ -2675,7 +2680,7 @@ final class PageData
         $home = [
             'label' => '首页',
             'url' => $siteUrl,
-            'active' => $archive !== null && is_callable([$archive, 'is']) && $archive->is('index'),
+            'active' => self::navActive($siteUrl, $currentUrl),
         ];
         $nav = [$home];
 
@@ -2825,16 +2830,14 @@ final class PageData
     {
         if ($archive !== null && is_callable([$archive, 'is']) && !$archive->is('index')) {
             $type = $archive->type ?? null;
-            if (!is_string($type) || $type === '') {
-                // Search and 404 archives have no routing type; asking for
-                // their permalink would call Router::url(null).
-                return Typecho::siteUrl();
+            if (is_string($type) && $type !== '') {
+                $permalink = trim((string) ($archive->permalink ?? ''));
+                if ($permalink !== '') {
+                    return $permalink;
+                }
             }
-
-            $permalink = trim((string) ($archive->permalink ?? ''));
-            if ($permalink !== '') {
-                return $permalink;
-            }
+            // Search and 404 archives have no routing type, so fall through
+            // to the request path instead of treating them as the homepage.
         }
 
         $requestPath = (string) parse_url((string) ($_SERVER['REQUEST_URI'] ?? ''), PHP_URL_PATH);
@@ -3179,12 +3182,14 @@ final class PageData
                 'avatarMediaEnabled' => $userApiReady
                     && UserProfile::enabled()
                     && UserProfile::viewerUid() > 0,
+                'downloads' => Downloads::client(),
                 'pages' => [
                     'profile' => rtrim($index, '/') . '/user/profile',
                     'account' => rtrim($index, '/') . '/user/account',
                     'social' => rtrim($index, '/') . '/user/social',
                     'content' => rtrim($index, '/') . '/user/content',
                     'editor' => rtrim($index, '/') . '/user/content/editor',
+                    'downloads' => rtrim($index, '/') . '/user/downloads',
                     'space' => rtrim($index, '/') . '/users',
                 ],
                 'content' => [

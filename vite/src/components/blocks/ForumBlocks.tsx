@@ -39,6 +39,7 @@ import {
     CommentSection,
 } from '../content/CommentSection';
 import MediaLibrary from '../content/MediaLibrary';
+import DownloadCard from '../content/DownloadCard';
 import ShareSheet from '../content/ShareSheet';
 import UserAvatar from '../layout/UserAvatar';
 import BreadcrumbsBlock from './BreadcrumbsBlock';
@@ -1715,6 +1716,7 @@ export function ForumTopicBlock({
     circle,
     breadcrumbs,
     contentHtml,
+    download,
     replies,
     replyCount,
     showAuthor,
@@ -2014,7 +2016,7 @@ export function ForumTopicBlock({
     return (
         <section className="forum-page" aria-labelledby="forum-topic-title">
             <div className="grid gap-[15px] lg:grid-cols-[56px_minmax(0,1fr)_282px]">
-                <aside className="order-1 min-w-0 lg:sticky lg:top-[92px] lg:self-start">
+                <aside className="order-1 hidden min-w-0 lg:sticky lg:top-[92px] lg:block lg:self-start">
                     <div
                         className="forum-action-rail grid grid-cols-3 justify-items-center gap-3 lg:grid-cols-1 lg:gap-2.5"
                         role="toolbar"
@@ -2265,6 +2267,12 @@ export function ForumTopicBlock({
                             />
                         )}
 
+                        {!restricted && download ? (
+                            <div className="border-t border-line px-4 py-4 sm:px-6">
+                                <DownloadCard offer={download} />
+                            </div>
+                        ) : null}
+
                         {!restricted ? (
                         <div className="border-t border-line px-4 py-4 sm:px-6">
                             <RatingWidget
@@ -2443,6 +2451,7 @@ export function ForumTopicBlock({
                                 busy={busy}
                                 placeholder="友善交流，请勿发表情、请勿灌水，违者封号"
                                 submitLabel="提交回复"
+                                label="回复内容"
                                 replyTo={
                                     replyTo
                                         ? {

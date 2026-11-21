@@ -66,6 +66,7 @@ interface CommentComposerProps {
         avatar?: string;
         fallbackImage?: string;
     };
+    label?: string;
     placeholder?: string;
     submitLabel?: string;
     busyLabel?: string;
@@ -91,6 +92,7 @@ export function CommentComposer({
     onChange,
     onSubmit,
     avatar,
+    label = '评论内容',
     placeholder = '友善交流，支持 Markdown',
     submitLabel = '提交评论',
     busyLabel = '发送中…',
@@ -141,6 +143,7 @@ export function CommentComposer({
                             className="min-h-[84px] resize-y border-0 bg-transparent p-1 text-[13px] shadow-none focus-visible:ring-0"
                             value={value}
                             onChange={(event) => onChange(event.target.value)}
+                            aria-label={label}
                             placeholder={placeholder}
                             required
                             disabled={disabled || busy}

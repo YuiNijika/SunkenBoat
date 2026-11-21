@@ -29,6 +29,7 @@ interface Props {
     open: boolean;
     onOpenChange: (open: boolean) => void;
     onInsert: (snippet: string) => void;
+    excluded?: Array<'login' | 'reply'>;
 }
 
 type FieldKind = 'text' | 'textarea' | 'select';
@@ -290,6 +291,7 @@ const COMPONENTS: ComponentDef[] = [
 ];
 
 const INITIAL = COMPONENTS[0] as ComponentDef;
+const EMPTY_EXCLUDED: Array<'login' | 'reply'> = [];
 
 function defaultsOf(def: ComponentDef): Record<string, string> {
     const values: Record<string, string> = {};
@@ -360,17 +362,27 @@ function previewFor(def: ComponentDef, values: Record<string, string>): string {
     return renderMarkdown(def.build(values));
 }
 
-export default function ComponentLibrary({ open, onOpenChange, onInsert }: Props) {
-    const [type, setType] = useState(INITIAL.id);
-    const [values, setValues] = useState<Record<string, string>>(() => defaultsOf(INITIAL));
+export default function ComponentLibrary({
+    open,
+    onOpenChange,
+    onInsert,
+    excluded = EMPTY_EXCLUDED,
+}: Props) {
+    const available = useMemo(
+        () => COMPONENTS.filter((item) => !excluded.some((id) => id === item.id)),
+        [excluded]
+    );
+    const initial = available[0] ?? INITIAL;
+    const [type, setType] = useState(initial.id);
+    const [values, setValues] = useState<Record<string, string>>(() => defaultsOf(initial));
 
     const def = useMemo(
-        () => COMPONENTS.find((item) => item.id === type) ?? INITIAL,
-        [type]
+        () => available.find((item) => item.id === type) ?? initial,
+        [available, initial, type]
     );
     const variants = useMemo(
-        () => COMPONENTS.filter((item) => item.family === def.family),
-        [def.family]
+        () => available.filter((item) => item.family === def.family),
+        [available, def.family]
     );
     const snippet = useMemo(() => def.build(values).trim(), [def, values]);
     const preview = useMemo(() => previewFor(def, values), [def, values]);
@@ -383,7 +395,7 @@ export default function ComponentLibrary({ open, onOpenChange, onInsert }: Props
     }, [open, def]);
 
     const selectFamily = (family: string) => {
-        const first = COMPONENTS.find((item) => item.family === family);
+        const first = available.find((item) => item.family === family);
         if (first) {
             setType(first.id);
         }
@@ -411,7 +423,9 @@ export default function ComponentLibrary({ open, onOpenChange, onInsert }: Props
                         aria-label="组件分类"
                     >
                         <div className="grid grid-cols-2 gap-1 lg:grid-cols-1">
-                            {FAMILIES.map((family) => (
+                            {FAMILIES.filter((family) =>
+                                available.some((item) => item.family === family.id)
+                            ).map((family) => (
                                 <button
                                     key={family.id}
                                     type="button"

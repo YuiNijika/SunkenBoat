@@ -5,6 +5,7 @@ import {
     Search,
     Sparkles,
 } from 'lucide-react';
+import { useId } from 'react';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
 
@@ -64,6 +65,7 @@ export default function HeroBlock({
     cards = [],
     cardStyle = 'glass',
 }: Props) {
+    const headingId = `hero-title-${useId().replace(/:/g, '')}`;
     const compact = variant === 'compact';
     const primary = actions.find((action) => action.style === 'primary') ?? actions[0];
     const secondary = actions.filter((action) => action !== primary);
@@ -94,7 +96,7 @@ export default function HeroBlock({
                 className={className}
                 data-width={width}
                 style={hasMedia ? undefined : { background: color }}
-                aria-labelledby="hero-title"
+                aria-labelledby={headingId}
             >
                 {hasImage ? (
                     imageEffect === 'fixed' ? (
@@ -148,7 +150,7 @@ export default function HeroBlock({
                                 </p>
                             ) : null}
 
-                            <h1 id="hero-title" className="hero-title">
+                            <h1 id={headingId} className="hero-title">
                                 {title}
                             </h1>
 

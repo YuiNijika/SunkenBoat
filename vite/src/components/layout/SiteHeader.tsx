@@ -39,6 +39,7 @@ export default function SiteHeader({ site, colorMode, widgets, api, showUserCent
     const { theme, toggle } = useTheme(colorMode);
     const location = useLocation();
     const headerRef = useRef<HTMLElement>(null);
+    const drawerRef = useRef<HTMLDivElement>(null);
     const [menuOpen, setMenuOpen] = useState(false);
     const [searchOpen, setSearchOpen] = useState(false);
     const [searchScope, setSearchScope] = useState<SearchScope | null>(null);
@@ -120,20 +121,63 @@ export default function SiteHeader({ site, colorMode, widgets, api, showUserCent
             return;
         }
 
+        const previousFocus = document.activeElement instanceof HTMLElement
+            ? document.activeElement
+            : null;
         const previousOverflow = document.body.style.overflow;
         document.body.style.overflow = 'hidden';
+
+        const focusableInDrawer = (): HTMLElement[] => {
+            const panel = drawerRef.current?.querySelector<HTMLElement>('.mobile-drawer-panel');
+            if (!panel) {
+                return [];
+            }
+
+            return Array.from(
+                panel.querySelectorAll<HTMLElement>(
+                    'a[href], button:not([disabled]), [tabindex]:not([tabindex="-1"])'
+                )
+            ).filter((element) => element.getClientRects().length > 0);
+        };
+
+        const frame = window.requestAnimationFrame(() => {
+            focusableInDrawer()[0]?.focus();
+        });
 
         const onKeyDown = (event: KeyboardEvent) => {
             if (event.key === 'Escape') {
                 setMenuOpen(false);
+                return;
+            }
+
+            if (event.key !== 'Tab') {
+                return;
+            }
+
+            const focusable = focusableInDrawer();
+            if (focusable.length === 0) {
+                return;
+            }
+
+            const first = focusable[0];
+            const last = focusable[focusable.length - 1];
+            const active = document.activeElement;
+            if (event.shiftKey && (active === first || !drawerRef.current?.contains(active))) {
+                event.preventDefault();
+                last.focus();
+            } else if (!event.shiftKey && active === last) {
+                event.preventDefault();
+                first.focus();
             }
         };
 
         document.addEventListener('keydown', onKeyDown);
 
         return () => {
+            window.cancelAnimationFrame(frame);
             document.body.style.overflow = previousOverflow;
             document.removeEventListener('keydown', onKeyDown);
+            previousFocus?.focus();
         };
     }, [menuOpen]);
 
@@ -328,7 +372,13 @@ export default function SiteHeader({ site, colorMode, widgets, api, showUserCent
 
             {menuOpen && typeof document !== 'undefined'
                 ? createPortal(
-                <div className="mobile-drawer lg:hidden" role="dialog" aria-modal="true" aria-label="移动导航">
+                <div
+                    ref={drawerRef}
+                    className="mobile-drawer lg:hidden"
+                    role="dialog"
+                    aria-modal="true"
+                    aria-label="移动导航"
+                >
                     <button
                         type="button"
                         className="mobile-drawer-backdrop"

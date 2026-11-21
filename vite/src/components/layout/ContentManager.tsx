@@ -1231,7 +1231,7 @@ export default function ContentManager({ api, profile }: Props) {
                     aria-label="搜索文章"
                 />
                 <select
-                    className="h-8 min-w-32 rounded-[4px] border border-line bg-surface px-2 text-[12px] text-ink outline-none"
+                    className="h-8 min-w-32 rounded-[4px] border border-line bg-surface px-2 text-[12px] text-ink outline-none transition-[border-color,box-shadow] focus-visible:border-brand focus-visible:ring-[3px] focus-visible:ring-brand/20"
                     value={articleFilter}
                     onChange={(event) =>
                         setArticleFilter(event.target.value as ArticleFilter)
@@ -1279,7 +1279,7 @@ export default function ContentManager({ api, profile }: Props) {
                     aria-label={`搜索${forumLabel}帖子`}
                 />
                 <select
-                    className="h-8 min-w-32 rounded-[4px] border border-line bg-surface px-2 text-[12px] text-ink outline-none"
+                    className="h-8 min-w-32 rounded-[4px] border border-line bg-surface px-2 text-[12px] text-ink outline-none transition-[border-color,box-shadow] focus-visible:border-brand focus-visible:ring-[3px] focus-visible:ring-brand/20"
                     value={topicFilter}
                     onChange={(event) => setTopicFilter(event.target.value as TopicFilter)}
                     aria-label="筛选帖子状态"
@@ -1437,7 +1437,7 @@ export default function ContentManager({ api, profile }: Props) {
                     <label className="grid gap-1 text-[10.5px] text-ink-faint">
                         帖子类型
                         <select
-                            className="h-8 min-w-32 rounded-[4px] border border-line bg-surface px-2 text-[12px] text-ink outline-none"
+                            className="h-8 min-w-32 rounded-[4px] border border-line bg-surface px-2 text-[12px] text-ink outline-none transition-[border-color,box-shadow] focus-visible:border-brand focus-visible:ring-[3px] focus-visible:ring-brand/20"
                             value={topicKind}
                             onChange={(event) => setTopicKind(event.target.value)}
                         >
@@ -1467,7 +1467,7 @@ export default function ContentManager({ api, profile }: Props) {
     };
 
     return (
-        <div className="content-manager">
+        <div className="content-manager min-w-0 grid-cols-[minmax(0,1fr)]">
             <div className="content-toolbar">
                 <div className="content-tabs" role="tablist" aria-label="内容管理视图">
                     {tabs.map((entry) => {
@@ -1587,7 +1587,7 @@ export default function ContentManager({ api, profile }: Props) {
                                 <label>
                                     <span>正文布局</span>
                                     <select
-                                        className="h-8 min-w-28 rounded-[4px] border border-line bg-surface px-2 text-[12px] text-ink outline-none"
+                                        className="h-8 min-w-28 rounded-[4px] border border-line bg-surface px-2 text-[12px] text-ink outline-none transition-[border-color,box-shadow] focus-visible:border-brand focus-visible:ring-[3px] focus-visible:ring-brand/20"
                                         value={batchLayout}
                                         onChange={(event) => setBatchLayout(event.target.value)}
                                     >

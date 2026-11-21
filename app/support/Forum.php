@@ -324,6 +324,7 @@ final class Forum
             }
 
             self::ensureTopicTagsColumn($db, $driver, $prefix);
+            self::ensureTopicDownloadColumn($db, $driver, $prefix);
             self::ensureCircleBackgroundColumn($db, $driver, $prefix);
             self::ensureTopicSoftDeleteColumns($db, $driver, $prefix);
             self::migrateLegacyTables($db, $driver, $prefix);
@@ -871,6 +872,7 @@ final class Forum
             'circle' => $topicCircle,
             'breadcrumbs' => self::topicBreadcrumbs($topic),
             'contentHtml' => self::markdown((string) $topic['rawContent']),
+            'download' => Downloads::offer('topic', (int) $topic['id'], (string) $topic['title']),
             'replies' => $replies,
             'replyCount' => (int) ($topic['comments'] ?? 0),
             'showAuthor' => $showAuthor,
@@ -1364,6 +1366,7 @@ final class Forum
                 'pinned' => (int) ($topicRow['pinned'] ?? 0) === 1,
                 'featured' => (int) ($topicRow['featured'] ?? 0) === 1,
                 'url' => self::topicUrl($topicRow),
+                'download' => self::topicDownloadConfig($topicRow),
             ];
         }
 
@@ -1377,6 +1380,8 @@ final class Forum
             'topicKinds' => self::topicKindOptions($values),
             'tagSuggestions' => self::popularTags(),
             'showTagInput' => ($values['Forum_Tag_Input'] ?? true) === true,
+            'downloadEnabled' => ($values['Downloads_Enabled'] ?? false) === true,
+            'paymentEnabled' => ($values['Downloads_Payment_Enabled'] ?? false) === true,
             'requiresReview' => !$editing
                 && ($values['Forum_Topic_Review'] ?? false) === true
                 && !in_array((string) ($viewer['group'] ?? ''), ['administrator', 'editor'], true),
@@ -1410,6 +1415,69 @@ final class Forum
             : (string) $gate['title'];
 
         return PageData::editorPage($title, $editor);
+    }
+
+    public static function downloadResource(int $topicId, int $uid): ?array
+    {
+        if ($topicId <= 0 || !self::enabled()) {
+            return null;
+        }
+
+        try {
+            $db = Db::get();
+            $row = $db->fetchRow(
+                $db->select('*')
+                    ->from('table.sunken_forum_topics')
+                    ->where('id = ?', $topicId)
+                    ->where('status = ?', 'publish')
+                    ->limit(1)
+            );
+        } catch (\Throwable) {
+            return null;
+        }
+
+        if (!is_array($row)) {
+            return null;
+        }
+
+        $circle = self::circleById((int) ($row['circle_id'] ?? 0), $uid);
+        $viewer = self::userInfo($uid);
+        $viewer['loggedIn'] = $uid > 0;
+        if ($circle === null || !self::canAccessCircle($circle, $viewer, 'view')) {
+            return null;
+        }
+
+        return [
+            'title' => (string) ($row['title'] ?? ''),
+            'url' => self::topicUrl($row),
+            'authorId' => (int) ($row['author_id'] ?? 0),
+            'config' => self::topicDownloadConfig($row),
+        ];
+    }
+
+    private static function topicDownloadConfig(array $row): array
+    {
+        $stored = $row['download'] ?? '';
+        $decoded = is_string($stored) && $stored !== '' ? json_decode($stored, true) : [];
+
+        return Downloads::normalizeConfig(is_array($decoded) ? $decoded : []);
+    }
+
+    private static function topicDownloadInput(mixed $input, ?array $previous = null): array
+    {
+        $download = Downloads::normalizeConfig($input);
+        $values = Settings::values();
+        $changed = $previous === null || $download !== $previous;
+        if ($changed && ($download['enabled'] || $download['url'] !== '')) {
+            if (($values['Downloads_Enabled'] ?? false) !== true) {
+                Response::error('下载功能尚未开启', 403);
+            }
+            if ($download['enabled'] && $download['paid'] && ($values['Downloads_Payment_Enabled'] ?? false) !== true) {
+                Response::error('付费下载尚未开启', 403);
+            }
+        }
+
+        return $download;
     }
 
     /**
@@ -1636,7 +1704,7 @@ final class Forum
         $status = $review ? 'waiting' : 'publish';
         $now = time();
         $db = Db::get();
-        $id = (int) $db->query($db->insert('table.sunken_forum_topics')->rows([
+        $rows = [
             'circle_id' => $circleId,
             'author_id' => (int) $viewer['uid'],
             'title' => $title,
@@ -1654,7 +1722,14 @@ final class Forum
             'created' => $now,
             'updated' => $now,
             'last_reply_at' => $now,
-        ]));
+        ];
+        if (array_key_exists('download', $data)) {
+            $download = self::topicDownloadInput($data['download']);
+            if ($download['enabled'] || $download['url'] !== '') {
+                $rows['download'] = json_encode($download, JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR);
+            }
+        }
+        $id = (int) $db->query($db->insert('table.sunken_forum_topics')->rows($rows));
 
         if ($id <= 0) {
             Response::error('发布帖子失败', 500);
@@ -1749,6 +1824,13 @@ final class Forum
             'tags' => self::encodeTopicTags($tags),
             'updated' => time(),
         ];
+        if (array_key_exists('download', $data)) {
+            $previous = self::topicDownloadConfig($row);
+            $download = self::topicDownloadInput($data['download'], $previous);
+            if ($download !== $previous) {
+                $fields['download'] = json_encode($download, JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR);
+            }
+        }
         $oldStatus = (string) ($row['status'] ?? 'publish');
         if (self::permissions($viewer)['moderate']) {
             if (array_key_exists('status', $data)) {
@@ -4180,6 +4262,45 @@ final class Forum
         }
     }
 
+    private static function ensureTopicDownloadColumn(Db $db, string $driver, string $prefix): void
+    {
+        $table = $prefix . 'sunken_forum_topics';
+        $exists = false;
+
+        if ($driver === 'sqlite') {
+            $name = str_replace('"', '', $table);
+            foreach ($db->fetchAll('PRAGMA table_info("' . $name . '")') as $column) {
+                if (is_array($column) && ($column['name'] ?? '') === 'download') {
+                    $exists = true;
+                    break;
+                }
+            }
+        } elseif ($driver === 'mysql') {
+            $name = str_replace('`', '', $table);
+            $exists = $db->fetchRow("SHOW COLUMNS FROM `{$name}` LIKE 'download'") !== null;
+        } elseif ($driver === 'pgsql') {
+            $name = str_replace("'", "''", $table);
+            $exists = $db->fetchRow(
+                "SELECT column_name FROM information_schema.columns
+                WHERE table_schema = current_schema()
+                  AND table_name = '{$name}'
+                  AND column_name = 'download'
+                LIMIT 1"
+            ) !== null;
+        } else {
+            return;
+        }
+
+        if ($exists) {
+            return;
+        }
+
+        $sql = $driver === 'mysql'
+            ? 'ALTER TABLE `' . str_replace('`', '', $table) . '` ADD COLUMN `download` TEXT NULL'
+            : 'ALTER TABLE "' . str_replace('"', '', $table) . '" ADD COLUMN "download" TEXT NOT NULL DEFAULT \'\'';
+        $db->query($sql, Db::WRITE, '');
+    }
+
     private static function ensureCircleBackgroundColumn(Db $db, string $driver, string $prefix): void
     {
         $table = $prefix . 'sunken_forum_circles';
@@ -4397,6 +4518,7 @@ final class Forum
                     "content" TEXT NOT NULL,
                     "kind" TEXT NOT NULL DEFAULT \'discussion\',
                     "tags" TEXT NOT NULL DEFAULT \'\',
+                    "download" TEXT NOT NULL DEFAULT \'\',
                     "status" TEXT NOT NULL DEFAULT \'publish\',
                     "deleted_at" INTEGER NOT NULL DEFAULT 0,
                     "deleted_from" TEXT NOT NULL DEFAULT \'\',
@@ -4483,6 +4605,7 @@ final class Forum
                     "content" TEXT NOT NULL,
                     "kind" VARCHAR(16) NOT NULL DEFAULT \'discussion\',
                     "tags" TEXT NOT NULL DEFAULT \'\',
+                    "download" TEXT NOT NULL DEFAULT \'\',
                     "status" VARCHAR(16) NOT NULL DEFAULT \'publish\',
                     "deleted_at" INTEGER NOT NULL DEFAULT 0,
                     "deleted_from" VARCHAR(16) NOT NULL DEFAULT \'\',
@@ -4569,6 +4692,7 @@ final class Forum
                 `content` MEDIUMTEXT NOT NULL,
                 `kind` VARCHAR(16) NOT NULL DEFAULT \'discussion\',
                 `tags` TEXT NULL,
+                `download` TEXT NULL,
                 `status` VARCHAR(16) NOT NULL DEFAULT \'publish\',
                 `deleted_at` INT UNSIGNED NOT NULL DEFAULT 0,
                 `deleted_from` VARCHAR(16) NOT NULL DEFAULT \'\',

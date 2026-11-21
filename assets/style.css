@@ -1771,7 +1771,19 @@ a.comment-author:hover {
 .content-manager,
 .content-editor {
     display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    min-width: 0;
     gap: 16px;
+}
+
+.content-toolbar,
+.content-tabs,
+.content-toolbar-actions,
+.content-overview,
+.content-dashboard,
+.content-dashboard-grid,
+.content-dashboard-panel {
+    min-width: 0;
 }
 
 .content-toolbar {
@@ -2414,6 +2426,19 @@ a.comment-author:hover {
 
     .content-toolbar-actions {
         width: 100%;
+    }
+
+    .account-tabs {
+        gap: 3px;
+        padding: 4px;
+    }
+
+    .account-tabs a {
+        min-width: 0;
+        flex: 1 1 0;
+        gap: 5px;
+        padding: 8px 6px;
+        font-size: 12px;
     }
 
     .content-overview {
@@ -8822,4 +8847,12 @@ a.feature-card:hover {
 .media-tile img,
 .user-space-post-thumb img {
     will-change: transform;
+}
+
+@media (max-width: 640px) {
+    .content-tabs {
+        width: 100%;
+        flex-wrap: wrap;
+        overflow: visible;
+    }
 }

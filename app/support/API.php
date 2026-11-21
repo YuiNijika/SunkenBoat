@@ -67,6 +67,7 @@ final class API
 
         try {
             $data = match ($endpoint) {
+                'payment/notify' => null,
                 'sidebar' => PageData::sidebarData(),
                 'site' => PageData::siteCard(),
                 'categories' => PageData::categoriesData(),
@@ -82,6 +83,9 @@ final class API
         }
 
         if ($data === null) {
+            if ($endpoint === 'payment/notify') {
+                Downloads::paymentNotify();
+            }
             Response::error('Endpoint not found', 404);
         }
 

@@ -114,6 +114,7 @@ export default function BlockRenderer({ block }: Props) {
                     variant={block.variant}
                     title={block.title}
                     anchor={block.anchor}
+                    source={block.source}
                     posts={block.posts}
                     paginationHtml={block.paginationHtml}
                     empty={block.empty}
@@ -155,6 +156,7 @@ export default function BlockRenderer({ block }: Props) {
                     layout={block.layout}
                     html={block.html}
                     codeCopy={block.codeCopy}
+                    download={block.download}
                 />
             );
         case 'tags':

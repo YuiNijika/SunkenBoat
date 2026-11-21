@@ -19,6 +19,7 @@ import {
 } from '../ui/dropdown-menu';
 import AuthDialog from './AuthDialog';
 import UserAvatar from './UserAvatar';
+import { refreshApp } from '../../lib/appNavigation';
 import { notifyError, notifySuccess } from '../../lib/notify';
 import { errorMessage, profileFrom, readPayload } from '../../lib/user';
 import type { SiteInfo, UserApiEndpoints, UserProfile } from '../../types';
@@ -186,6 +187,7 @@ export default function UserCenter({ api, show, site }: Props) {
             setUser(null);
             setMenuOpen(false);
             window.dispatchEvent(new Event('ttdf:auth-changed'));
+            refreshApp();
             notifySuccess('已退出登录。');
         } catch (reason) {
             notifyError(reason instanceof Error ? reason.message : '退出登录失败');
@@ -197,6 +199,7 @@ export default function UserCenter({ api, show, site }: Props) {
     const hydrateProfile = async (next: UserProfile) => {
         setUser(next);
         window.dispatchEvent(new Event('ttdf:auth-changed'));
+        refreshApp();
 
         if (!api?.profile || !api.profileNonce) {
             return;

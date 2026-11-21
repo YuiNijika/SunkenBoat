@@ -2,11 +2,13 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import type { FormEvent, KeyboardEvent } from 'react';
 import {
     ArrowLeft,
-    CalendarDays,
-    ChevronDown,
+    Blocks,
+    CheckCircle2,
     CircleDot,
+    Clock3,
     Columns2,
     Eye,
+    FileText,
     ImagePlus,
     Layers3,
     Link2,
@@ -21,6 +23,10 @@ import {
 import { renderMarkdown } from '../../lib/markdown';
 import { flashNotify, notifyError, notifySuccess } from '../../lib/notify';
 import { navigateApp } from '../../lib/appNavigation';
+import type { DownloadConfig } from '../../lib/downloads';
+import ComponentLibrary from '../content/ComponentLibrary';
+import DownloadSettings, { downloadConfigError } from '../content/DownloadSettings';
+import MetaBox from '../content/EditorMetaBox';
 import MarkdownToolbar from '../content/MarkdownToolbar';
 import MediaLibrary from '../content/MediaLibrary';
 import { Badge } from '../ui/badge';
@@ -28,9 +34,10 @@ import { Button } from '../ui/button';
 import { Checkbox } from '../ui/checkbox';
 import { Input } from '../ui/input';
 import { Textarea } from '../ui/textarea';
-import type { MediaItem, PageData } from '../../types';
+import type { ForumEditorData, MediaItem, PageData } from '../../types';
 
 type ViewMode = 'write' | 'split' | 'preview';
+const EXCLUDED_COMPONENTS: Array<'login' | 'reply'> = ['login', 'reply'];
 
 function countWords(value: string): { chars: number; words: number; minutes: number } {
     const text = value.trim();
@@ -62,18 +69,6 @@ function insertAtCursor(
         const cursor = start + snippet.length;
         textarea.setSelectionRange(cursor, cursor);
     });
-}
-
-function MetaBox({ title, children }: { title: string; children: React.ReactNode }) {
-    return (
-        <details className="editor-meta-box" open>
-            <summary className="editor-meta-head">
-                <span>{title}</span>
-                <ChevronDown className="size-3.5" strokeWidth={1.8} aria-hidden="true" />
-            </summary>
-            <div className="editor-meta-body">{children}</div>
-        </details>
-    );
 }
 
 export default function ForumTopicEditor({ data }: { data: PageData }) {
@@ -113,6 +108,10 @@ export default function ForumTopicEditor({ data }: { data: PageData }) {
         );
     }
 
+    return <TopicEditor key={editor.topic?.id ?? 'new'} editor={editor} />;
+}
+
+function TopicEditor({ editor }: { editor: ForumEditorData }) {
     const editing = editor.isEdit && editor.topic !== null;
     const topic = editor.topic;
     const initial = useMemo(
@@ -126,6 +125,12 @@ export default function ForumTopicEditor({ data }: { data: PageData }) {
             status: topic?.status ?? 'publish',
             pinned: topic?.pinned ?? false,
             featured: topic?.featured ?? false,
+            download: topic?.download ?? {
+                enabled: false,
+                url: '',
+                paid: false,
+                price: '0.00',
+            },
         }),
         [editor, topic]
     );
@@ -140,8 +145,10 @@ export default function ForumTopicEditor({ data }: { data: PageData }) {
     const [status, setStatus] = useState(initial.status);
     const [pinned, setPinned] = useState(initial.pinned);
     const [featured, setFeatured] = useState(initial.featured);
+    const [download, setDownload] = useState<DownloadConfig>(initial.download);
     const [viewMode, setViewMode] = useState<ViewMode>('split');
     const [mediaOpen, setMediaOpen] = useState(false);
+    const [libraryOpen, setLibraryOpen] = useState(false);
     const [uploading, setUploading] = useState(false);
     const [submitting, setSubmitting] = useState(false);
     const [pending, setPending] = useState(false);
@@ -151,17 +158,40 @@ export default function ForumTopicEditor({ data }: { data: PageData }) {
     const stats = useMemo(() => countWords(content), [content]);
     const previewHtml = useMemo(() => renderMarkdown(content), [content]);
     const circle = editor.circles.find((item) => item.id === selectedCircle) ?? editor.circle;
-    const dirty =
-        selectedCircle !== initial.circle
-        || kind !== initial.kind
-        || tags.join('\n') !== initial.tags.join('\n')
-        || title !== initial.title
-        || slug !== initial.slug
-        || content !== initial.content
-        || status !== initial.status
-        || pinned !== initial.pinned
-        || featured !== initial.featured;
+    const snapshot = JSON.stringify({
+        circle: selectedCircle,
+        kind,
+        tags,
+        title,
+        slug,
+        content,
+        status,
+        pinned,
+        featured,
+        download,
+    });
+    const [savedSnapshot, setSavedSnapshot] = useState(() => JSON.stringify(initial));
+    const dirty = snapshot !== savedSnapshot;
     const resubmitting = editing && status === 'rejected' && !editor.canModerate;
+    const statusLabel = editing || pending
+        ? status === 'waiting' || pending
+            ? '待审核'
+            : status === 'rejected'
+              ? '已驳回'
+              : status === 'publish'
+                ? '已发布'
+                : status
+        : '未发布';
+    const publishLabel = submitting
+        ? editing
+            ? '保存中…'
+            : '发布中…'
+        : resubmitting
+          ? '重新提交审核'
+          : editing
+            ? '更新帖子'
+            : '发布帖子';
+    const submitDisabled = submitting || uploading || (pending && !dirty);
 
     const addTag = (value = tagInput) => {
         const next = value
@@ -214,9 +244,13 @@ export default function ForumTopicEditor({ data }: { data: PageData }) {
         return () => window.removeEventListener('beforeunload', onBeforeUnload);
     }, [dirty, submitting]);
 
+    const insertSnippet = (snippet: string) => {
+        insertAtCursor(textareaRef.current, content, setContent, snippet);
+    };
+
     const insertMedia = (item: MediaItem) => {
         const alt = item.title.replace(/[[\]]/g, '').trim();
-        insertAtCursor(textareaRef.current, content, setContent, `\n![${alt}](${item.url})\n`);
+        insertSnippet(`\n![${alt}](${item.url})\n`);
     };
 
     const uploadFiles = async (files: File[]) => {
@@ -263,7 +297,7 @@ export default function ForumTopicEditor({ data }: { data: PageData }) {
     };
 
     const submit = async () => {
-        if (submitting) {
+        if (submitDisabled) {
             return;
         }
         if (selectedCircle <= 0) {
@@ -276,6 +310,12 @@ export default function ForumTopicEditor({ data }: { data: PageData }) {
         }
         if (content.trim() === '') {
             notifyError('正文不能为空。');
+            return;
+        }
+
+        const downloadError = downloadConfigError(download);
+        if (downloadError) {
+            notifyError(downloadError);
             return;
         }
 
@@ -300,6 +340,7 @@ export default function ForumTopicEditor({ data }: { data: PageData }) {
                     title: title.trim(),
                     slug: slug.trim(),
                     content,
+                    download,
                     ...(editing && editor.canModerate
                         ? { status, pinned, featured }
                         : {}),
@@ -311,6 +352,8 @@ export default function ForumTopicEditor({ data }: { data: PageData }) {
             if (!response.ok) {
                 throw new Error(payload?.message || '发布失败，请稍后再试。');
             }
+
+            setSavedSnapshot(snapshot);
 
             const result =
                 payload?.data && typeof payload.data === 'object'
@@ -336,13 +379,6 @@ export default function ForumTopicEditor({ data }: { data: PageData }) {
                 setPending(true);
                 setPendingMessage(message);
                 notifySuccess(message);
-                if (!editing) {
-                    setTitle('');
-                    setSlug('');
-                    setContent('');
-                    setTags([]);
-                    setTagInput('');
-                }
                 return;
             }
             const url = typeof result?.url === 'string' ? result.url : '';
@@ -381,62 +417,42 @@ export default function ForumTopicEditor({ data }: { data: PageData }) {
                         <div className="editor-topbar-left">
                             <a
                                 className="editor-back"
-                                href={editing && topic ? topic.url : editor.homeUrl}
+                                href={editor.contentUrl || editor.homeUrl}
                             >
                                 <ArrowLeft aria-hidden="true" />
                                 <span>
-                                    {editing && circle ? circle.name : editor.displayName}
+                                    内容管理
                                 </span>
                             </a>
                             <span className="editor-topbar-sep" aria-hidden="true">
                                 /
                             </span>
                             <span className="editor-topbar-doc">
-                                {editing ? '编辑帖子' : '发布新帖'}
+                                {editing ? '编辑帖子' : '新建帖子'}
                             </span>
-                            <Badge variant="secondary">{editing ? '编辑' : '新帖'}</Badge>
-                            {editing && status !== 'publish' ? (
-                                <Badge variant="outline">
-                                    {status === 'waiting'
-                                        ? '待审核'
-                                        : status === 'rejected'
-                                          ? '已驳回'
-                                          : status}
-                                </Badge>
-                            ) : null}
+                            <Badge variant={editing && status === 'publish' ? 'default' : 'secondary'}>
+                                {statusLabel}
+                            </Badge>
                             {dirty ? (
                                 <span className="editor-dirty">
-                                    {editing ? '未保存' : '未发布'}
+                                    未保存
                                 </span>
                             ) : null}
                         </div>
                         <div className="editor-toolbar-actions">
-                            <Button type="submit" size="sm" disabled={submitting || uploading}>
+                            <Button type="submit" size="sm" disabled={submitDisabled}>
                                 {submitting ? (
                                     <LoaderCircle className="animate-spin" aria-hidden="true" />
                                 ) : (
                                     <Send aria-hidden="true" />
                                 )}
-                                {submitting
-                                    ? editing
-                                        ? '保存中…'
-                                        : '发布中…'
-                                    : resubmitting
-                                      ? '重新提交审核'
-                                      : editing
-                                      ? '保存修改'
-                                      : '发布帖子'}
+                                {publishLabel}
                             </Button>
                         </div>
                     </div>
                     <div className="editor-topbar-sub">
                         <span>
-                            {circle
-                                ? editing
-                                    ? `编辑于 ${circle.name}`
-                                    : `发布到 ${circle.name}`
-                                : '圈子发帖'}{' '}
-                            · Markdown · 媒体库
+                            Markdown 写作 · 组件库 · 媒体库 · 帖子设置
                         </span>
                         <span className="editor-shortcut">
                             <kbd>Ctrl</kbd>+<kbd>Enter</kbd> {editing ? '保存' : '发布'}
@@ -476,7 +492,7 @@ export default function ForumTopicEditor({ data }: { data: PageData }) {
                                     placeholder="输入帖子标题"
                                     maxLength={editor.maxTitleLength}
                                     aria-label="帖子标题"
-                                    autoFocus
+                                    autoFocus={!editing}
                                 />
                                 <div className="editor-document-meta">
                                     <span>
@@ -484,8 +500,8 @@ export default function ForumTopicEditor({ data }: { data: PageData }) {
                                         {editor.viewer.screenName || editor.viewer.name}
                                     </span>
                                     <span>
-                                        <CalendarDays className="size-3.5" strokeWidth={1.8} aria-hidden="true" />
-                                        草稿
+                                        <FileText className="size-3.5" strokeWidth={1.8} aria-hidden="true" />
+                                        {statusLabel}
                                     </span>
                                     <span>{stats.chars} 字</span>
                                     <span>{stats.words} 词</span>
@@ -500,6 +516,11 @@ export default function ForumTopicEditor({ data }: { data: PageData }) {
                                         maxLength={editor.maxSlugLength}
                                         aria-label="帖子固定链接"
                                     />
+                                    {editing && topic ? (
+                                        <a href={topic.url} target="_blank" rel="noreferrer">
+                                            预览
+                                        </a>
+                                    ) : null}
                                 </div>
                             </section>
 
@@ -534,8 +555,22 @@ export default function ForumTopicEditor({ data }: { data: PageData }) {
                                             预览
                                         </button>
                                     </div>
-                                    <div className="editor-stats">
-                                        <span>约 {stats.minutes} 分钟</span>
+                                    <div className="editor-writing-tools">
+                                        <Button
+                                            type="button"
+                                            variant="outline"
+                                            size="xs"
+                                            onClick={() => setLibraryOpen(true)}
+                                            disabled={submitting}
+                                        >
+                                            <Blocks aria-hidden="true" />
+                                            组件
+                                        </Button>
+                                        <div className="editor-stats">
+                                            <span>{stats.chars} 字</span>
+                                            <span>{stats.words} 词</span>
+                                            <span>约 {stats.minutes} 分钟</span>
+                                        </div>
                                     </div>
                                 </div>
 
@@ -546,11 +581,17 @@ export default function ForumTopicEditor({ data }: { data: PageData }) {
                                         (dragging ? ' is-dragging' : '')
                                     }
                                     onDragOver={(event) => {
+                                        if (!editor.canUseMedia || !event.dataTransfer.types.includes('Files')) {
+                                            return;
+                                        }
                                         event.preventDefault();
                                         setDragging(true);
                                     }}
                                     onDragLeave={() => setDragging(false)}
                                     onDrop={(event) => {
+                                        if (!editor.canUseMedia || !event.dataTransfer.types.includes('Files')) {
+                                            return;
+                                        }
                                         event.preventDefault();
                                         setDragging(false);
                                         void uploadFiles(Array.from(event.dataTransfer.files ?? []));
@@ -577,12 +618,12 @@ export default function ForumTopicEditor({ data }: { data: PageData }) {
                                                     const files = Array.from(
                                                         event.clipboardData.files ?? []
                                                     ).filter((file) => file.type.startsWith('image/'));
-                                                    if (files.length > 0) {
+                                                    if (files.length > 0 && editor.canUseMedia) {
                                                         event.preventDefault();
                                                         void uploadFiles(files);
                                                     }
                                                 }}
-                                                placeholder="写下帖子正文…支持 Markdown、图片与代码块，可直接拖拽或粘贴图片上传。"
+                                                placeholder="开始写作…支持 Markdown、组件、代码块与图片。"
                                                 aria-label="帖子正文"
                                                 spellCheck={false}
                                                 maxLength={editor.maxLength}
@@ -615,9 +656,23 @@ export default function ForumTopicEditor({ data }: { data: PageData }) {
 
                                 <div className="editor-writing-foot">
                                     <span>
-                                        {uploading ? '图片上传中…' : '支持 Markdown、拖拽上传与媒体库'}
+                                        {uploading
+                                            ? '图片上传中…'
+                                            : editor.canUseMedia
+                                              ? '支持拖拽、粘贴、组件与媒体库'
+                                              : '支持 Markdown 与组件'}
                                     </span>
                                     <div className="editor-writing-foot-actions">
+                                        <Button
+                                            type="button"
+                                            variant="ghost"
+                                            size="xs"
+                                            onClick={() => setLibraryOpen(true)}
+                                            disabled={submitting}
+                                        >
+                                            <Blocks aria-hidden="true" />
+                                            插入组件
+                                        </Button>
                                         {editor.canUseMedia ? (
                                             <Button
                                                 type="button"
@@ -628,18 +683,52 @@ export default function ForumTopicEditor({ data }: { data: PageData }) {
                                                 <ImagePlus aria-hidden="true" />
                                                 媒体库
                                             </Button>
-                                        ) : (
-                                            <span className="text-[10.5px] text-ink-faint">
-                                                当前账号无媒体库权限
-                                            </span>
-                                        )}
+                                        ) : null}
                                     </div>
                                 </div>
                             </section>
                         </div>
 
                         <aside className="editor-sidebar">
-                            <MetaBox title="发布设置">
+                            <MetaBox title="发布">
+                                <div className="editor-publish-state">
+                                    <span>
+                                        {editing && status === 'publish' ? (
+                                            <CheckCircle2 aria-hidden="true" />
+                                        ) : (
+                                            <Clock3 aria-hidden="true" />
+                                        )}
+                                        状态
+                                    </span>
+                                    <Badge variant={editing && status === 'publish' ? 'default' : 'secondary'}>
+                                        {statusLabel}
+                                    </Badge>
+                                </div>
+                                <p className="editor-meta-note">
+                                    作者：{editor.viewer.screenName || editor.viewer.name}
+                                </p>
+                                {editor.requiresReview ? (
+                                    <p className="editor-meta-note">
+                                        发布后需要管理员审核，审核通过前仅你和管理员可见。
+                                    </p>
+                                ) : null}
+                                <div className="editor-publish-actions">
+                                    <Button type="submit" size="sm" disabled={submitDisabled}>
+                                        <Send aria-hidden="true" />
+                                        {publishLabel}
+                                    </Button>
+                                </div>
+                            </MetaBox>
+
+                            <DownloadSettings
+                                value={download}
+                                enabled={editor.downloadEnabled}
+                                paymentEnabled={editor.paymentEnabled}
+                                disabled={submitting}
+                                onChange={setDownload}
+                            />
+
+                            <MetaBox title="帖子设置">
                                 <div className="grid gap-3">
                                     <label className="editor-field">
                                         <span className="editor-field-head">发布到圈子</span>
@@ -731,11 +820,6 @@ export default function ForumTopicEditor({ data }: { data: PageData }) {
                                         </div>
                                     ) : null}
 
-                                    {editor.requiresReview ? (
-                                        <p className="editor-meta-note">
-                                            发布后需要管理员审核，审核通过前仅你和管理员可见。
-                                        </p>
-                                    ) : null}
                                 </div>
                             </MetaBox>
 
@@ -819,6 +903,29 @@ export default function ForumTopicEditor({ data }: { data: PageData }) {
                     </div>
                 </div>
             </form>
+
+            <div className="editor-mobile-bar">
+                <Button
+                    type="button"
+                    size="sm"
+                    disabled={submitDisabled}
+                    onClick={() => void submit()}
+                >
+                    {submitting ? (
+                        <LoaderCircle className="animate-spin" aria-hidden="true" />
+                    ) : (
+                        <Send aria-hidden="true" />
+                    )}
+                    {publishLabel}
+                </Button>
+            </div>
+
+            <ComponentLibrary
+                open={libraryOpen}
+                onOpenChange={setLibraryOpen}
+                onInsert={insertSnippet}
+                excluded={EXCLUDED_COMPONENTS}
+            />
 
             <MediaLibrary
                 open={mediaOpen}
