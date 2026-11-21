@@ -1869,6 +1869,7 @@ final class Forum
         if ((string) ($topic['status'] ?? '') === 'deleted') {
             Response::error('帖子在回收站中，暂时无法回复', 403);
         }
+        self::assertTopicCircleAccess($topic, $viewer, '请先加入圈子后再回复');
 
         $content = self::longText($data['content'] ?? '', 5000);
         if ($content === '') {
@@ -1981,6 +1982,7 @@ final class Forum
         if ((string) ($topic['status'] ?? '') === 'deleted') {
             Response::error('帖子在回收站中，暂时无法互动', 403);
         }
+        self::assertTopicCircleAccess($topic, $viewer, '请先加入圈子后再互动');
 
         $type = strtolower(trim((string) ($data['type'] ?? 'like')));
         if (!in_array($type, ['like', 'favorite'], true)) {
@@ -2049,6 +2051,7 @@ final class Forum
         if ((string) ($topic['status'] ?? '') === 'deleted') {
             Response::error('帖子在回收站中，暂时无法评分', 403);
         }
+        self::assertTopicCircleAccess($topic, $viewer, '请先加入圈子后再评分');
 
         $value = self::intValue($data['value'] ?? 0);
         if ($value < 0) {
@@ -2251,6 +2254,80 @@ final class Forum
         }
 
         return ($circle['joined'] ?? false) === true;
+    }
+
+    /**
+     * Reject interactions with topics in circles that the current viewer may
+     * not read. Circle pages already render a join gate, but write endpoints
+     * are reachable directly and must enforce the same rule.
+     *
+     * @param array<string, mixed> $topic
+     * @param array<string, mixed> $viewer
+     */
+    private static function assertTopicCircleAccess(array $topic, array $viewer, string $message): void
+    {
+        if ((Settings::values()['Forum_Join_To_View'] ?? false) !== true) {
+            return;
+        }
+
+        if (in_array((string) ($viewer['group'] ?? ''), ['editor', 'administrator'], true)) {
+            return;
+        }
+
+        $circle = self::circleById((int) ($topic['circle_id'] ?? 0), (int) ($viewer['uid'] ?? 0));
+        if ($circle === null || !self::canAccessCircle($circle, $viewer, 'view')) {
+            Response::error($message, 403);
+        }
+    }
+
+    /**
+     * Circle ids that the current viewer may browse, or null when the
+     * join-to-view rule is disabled (and therefore every published circle is
+     * visible). An empty list means the viewer cannot browse any circle.
+     *
+     * @return list<int>|null
+     */
+    private static function visibleCircleIds(): ?array
+    {
+        if ((Settings::values()['Forum_Join_To_View'] ?? false) !== true) {
+            return null;
+        }
+
+        $viewer = self::currentUser();
+        if (in_array((string) ($viewer['group'] ?? ''), ['editor', 'administrator'], true)) {
+            return null;
+        }
+
+        $uid = (int) ($viewer['uid'] ?? 0);
+        if ($uid <= 0) {
+            return [];
+        }
+
+        $ids = array_keys(self::joinedCircleIds($uid));
+        try {
+            $db = Db::get();
+            $rows = $db->fetchAll(
+                $db->select('id')
+                    ->from('table.sunken_forum_circles')
+                    ->where('owner_id = ?', $uid)
+                    ->where('status = ?', 'publish')
+            );
+            foreach ($rows as $row) {
+                if (is_array($row)) {
+                    $id = (int) ($row['id'] ?? 0);
+                    if ($id > 0) {
+                        $ids[] = $id;
+                    }
+                }
+            }
+        } catch (\Throwable) {
+            return [];
+        }
+
+        $ids = array_values(array_unique(array_filter(array_map('intval', $ids))));
+        sort($ids);
+
+        return $ids;
     }
 
     /**
@@ -2902,6 +2979,18 @@ final class Forum
                 $countQuery->where('author_id = ?', $authorId);
             }
 
+            $visibleCircleIds = self::visibleCircleIds();
+            if ($visibleCircleIds !== null) {
+                if ($visibleCircleIds === []) {
+                    return [
+                        'items' => [],
+                        'pager' => self::pager($page, $perPage, 0),
+                    ];
+                }
+                $query->where('circle_id IN ?', $visibleCircleIds);
+                $countQuery->where('circle_id IN ?', $visibleCircleIds);
+            }
+
             $query->order('pinned', Db::SORT_DESC);
             if ($recommended) {
                 $query->order('created', Db::SORT_DESC)->limit(400);
@@ -3201,13 +3290,21 @@ final class Forum
      */
     private static function hotTopics(int $limit, int $viewerUid): array
     {
+        $visibleCircleIds = self::visibleCircleIds();
+        if ($visibleCircleIds === []) {
+            return [];
+        }
+
         try {
             $db = Db::get();
+            $query = $db->select('*')
+                ->from('table.sunken_forum_topics')
+                ->where('status = ?', 'publish');
+            if ($visibleCircleIds !== null) {
+                $query->where('circle_id IN ?', $visibleCircleIds);
+            }
             $rows = $db->fetchAll(
-                $db->select('*')
-                    ->from('table.sunken_forum_topics')
-                    ->where('status = ?', 'publish')
-                    ->order('views', Db::SORT_DESC)
+                $query->order('views', Db::SORT_DESC)
                     ->order('comments', Db::SORT_DESC)
                     ->order('last_reply_at', Db::SORT_DESC)
                     ->limit($limit)
@@ -3556,13 +3653,21 @@ final class Forum
      */
     private static function topAuthors(int $limit): array
     {
+        $visibleCircleIds = self::visibleCircleIds();
+        if ($visibleCircleIds === []) {
+            return [];
+        }
+
         try {
             $db = Db::get();
+            $query = $db->select('author_id', 'COUNT(*) AS num')
+                ->from('table.sunken_forum_topics')
+                ->where('status = ?', 'publish');
+            if ($visibleCircleIds !== null) {
+                $query->where('circle_id IN ?', $visibleCircleIds);
+            }
             $rows = $db->fetchAll(
-                $db->select('author_id', 'COUNT(*) AS num')
-                    ->from('table.sunken_forum_topics')
-                    ->where('status = ?', 'publish')
-                    ->group('author_id')
+                $query->group('author_id')
                     ->order('num', Db::SORT_DESC)
                     ->limit($limit)
             );

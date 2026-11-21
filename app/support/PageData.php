@@ -3959,7 +3959,7 @@ final class PageData
      * `![alt](url)` form. Lazy-loaded markup often keeps the real URL in
      * `data-src`/`data-original`, which is preferred over a placeholder `src`.
      */
-    private static function firstBodyImage(string $text, string $siteUrl): string
+    public static function firstBodyImage(string $text, string $siteUrl): string
     {
         $candidates = [];
 
@@ -3982,6 +3982,37 @@ final class PageData
             }
         }
 
+        $references = [];
+        $definition = '/^\s{0,3}\[([^\]]+)\]:\s*<?([^\s>]+)>?(?:\s+(?:"[^"]*"|\'[^\']*\'|\([^)]*\)))?\s*$/mu';
+        if (preg_match_all($definition, $text, $definitions, PREG_SET_ORDER) > 0) {
+            foreach ($definitions as $match) {
+                $label = self::referenceLabel((string) ($match[1] ?? ''));
+                $url = (string) ($match[2] ?? '');
+                if ($label !== '' && $url !== '') {
+                    $references[$label] = $url;
+                }
+            }
+        }
+
+        if (
+            $references !== []
+            && preg_match_all('/!\[([^\]]*)\]\[([^\]]*)\]/u', $text, $images, PREG_OFFSET_CAPTURE) > 0
+        ) {
+            foreach ($images[1] as $index => $alt) {
+                $label = (string) ($images[2][$index][0] ?? '');
+                if ($label === '') {
+                    $label = (string) $alt[0];
+                }
+                $url = $references[self::referenceLabel($label)] ?? '';
+                if ($url !== '') {
+                    $candidates[] = [
+                        'offset' => (int) ($images[0][$index][1] ?? 0),
+                        'url' => $url,
+                    ];
+                }
+            }
+        }
+
         usort(
             $candidates,
             static fn (array $left, array $right): int => $left['offset'] <=> $right['offset']
@@ -3995,6 +4026,15 @@ final class PageData
         }
 
         return '';
+    }
+
+    private static function referenceLabel(string $label): string
+    {
+        $label = trim($label);
+
+        return function_exists('mb_strtolower')
+            ? mb_strtolower($label, 'UTF-8')
+            : strtolower($label);
     }
 
     private static function imageUrlFromTag(string $tag): string

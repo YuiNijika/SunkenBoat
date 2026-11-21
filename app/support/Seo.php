@@ -326,41 +326,11 @@ final class Seo
         }
 
         $text = self::str($archive->text ?? '');
-        if ($text === '' || preg_match('/<img\b[^>]*\bsrc\s*=\s*(?:"([^"]+)"|\'([^\']+)\')/i', $text, $matches) !== 1) {
+        if ($text === '') {
             return '';
         }
 
-        $src = html_entity_decode(
-            trim(($matches[1] ?? '') !== '' ? $matches[1] : ($matches[2] ?? '')),
-            ENT_QUOTES | ENT_HTML5,
-            'UTF-8'
-        );
-        if ($src === '') {
-            return '';
-        }
-
-        if (str_starts_with($src, '//')) {
-            $scheme = (string) (parse_url(\TTDF\Compat\Typecho::siteUrl(), PHP_URL_SCHEME) ?: 'https');
-
-            return $scheme . ':' . $src;
-        }
-
-        if (preg_match('#^https?://#i', $src) === 1) {
-            return $src;
-        }
-
-        if (preg_match('#^[a-z][a-z0-9+.-]*:#i', $src) === 1) {
-            return '';
-        }
-
-        $site = rtrim(\TTDF\Compat\Typecho::siteUrl(), '/');
-        if ($site === '') {
-            return '';
-        }
-
-        return str_starts_with($src, '/')
-            ? $site . $src
-            : $site . '/' . ltrim($src, '/');
+        return PageData::firstBodyImage($text, \TTDF\Compat\Typecho::siteUrl());
     }
 
     private static function timestamp(int $value): string

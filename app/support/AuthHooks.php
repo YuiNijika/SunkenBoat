@@ -39,7 +39,7 @@ final class AuthHooks
         Hooks::addFilter('rest.v2.email_code.interval', [self::class, 'interval']);
         Hooks::addFilter('rest.v2.account.email.verify', [self::class, 'verifyEmailChange']);
         Hooks::addAction('rest.v2.email_code.send', [self::class, 'sendCode']);
-        Hooks::addAction('rest.v2.register.created', [self::class, 'rememberPhone']);
+        Hooks::addAction('rest.v2.register.created', [self::class, 'finalizeRegistration']);
     }
 
     public static function rememberRequest(string $method, string $path, string $scope): void
@@ -149,9 +149,41 @@ final class AuthHooks
      * @param array<string, mixed> $user
      * @param array<string, mixed> $input
      */
+    public static function finalizeRegistration(array $user, array $input): void
+    {
+        self::rememberPhone($user, $input);
+
+        if (
+            !self::enabled('Mail_Verify_Register')
+            && !self::enabled('Sms_Verify_Register')
+        ) {
+            return;
+        }
+
+        $uid = (int) ($user['uid'] ?? 0);
+        if ($uid <= 0) {
+            return;
+        }
+
+        try {
+            $db = Db::get();
+            $db->query(
+                $db->update('table.users')
+                    ->rows(['activated' => time()])
+                    ->where('uid = ?', $uid)
+            );
+        } catch (\Throwable $exception) {
+            error_log('SunkenBoat activation failed: ' . $exception->getMessage());
+        }
+    }
+
+    /**
+     * @param array<string, mixed> $user
+     * @param array<string, mixed> $input
+     */
     public static function rememberPhone(array $user, array $input): void
     {
-        if (!UserProfile::enabled()) {
+        if (!UserProfile::enabled() || !self::enabled('Sms_Verify_Register')) {
             return;
         }
 
