@@ -7,6 +7,7 @@ namespace SunkenBoat\Support;
 use TTDF\Ajax\Endpoint;
 use TTDF\Compat\Typecho;
 use TTDF\Hooks\Hooks;
+use TTDF\Http\Request;
 use TTDF\Http\Response;
 use TTDF\Http\Rest\V2\Payload;
 use TTDF\Theme\Settings;
@@ -18,10 +19,13 @@ if (!defined('__TYPECHO_ROOT_DIR__')) {
 
 final class Downloads
 {
+    private static bool $settingsWrite = false;
+
     public static function register(): void
     {
         foreach ([
             'download-order' => ['handleOrder', 'POST'],
+            'download-balance-pay' => ['handleBalancePay', 'POST'],
             'download-status' => ['handleStatus', 'GET'],
             'download-file' => ['handleDownload', 'POST'],
             'download-history' => ['handleHistory', 'GET'],
@@ -36,22 +40,30 @@ final class Downloads
         }, ['auth' => 'admin', 'method' => 'POST']);
 
         Hooks::addAction('rest.request', [self::class, 'settingsRequest']);
+        Hooks::addFilter('rest.response', [self::class, 'settingsResponse']);
         Hooks::addFilter('rest.post.fields', [self::class, 'publicFields']);
-        Hooks::addAction('rest.v2.request', [self::class, 'validateArticle']);
+        Hooks::addAction('rest.v2.auth', [self::class, 'validateArticle']);
     }
 
     public static function settingsRequest(string $method, string $path, string $scope): void
     {
         unset($scope);
 
-        if (
-            !in_array(strtoupper($method), ['POST', 'PUT', 'PATCH'], true)
-            || ($path !== 'admin/options' && !str_starts_with($path, 'admin/options/'))
-        ) {
-            return;
+        self::$settingsWrite = in_array(strtoupper($method), ['POST', 'PUT', 'PATCH'], true)
+            && ($path === 'admin/options' || str_starts_with($path, 'admin/options/'));
+    }
+
+    public static function settingsResponse(mixed $payload, int $status, string $scope): array
+    {
+        unset($scope);
+
+        if (self::$settingsWrite && $status < 400 && self::enabled()) {
+            DownloadStore::install();
         }
 
-        DownloadStore::install();
+        self::$settingsWrite = false;
+
+        return is_array($payload) ? $payload : [];
     }
 
     /**
@@ -75,18 +87,23 @@ final class Downloads
      * Validate download fields before the REST v2 content controller writes
      * them. Editors cannot enable a paid resource while payment is disabled.
      */
-    public static function validateArticle(string $method, string $path, string $scope): void
+    public static function validateArticle(
+        array $identity,
+        string $tier,
+        string $path,
+        string $method
+    ): void
     {
-        unset($scope);
+        unset($identity, $tier);
 
         if (
-            !in_array(strtoupper($method), ['POST', 'PUT', 'PATCH'], true)
-            || ($path !== 'admin/contents' && preg_match('#^admin/contents/[0-9]+$#D', $path) !== 1)
+            !in_array(strtoupper($method), ['POST', 'PATCH'], true)
+            || !self::isContentWritePath($path)
         ) {
             return;
         }
 
-        $body = Payload::body();
+        $body = self::cachedJsonBody();
         if (!is_array($body['fields'] ?? null)) {
             return;
         }
@@ -115,9 +132,9 @@ final class Downloads
         if (
             $enabled
             && $paid
-            && (Settings::values()['Downloads_Payment_Enabled'] ?? false) !== true
+            && !DownloadPayment::configured()
         ) {
-            Response::error('Payment is disabled', 422, ['fields' => '付费下载尚未在主题设置中开启']);
+            Response::error('Payment is unavailable', 422, ['fields' => '付费下载尚未配置可用的付款方式']);
         }
     }
 
@@ -131,9 +148,12 @@ final class Downloads
         return [
             'enabled' => self::enabled(),
             'paymentEnabled' => DownloadPayment::configured(),
+            'balanceEnabled' => self::enabled() && DownloadPayment::balanceEnabled(),
+            'balanceLabel' => trim((string) (Settings::values()['Economy_Balance_Name'] ?? '')) ?: '余额',
             'nonce' => Typecho::isLoggedIn() ? Typecho::securityToken() : '',
             'endpoints' => [
                 'order' => Endpoint::url('download-order'),
+                'balance' => Endpoint::url('download-balance-pay'),
                 'status' => Endpoint::url('download-status'),
                 'download' => Endpoint::url('download-file'),
                 'history' => Endpoint::url('download-history'),
@@ -239,9 +259,10 @@ final class Downloads
         if (!self::enabled()) {
             Response::error('下载功能尚未开启', 404);
         }
-        if (!DownloadStore::install()) {
-            Response::error('下载数据表创建失败，请检查数据库权限', 500);
+        if (!DownloadStore::available()) {
+            Response::error('下载数据表尚未初始化，请管理员保存一次主题设置', 503);
         }
+        WriteThrottle::guard('download-order', $uid, 30, 60);
 
         $contentType = self::contentType($data['contentType'] ?? '');
         $contentId = max(0, (int) ($data['contentId'] ?? 0));
@@ -319,6 +340,37 @@ final class Downloads
     }
 
     /**
+     * Settle a pending order with the viewer's account balance.
+     *
+     * @param array<string, mixed> $data
+     * @return array<string, mixed>
+     */
+    public static function handleBalancePay(array $data): array
+    {
+        $uid = self::requireUser();
+        if (!self::enabled()) {
+            Response::error('下载功能尚未开启', 404);
+        }
+        if (!DownloadStore::available() || !UserEconomy::available()) {
+            Response::error('交易数据表尚未初始化，请管理员保存一次主题设置', 503);
+        }
+
+        $number = self::orderNumber($data['orderNumber'] ?? '');
+        $order = DownloadStore::orderByNumber($number);
+        if ($order === null || (int) ($order['user_id'] ?? 0) !== $uid) {
+            Response::error('订单不存在', 404);
+        }
+        if ((string) ($order['status'] ?? '') === 'paid') {
+            return ['order' => self::orderPayload($order)];
+        }
+        WriteThrottle::guard('download-balance-pay', $uid, 20, 60);
+
+        $paid = UserEconomy::markOrderPaidWithBalance($order, $uid);
+
+        return ['order' => self::orderPayload($paid)];
+    }
+
+    /**
      * @param array<string, mixed> $data
      * @return array<string, mixed>
      */
@@ -328,8 +380,8 @@ final class Downloads
         if (!self::enabled()) {
             Response::error('下载功能尚未开启', 404);
         }
-        if (!DownloadStore::install()) {
-            Response::error('下载数据表不可用', 500);
+        if (!DownloadStore::available()) {
+            Response::error('下载数据表尚未初始化，请管理员保存一次主题设置', 503);
         }
 
         $number = self::orderNumber($data['orderNumber'] ?? '');
@@ -351,8 +403,8 @@ final class Downloads
         if (!self::enabled()) {
             Response::error('下载功能尚未开启', 404);
         }
-        if (!DownloadStore::install()) {
-            Response::error('下载数据表不可用', 500);
+        if (!DownloadStore::available()) {
+            Response::error('下载数据表尚未初始化，请管理员保存一次主题设置', 503);
         }
 
         $number = self::orderNumber($data['orderNumber'] ?? '');
@@ -422,8 +474,8 @@ final class Downloads
         if (!self::enabled()) {
             Response::error('下载功能尚未开启', 404);
         }
-        if (!DownloadStore::install()) {
-            Response::error('下载数据表不可用', 500);
+        if (!DownloadStore::available()) {
+            Response::error('下载数据表尚未初始化，请管理员保存一次主题设置', 503);
         }
 
         $page = max(1, (int) ($data['page'] ?? 1));
@@ -447,20 +499,22 @@ final class Downloads
     public static function orderPayload(array $order): array
     {
         $status = (string) ($order['status'] ?? 'pending');
-        $paymentUrl = '';
+        $paymentOptions = [];
         if ($status === 'pending') {
             try {
-                $paymentUrl = DownloadPayment::checkout($order);
+                $paymentOptions = DownloadPayment::options($order);
             } catch (\Throwable $exception) {
                 error_log('SunkenBoat download checkout failed: ' . $exception->getMessage());
             }
         }
+        $paymentUrl = (string) ($paymentOptions[0]['url'] ?? '');
 
         return [
             'number' => (string) ($order['number'] ?? ''),
             'status' => $status,
             'amount' => self::formatAmount((int) ($order['amount_cents'] ?? 0)),
             'paymentUrl' => $paymentUrl,
+            'paymentOptions' => $paymentOptions,
             'createdAt' => (int) ($order['created'] ?? 0),
             'paidAt' => (int) ($order['paid_at'] ?? 0),
             'contentType' => (string) ($order['content_type'] ?? 'article'),
@@ -473,21 +527,28 @@ final class Downloads
 
     public static function paymentNotify(): never
     {
-        $result = DownloadPayment::verify($_GET);
-        if ($result === null) {
-            if (!headers_sent()) {
-                http_response_code(400);
-                header('Content-Type: text/plain; charset=UTF-8');
-            }
-            echo 'fail';
-            exit;
+        try {
+            $input = strtoupper((string) ($_SERVER['REQUEST_METHOD'] ?? 'GET')) === 'POST'
+                ? $_POST
+                : $_GET;
+            $result = DownloadPayment::verify($input);
+            $order = $result === null
+                ? null
+                : DownloadStore::markPaid(
+                    $result['number'],
+                    $result['trade'],
+                    $result['amount']
+                );
+        } catch (\Throwable $exception) {
+            error_log('SunkenBoat payment notification failed: ' . $exception->getMessage());
+            $order = null;
         }
 
-        $order = DownloadStore::markPaid($result['number'], $result['trade'], $result['amount']);
         if ($order === null) {
             if (!headers_sent()) {
                 http_response_code(400);
                 header('Content-Type: text/plain; charset=UTF-8');
+                header('Cache-Control: no-store');
             }
             echo 'fail';
             exit;
@@ -563,7 +624,7 @@ final class Downloads
         try {
             $db = Db::get();
             $rows = $db->fetchAll(
-                $db->select('name', 'value')
+                $db->select('name', 'type', 'str_value', 'int_value', 'float_value')
                     ->from('table.fields')
                     ->where('cid = ?', $cid)
             );
@@ -573,9 +634,15 @@ final class Downloads
 
         $values = [];
         foreach ($rows as $row) {
-            if (is_array($row) && is_string($row['name'] ?? null)) {
-                $values[$row['name']] = (string) ($row['value'] ?? '');
+            if (!is_array($row) || !is_string($row['name'] ?? null)) {
+                continue;
             }
+
+            $values[$row['name']] = match ((string) ($row['type'] ?? 'str')) {
+                'int' => (string) (int) ($row['int_value'] ?? 0),
+                'float' => (string) (float) ($row['float_value'] ?? 0.0),
+                default => (string) ($row['str_value'] ?? ''),
+            };
         }
 
         try {
@@ -669,7 +736,12 @@ final class Downloads
         }
 
         $url = trim($value);
-        if ($url === '' || preg_match('/[\x00-\x20\x7f]/', $url) === 1) {
+        if (
+            $url === ''
+            || strlen($url) > 2048
+            || preg_match('/[\x00-\x20\x7f\\\\]/', $url) === 1
+            || filter_var($url, FILTER_VALIDATE_URL) === false
+        ) {
             return '';
         }
 
@@ -678,13 +750,42 @@ final class Downloads
             !is_array($parts)
             || !in_array(strtolower((string) ($parts['scheme'] ?? '')), ['http', 'https'], true)
             || empty($parts['host'])
-            || isset($parts['user'])
-            || isset($parts['pass'])
+            || array_key_exists('user', $parts)
+            || array_key_exists('pass', $parts)
         ) {
             return '';
         }
 
         return $url;
+    }
+
+    private static function isContentWritePath(string $path): bool
+    {
+        return in_array($path, ['admin/posts', 'admin/pages', 'admin/contents'], true)
+            || preg_match('#^admin/(?:posts|pages|contents)/[0-9]+$#D', $path) === 1;
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private static function cachedJsonBody(): array
+    {
+        $declared = (int) ($_SERVER['CONTENT_LENGTH'] ?? 0);
+        if ($declared > Request::MAX_BODY_BYTES) {
+            Response::error('Request body is too large', 413);
+        }
+
+        $raw = file_get_contents('php://input');
+        if (!is_string($raw)) {
+            Response::error('Unable to read the request body', 400);
+        }
+        if (strlen($raw) > Request::MAX_BODY_BYTES) {
+            Response::error('Request body is too large', 413);
+        }
+
+        Request::setBody($raw);
+
+        return Payload::body();
     }
 
     private static function flag(mixed $value): bool

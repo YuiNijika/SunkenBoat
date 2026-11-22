@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace SunkenBoat\Support;
 
+use TTDF\Hooks\Hooks;
 use TTDF\Compat\Typecho;
+use TTDF\Http\Request;
 use Typecho\Db;
 
 if (!defined('__TYPECHO_ROOT_DIR__')) {
@@ -19,7 +21,135 @@ if (!defined('__TYPECHO_ROOT_DIR__')) {
  */
 final class ContentGate
 {
-    private const PATTERN = '/\[(login|reply)\](.*?)\[\/\1\]/is';
+    /**
+     * A closed block is removed as a whole. Typecho excerpts can cut a block
+     * in half before the closing tag, so an unterminated opener also redacts
+     * everything after it rather than leaking the visible prefix.
+     */
+    private const PATTERN = '/\[(login|reply)\](.*?)(?:\[\/\1\]|\z)/is';
+
+    private const INNER_PATTERN = '/\[(login|reply)\]((?:(?!\[(?:login|reply)\])[\s\S])*?)\[\/\1\]/i';
+
+    private const OPEN_PATTERN = '/\[(login|reply)\]/i';
+
+    private static string $requestPath = '';
+
+    public static function register(): void
+    {
+        Hooks::addAction('rest.request', [self::class, 'rememberRequest']);
+        Hooks::addAction('rest.v2.request', [self::class, 'rememberRequest']);
+        Hooks::addFilter('rest.response', [self::class, 'filterRestResponse']);
+        Hooks::addFilter('rest.v2.response', [self::class, 'filterRestResponse']);
+        self::registerFeedGuard();
+    }
+
+    /**
+     * Native `/feed` output bypasses theme components, so the same shortcodes
+     * must be removed before Typecho serializes each item.
+     */
+    private static function registerFeedGuard(): void
+    {
+        if (!class_exists('Typecho\\Plugin')) {
+            return;
+        }
+
+        try {
+            $feed = \Typecho\Plugin::factory('Widget\\Feed');
+            $feed->feedItem = static function (string $type, object $archive): string {
+                unset($type);
+
+                foreach (['text', 'content', 'excerpt', 'plainExcerpt'] as $field) {
+                    try {
+                        $value = $archive->{$field};
+                    } catch (\Throwable) {
+                        continue;
+                    }
+
+                    if (is_string($value) && str_contains($value, '[')) {
+                        try {
+                            $archive->{$field} = self::redact($value);
+                        } catch (\Throwable) {
+                            // A read-only row cannot be rewritten; the feed
+                            // still receives only the fields we can replace.
+                        }
+                    }
+                }
+
+                return '';
+            };
+        } catch (\Throwable) {
+            // Older Typecho builds without Widget\Feed plugins simply skip
+            // this guard; REST and page rendering remain protected.
+        }
+    }
+
+    public static function rememberRequest(string $method, string $path, string $scope): void
+    {
+        unset($method, $scope);
+        self::$requestPath = trim($path, '/');
+    }
+
+    /**
+     * Public REST controllers return raw Markdown/HTML. Protect gated blocks
+     * before they leave the API, and never expose protected excerpt text.
+     *
+     * @param mixed $payload
+     * @return array<string, mixed>
+     */
+    public static function filterRestResponse(mixed $payload, int $status, string $scope): array
+    {
+        unset($scope);
+
+        if (!is_array($payload) || $status < 200 || $status >= 300) {
+            return is_array($payload) ? $payload : [];
+        }
+
+        $data = $payload['data'] ?? null;
+        if (!is_array($data)) {
+            return $payload;
+        }
+
+        $single = preg_match(
+            '#^(?:posts|pages)/([1-9][0-9]*)$#D',
+            self::$requestPath,
+            $matches
+        ) === 1;
+        $listing = in_array(self::$requestPath, ['posts', 'pages', 'search'], true);
+        if (!$single && !$listing) {
+            return $payload;
+        }
+
+        if ($listing) {
+            foreach ($data as $index => $item) {
+                if (is_array($item) && isset($item['excerpt']) && is_string($item['excerpt'])) {
+                    $data[$index]['excerpt'] = trim(self::redact($item['excerpt']));
+                }
+            }
+            $payload['data'] = $data;
+
+            return $payload;
+        }
+
+        $cid = (int) ($matches[1] ?? 0);
+        $identity = self::requestIdentity();
+        $uid = (int) ($identity['uid'] ?? 0);
+        $admin = (string) ($identity['group'] ?? '') === 'administrator';
+        $markdown = strtolower(Request::queryString('format', 'html')) === 'markdown';
+
+        if (isset($data['excerpt']) && is_string($data['excerpt'])) {
+            $data['excerpt'] = trim(self::redact($data['excerpt']));
+        }
+
+        if (isset($data['content']) && is_string($data['content'])) {
+            $data['content'] = $markdown
+                ? self::protectMarkdown($data['content'], $cid, $uid, $admin)
+                : self::renderFor($data['content'], $cid, $uid, $admin);
+        }
+
+        $payload['data'] = $data;
+
+        return $payload;
+    }
 
     /**
      * Remove protected shortcode bodies before text is used in SEO metadata.
@@ -36,17 +166,20 @@ final class ContentGate
 
     public static function render(string $html, int $cid): string
     {
-        if ($html === '' || $cid <= 0 || !str_contains($html, '[')) {
+        return self::renderFor($html, $cid, self::uid(), self::isAdmin());
+    }
+
+    private static function renderFor(string $html, int $cid, int $uid, bool $admin): string
+    {
+        if ($html === '' || !str_contains($html, '[')) {
             return $html;
         }
 
-        $uid = self::uid();
-        $admin = self::isAdmin();
         $canLogin = $admin || $uid > 0;
         $canReply = $admin || ($uid > 0 && self::hasCommented($cid, $uid));
 
-        $rendered = preg_replace_callback(
-            self::PATTERN,
+        return self::rewriteBlocks(
+            $html,
             static function (array $match) use ($canLogin, $canReply, $uid): string {
                 $type = strtolower((string) ($match[1] ?? ''));
                 $inner = (string) ($match[2] ?? '');
@@ -60,10 +193,77 @@ final class ContentGate
 
                 return self::locked($type, $uid > 0);
             },
-            $html
+            static fn (string $type): string => self::locked($type, $uid > 0)
         );
+    }
 
-        return is_string($rendered) ? $rendered : $html;
+    private static function protectMarkdown(
+        string $text,
+        int $cid,
+        int $uid,
+        bool $admin
+    ): string {
+        if ($text === '' || !str_contains($text, '[')) {
+            return $text;
+        }
+
+        $canLogin = $admin || $uid > 0;
+        $canReply = $admin || ($uid > 0 && self::hasCommented($cid, $uid));
+
+        return self::rewriteBlocks(
+            $text,
+            static function (array $match) use ($canLogin, $canReply): string {
+                $type = strtolower((string) ($match[1] ?? 'login'));
+                $inner = (string) ($match[2] ?? '');
+                if ($type === 'reply') {
+                    return $canReply
+                        ? $inner
+                        : "\n\n> 参与讨论后继续阅读。登录账号并发表一条评论即可解锁。\n\n";
+                }
+
+                return $canLogin
+                    ? $inner
+                    : "\n\n> 登录后继续阅读。这是一个仅对已登录成员开放的内容区域。\n\n";
+            },
+            static function (string $type) use ($canLogin, $canReply): string {
+                $allowed = $type === 'reply' ? $canReply : $canLogin;
+                if ($allowed) {
+                    return "\n\n> 内容区块格式不完整，已停止显示后续内容。\n\n";
+                }
+
+                return $type === 'reply'
+                    ? "\n\n> 参与讨论后继续阅读。登录账号并发表一条评论即可解锁。\n\n"
+                    : "\n\n> 登录后继续阅读。这是一个仅对已登录成员开放的内容区域。\n\n";
+            }
+        );
+    }
+
+    /**
+     * Rewrite blocks from the inside out so nested gates cannot leak an inner
+     * protected section through an allowed outer one.
+     *
+     * @param callable(array{0: string, 1: string, 2: string}): string $render
+     * @param callable(string): string $unterminated
+     */
+    private static function rewriteBlocks(string $text, callable $render, callable $unterminated): string
+    {
+        do {
+            $count = 0;
+            $next = preg_replace_callback(self::INNER_PATTERN, $render, $text, -1, $count);
+            if (!is_string($next)) {
+                return $text;
+            }
+            $text = $next;
+        } while ($count > 0);
+
+        if (preg_match(self::OPEN_PATTERN, $text, $match, PREG_OFFSET_CAPTURE) !== 1) {
+            return $text;
+        }
+
+        $offset = (int) ($match[0][1] ?? 0);
+        $type = strtolower((string) ($match[1][0] ?? 'login'));
+
+        return substr($text, 0, $offset) . $unterminated($type);
     }
 
     private static function locked(string $type, bool $signedIn): string
@@ -173,5 +373,19 @@ final class ContentGate
         }
 
         return is_array($row) && (int) ($row['coid'] ?? 0) > 0;
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private static function requestIdentity(): array
+    {
+        try {
+            $identity = \TTDF\Http\Rest\V2\Auth::identity();
+        } catch (\Throwable) {
+            return [];
+        }
+
+        return is_array($identity) ? $identity : [];
     }
 }

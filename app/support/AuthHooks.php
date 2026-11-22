@@ -5,7 +5,10 @@ declare(strict_types=1);
 namespace SunkenBoat\Support;
 
 use TTDF\Hooks\Hooks;
+use TTDF\Http\Request;
 use TTDF\Http\Response;
+use TTDF\Http\Rest\V2\Auth;
+use TTDF\Http\Rest\V2\Payload;
 use TTDF\Http\Rest\V2\VerificationCodes;
 use TTDF\Theme\Settings;
 use Typecho\Db;
@@ -25,6 +28,12 @@ final class AuthHooks
     private const RATE_PREFIX = 'sunken_rl_';
 
     private const RATE_WINDOW = 1800;
+
+    private const SEND_PREFIX = 'sunken_es_';
+
+    private const SEND_WINDOW = 600;
+
+    private const SEND_LIMIT = 10;
 
     private static string $requestPath = '';
 
@@ -47,14 +56,14 @@ final class AuthHooks
         unset($method, $scope);
         self::$requestPath = $path;
 
-        if (!self::isVerificationPath($path)) {
+        if (!self::isRatePath($path)) {
             return;
         }
 
         $retryAfter = self::retryAfter($path);
         if ($retryAfter > 0) {
-            Response::error('Too many verification attempts', 429, [
-                'code' => '验证码错误次数过多，请 ' . $retryAfter . ' 秒后再试',
+            Response::error('Too many attempts', 429, [
+                'code' => '操作失败次数过多，请 ' . $retryAfter . ' 秒后再试',
             ]);
         }
     }
@@ -68,12 +77,24 @@ final class AuthHooks
         unset($scope);
 
         $path = self::$requestPath;
-        if (!self::isVerificationPath($path)) {
+        if (!self::isRatePath($path)) {
             return $payload;
         }
 
         if ($status >= 200 && $status < 300) {
+            if ($path === 'me' && !self::emailChangeVerified()) {
+                return $payload;
+            }
+
             self::clearFailures($path);
+            return $payload;
+        }
+
+        if ($path === 'auth/login') {
+            if ($status === 401) {
+                self::recordFailure($path);
+            }
+
             return $payload;
         }
 
@@ -134,6 +155,13 @@ final class AuthHooks
             $phone = Sms::normalizePhone($input['phone'] ?? '');
             if ($phone === '') {
                 Response::error('Invalid phone number', 422, ['phone' => '请输入有效的手机号']);
+            }
+            $retryAfter = Sms::retryAfter($phone, 'register');
+            if ($retryAfter > 0) {
+                Response::error('Too many SMS verification attempts', 429, [
+                    'phoneCode' => '短信验证码错误次数过多，请 ' . $retryAfter . ' 秒后再试',
+                    'retryAfter' => $retryAfter,
+                ]);
             }
             if (!Sms::verify($phone, 'register', (string) ($input['phoneCode'] ?? ''))) {
                 Response::error('Invalid SMS verification code', 422, [
@@ -238,6 +266,14 @@ final class AuthHooks
             return false;
         }
 
+        $retryAfter = self::emailSendRetryAfter();
+        if ($retryAfter > 0) {
+            Response::error('Too many verification emails', 429, [
+                'mail' => '邮件发送过于频繁，请 ' . $retryAfter . ' 秒后再试',
+                'retryAfter' => $retryAfter,
+            ]);
+        }
+
         return match ($purpose) {
             'register' => self::enabled('Mail_Verify_Register'),
             'reset' => self::enabled('Mail_Verify_Reset'),
@@ -268,7 +304,17 @@ final class AuthHooks
         string $code,
         int $expiresAt
     ): void {
+        $retryAfter = self::emailSendRetryAfter();
+        if ($retryAfter > 0) {
+            VerificationCodes::clear($mail, $purpose);
+            Response::error('Too many verification emails', 429, [
+                'mail' => '邮件发送过于频繁，请 ' . $retryAfter . ' 秒后再试',
+                'retryAfter' => $retryAfter,
+            ]);
+        }
+
         Mailer::sendVerificationCode($mail, $purpose, $code, $expiresAt);
+        self::recordEmailSend();
     }
 
     public static function verifyEmailChange(
@@ -306,6 +352,57 @@ final class AuthHooks
     private static function isVerificationPath(string $path): bool
     {
         return in_array($path, ['auth/register', 'auth/reset-password', 'me'], true);
+    }
+
+    private static function isRatePath(string $path): bool
+    {
+        return $path === 'auth/login' || self::isVerificationPath($path);
+    }
+
+    /**
+     * A successful profile edit must not reset the failed-code counter. Only
+     * an actual e-mail change, which includes the code field, counts.
+     */
+    private static function emailChangeVerified(): bool
+    {
+        if (Request::method() !== 'PATCH') {
+            return false;
+        }
+
+        try {
+            $body = Payload::body();
+        } catch (\Throwable) {
+            return false;
+        }
+
+        if (
+            !array_key_exists('mail', $body)
+            || !array_key_exists('emailCode', $body)
+            || !is_scalar($body['mail'])
+            || !is_scalar($body['emailCode'])
+            || trim((string) $body['emailCode']) === ''
+        ) {
+            return false;
+        }
+
+        $mail = strtolower(trim((string) $body['mail']));
+        if ($mail === '') {
+            return false;
+        }
+
+        try {
+            $identity = Auth::identity();
+        } catch (\Throwable) {
+            return false;
+        }
+
+        if ($identity === null) {
+            return false;
+        }
+
+        $current = strtolower(trim((string) ($identity['mail'] ?? '')));
+
+        return $mail !== $current;
     }
 
     private static function retryAfter(string $path): int
@@ -412,5 +509,102 @@ final class AuthHooks
         $seed = hash('sha256', $path . '|' . $ip);
 
         return self::RATE_PREFIX . substr($seed, 0, 20);
+    }
+
+    private static function emailSendRetryAfter(): int
+    {
+        $record = self::readEmailSend();
+        $started = (int) ($record['started'] ?? 0);
+        $count = (int) ($record['count'] ?? 0);
+
+        if ($started <= 0 || $started + self::SEND_WINDOW <= time()) {
+            return 0;
+        }
+
+        return $count >= self::SEND_LIMIT
+            ? max(1, $started + self::SEND_WINDOW - time())
+            : 0;
+    }
+
+    private static function recordEmailSend(): void
+    {
+        $now = time();
+        $record = self::readEmailSend();
+        $started = (int) ($record['started'] ?? 0);
+        $count = (int) ($record['count'] ?? 0);
+
+        if ($started <= 0 || $started + self::SEND_WINDOW <= $now) {
+            $started = $now;
+            $count = 0;
+        }
+
+        self::writeEmailSend($started, $count + 1, $record !== null);
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    private static function readEmailSend(): ?array
+    {
+        try {
+            $db = Db::get();
+            $name = self::emailSendKey();
+            $row = $db->fetchRow(
+                $db->select('value')
+                    ->from('table.options')
+                    ->where('name = ?', $name)
+                    ->where('user = ?', 0)
+                    ->limit(1)
+            );
+            if (!is_array($row)) {
+                return null;
+            }
+
+            $decoded = json_decode((string) ($row['value'] ?? ''), true);
+
+            return is_array($decoded) ? $decoded : null;
+        } catch (\Throwable) {
+            return null;
+        }
+    }
+
+    private static function writeEmailSend(int $started, int $count, bool $exists): void
+    {
+        try {
+            $db = Db::get();
+            $name = self::emailSendKey();
+            $value = json_encode([
+                'started' => $started,
+                'count' => $count,
+            ], JSON_UNESCAPED_SLASHES);
+            if (!is_string($value)) {
+                return;
+            }
+
+            if ($exists) {
+                $db->query(
+                    $db->update('table.options')
+                        ->rows(['value' => $value])
+                        ->where('name = ?', $name)
+                        ->where('user = ?', 0)
+                );
+                return;
+            }
+
+            $db->query($db->insert('table.options')->rows([
+                'name' => $name,
+                'user' => 0,
+                'value' => $value,
+            ]));
+        } catch (\Throwable) {
+            // Mail throttling is a safety net; delivery remains available.
+        }
+    }
+
+    private static function emailSendKey(): string
+    {
+        $ip = (string) ($_SERVER['REMOTE_ADDR'] ?? '');
+
+        return self::SEND_PREFIX . substr(hash('sha256', $ip), 0, 20);
     }
 }

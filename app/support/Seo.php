@@ -330,7 +330,10 @@ final class Seo
             return '';
         }
 
-        return PageData::firstBodyImage($text, \TTDF\Compat\Typecho::siteUrl());
+        return PageData::firstBodyImage(
+            ContentGate::redact($text),
+            \TTDF\Compat\Typecho::siteUrl()
+        );
     }
 
     private static function timestamp(int $value): string

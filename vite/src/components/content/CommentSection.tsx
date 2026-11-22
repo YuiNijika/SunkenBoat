@@ -9,6 +9,23 @@ function cx(...parts: Array<string | false | null | undefined>): string {
     return parts.filter(Boolean).join(' ');
 }
 
+function safeAuthorUrl(value?: string): string {
+    const url = (value ?? '').trim();
+    if (
+        url === '' ||
+        url.startsWith('//') ||
+        /[\u0000-\u0020\u007f\\]/.test(url)
+    ) {
+        return '';
+    }
+
+    if (/^(?:https?:\/\/|\/(?!\/))/i.test(url)) {
+        return url;
+    }
+
+    return '';
+}
+
 export interface CommentAuthor {
     name: string;
     avatar?: string;
@@ -80,6 +97,7 @@ interface CommentComposerProps {
     onImage?: () => void;
     quickReply?: ReactNode;
     guestFields?: ReactNode;
+    verification?: ReactNode;
     footerNote?: ReactNode;
     id?: string;
     className?: string;
@@ -103,6 +121,7 @@ export function CommentComposer({
     onImage,
     quickReply,
     guestFields,
+    verification,
     footerNote,
     id = 'comment-text',
     className,
@@ -174,6 +193,7 @@ export function CommentComposer({
                         </div>
                     </div>
                     {guestFields ? <div className="mt-2.5">{guestFields}</div> : null}
+                    {verification ? <div className="mt-2.5">{verification}</div> : null}
                 </div>
             </div>
         </form>
@@ -208,10 +228,12 @@ export function CommentEntry({
     replyLabel = '回复',
 }: CommentEntryProps) {
     const authorName = author.name.trim() || '匿名';
-    const authorText = author.url ? (
+    const authorUrl = safeAuthorUrl(author.url);
+    const authorText = authorUrl ? (
         <a
             className="truncate text-[12.5px] font-semibold text-ink hover:text-brand"
-            href={author.url}
+            href={authorUrl}
+            target="_blank"
             rel="nofollow ugc noreferrer"
         >
             {authorName}

@@ -187,6 +187,31 @@ final class Forum
         return (Settings::values()['Forum_Switch'] ?? false) === true;
     }
 
+    public static function available(): bool
+    {
+        if (self::$installed) {
+            return true;
+        }
+        if (!self::enabled()) {
+            return false;
+        }
+
+        try {
+            $db = Db::get();
+            foreach (['circles', 'topics', 'replies', 'members', 'reactions', 'ratings'] as $name) {
+                $db->fetchRow(
+                    $db->select('id')
+                        ->from('table.sunken_forum_' . $name)
+                        ->limit(1)
+                );
+            }
+        } catch (\Throwable) {
+            return false;
+        }
+
+        return self::$installed = true;
+    }
+
     /**
      * Viewer context shared by the account panel and the forum blocks.
      *
@@ -201,6 +226,16 @@ final class Forum
             'viewer' => $viewer,
             'permissions' => self::permissions($viewer),
         ];
+    }
+
+    private static function assertReady(): void
+    {
+        if (!self::enabled()) {
+            Response::error('论坛&圈子尚未开启', 404);
+        }
+        if (!self::available()) {
+            Response::error('论坛数据表尚未初始化，请管理员保存一次主题设置', 503);
+        }
     }
 
     /**
@@ -296,8 +331,9 @@ final class Forum
     }
 
     /**
-     * Create and migrate the forum tables. This is idempotent and only runs on
-     * admin settings reads plus circle create/update requests.
+     * Create and migrate the forum tables. This is idempotent and only runs
+     * from an explicit administrator install action or a successful theme
+     * settings save. User-facing requests only check `available()`.
      */
     public static function install(): bool
     {
@@ -339,8 +375,9 @@ final class Forum
     }
 
     /**
-     * The theme options screen saves through the REST admin endpoint. The
-     * action fires before auth, so only administrators may trigger DDL.
+     * The theme options screen saves through the REST admin endpoint. This
+     * hook only tracks the write before auth; DDL waits for a successful
+     * response so an anonymous request can never reach installation.
      */
     public static function restRequest(string $method, string $path, string $scope): void
     {
@@ -357,15 +394,6 @@ final class Forum
         if (in_array($method, ['POST', 'PATCH'], true) && $path === 'admin/options') {
             self::$settingsWrite = true;
             return;
-        }
-
-        if (
-            self::enabled()
-            &&
-            $method === 'GET'
-            && in_array($path, ['admin/options', 'admin/schema', 'admin/config', 'admin/form-data'], true)
-        ) {
-            self::install();
         }
     }
 
@@ -409,6 +437,7 @@ final class Forum
      */
     public static function handleUserContent(array $data): array
     {
+        self::assertReady();
         $viewer = self::requireViewer();
         $limit = max(1, min(50, self::intValue($data['limit'] ?? 40)));
 
@@ -423,6 +452,7 @@ final class Forum
      */
     public static function handleModeration(array $data): array
     {
+        self::assertReady();
         $viewer = self::requireViewer();
         if (!self::permissions($viewer)['moderate']) {
             Response::error('你没有管理论坛帖子的权限', 403);
@@ -803,7 +833,11 @@ final class Forum
 
         $topicCircleId = (int) ($topic['circle']['id'] ?? 0);
         $topicCircle = $topicCircleId > 0 ? self::circleById($topicCircleId, (int) $viewer['uid']) : null;
-        $forumConfig = self::config($values, $viewer, (string) ($topic['excerpt'] ?? ''));
+        $forumConfig = self::config(
+            $values,
+            $viewer,
+            $topicCircle === null ? '' : (string) ($topicCircle['description'] ?? '')
+        );
         if ($topicCircle !== null && !self::canAccessCircle($topicCircle, $viewer, 'view')) {
             return self::joinGatePage($forumConfig, $topicCircle, 'view');
         }
@@ -839,6 +873,7 @@ final class Forum
             );
         }
 
+        $forumConfig = self::config($values, $viewer, (string) ($topic['excerpt'] ?? ''));
         self::recordTopicView((int) $topic['id']);
         $topic = self::topicByValue($value, (int) $viewer['uid']) ?? $topic;
         $replies = self::replies((int) $topic['id'], (int) $viewer['uid']);
@@ -1381,7 +1416,7 @@ final class Forum
             'tagSuggestions' => self::popularTags(),
             'showTagInput' => ($values['Forum_Tag_Input'] ?? true) === true,
             'downloadEnabled' => ($values['Downloads_Enabled'] ?? false) === true,
-            'paymentEnabled' => ($values['Downloads_Payment_Enabled'] ?? false) === true,
+            'paymentEnabled' => DownloadPayment::configured(),
             'requiresReview' => !$editing
                 && ($values['Forum_Topic_Review'] ?? false) === true
                 && !in_array((string) ($viewer['group'] ?? ''), ['administrator', 'editor'], true),
@@ -1460,7 +1495,16 @@ final class Forum
         $stored = $row['download'] ?? '';
         $decoded = is_string($stored) && $stored !== '' ? json_decode($stored, true) : [];
 
-        return Downloads::normalizeConfig(is_array($decoded) ? $decoded : []);
+        try {
+            return Downloads::normalizeConfig(is_array($decoded) ? $decoded : []);
+        } catch (\Throwable) {
+            return [
+                'enabled' => false,
+                'url' => '',
+                'paid' => false,
+                'price' => '0.00',
+            ];
+        }
     }
 
     private static function topicDownloadInput(mixed $input, ?array $previous = null): array
@@ -1472,8 +1516,8 @@ final class Forum
             if (($values['Downloads_Enabled'] ?? false) !== true) {
                 Response::error('下载功能尚未开启', 403);
             }
-            if ($download['enabled'] && $download['paid'] && ($values['Downloads_Payment_Enabled'] ?? false) !== true) {
-                Response::error('付费下载尚未开启', 403);
+            if ($download['enabled'] && $download['paid'] && !DownloadPayment::configured()) {
+                Response::error('付费下载尚未配置可用的付款方式', 403);
             }
         }
 
@@ -1529,12 +1573,13 @@ final class Forum
      */
     public static function handleCircleCreate(array $data): array
     {
+        self::assertReady();
         $viewer = self::requireViewer();
-        self::install();
         $permissions = self::permissions($viewer);
         if (!$permissions['createCircle']) {
             Response::error('你没有创建圈子的权限', 403);
         }
+        WriteThrottle::guard('forum-circle-create', (int) $viewer['uid'], 5, 3600);
 
         $name = self::plainText($data['name'] ?? '', 40);
         if (self::length($name) < 2) {
@@ -1586,8 +1631,8 @@ final class Forum
      */
     public static function handleCircleUpdate(array $data): array
     {
+        self::assertReady();
         $viewer = self::requireViewer();
-        self::install();
         $id = self::intValue($data['id'] ?? 0);
         if ($id <= 0) {
             Response::error('圈子不存在', 404);
@@ -1614,6 +1659,7 @@ final class Forum
         if (!$isOwner && !self::permissions($viewer)['moderate']) {
             Response::error('你没有管理这个圈子的权限', 403);
         }
+        WriteThrottle::guard('forum-circle-update', (int) $viewer['uid'], 30, 300);
 
         $name = self::plainText($data['name'] ?? '', 40);
         if (self::length($name) < 2) {
@@ -1663,6 +1709,7 @@ final class Forum
      */
     public static function handleTopicCreate(array $data): array
     {
+        self::assertReady();
         $viewer = self::requireViewer();
         $permissions = self::permissions($viewer);
         if (!$permissions['createTopic']) {
@@ -1678,6 +1725,7 @@ final class Forum
             $label = self::followLabel(Settings::values());
             Response::error('请先' . $label . '圈子后再发帖', 403);
         }
+        WriteThrottle::guard('forum-topic-create', (int) $viewer['uid'], 20, 300);
 
         $title = self::plainText($data['title'] ?? '', 100);
         if (self::length($title) < 2) {
@@ -1758,6 +1806,7 @@ final class Forum
      */
     public static function handleTopicUpdate(array $data): array
     {
+        self::assertReady();
         $viewer = self::requireViewer();
         $viewerUid = (int) ($viewer['uid'] ?? 0);
         $topicId = self::intValue($data['topic_id'] ?? 0);
@@ -1771,6 +1820,7 @@ final class Forum
         if ((string) ($row['status'] ?? '') === 'deleted') {
             Response::error('帖子在回收站中，需管理员恢复后才能编辑', 403);
         }
+        WriteThrottle::guard('forum-topic-update', (int) $viewer['uid'], 30, 300);
 
         $currentCircleId = (int) ($row['circle_id'] ?? 0);
         $circleId = self::intValue($data['circle_id'] ?? $currentCircleId);
@@ -1887,6 +1937,7 @@ final class Forum
      */
     public static function handleTopicDelete(array $data): array
     {
+        self::assertReady();
         $viewer = self::requireViewer();
         $viewerUid = (int) ($viewer['uid'] ?? 0);
         $topicId = self::intValue($data['topic_id'] ?? 0);
@@ -1897,6 +1948,7 @@ final class Forum
         if (!self::canManageTopic($viewer, $row)) {
             Response::error('你没有删除这篇帖子的权限', 403);
         }
+        WriteThrottle::guard('forum-topic-delete', (int) $viewer['uid'], 30, 60);
         if ((string) ($row['status'] ?? '') === 'deleted') {
             return [
                 'id' => $topicId,
@@ -1937,6 +1989,7 @@ final class Forum
      */
     public static function handleReplyCreate(array $data): array
     {
+        self::assertReady();
         $viewer = self::requireViewer();
         $permissions = self::permissions($viewer);
         if (!$permissions['reply']) {
@@ -1948,10 +2001,15 @@ final class Forum
         if ($topic === null) {
             Response::error('帖子不存在', 404);
         }
-        if ((string) ($topic['status'] ?? '') === 'deleted') {
-            Response::error('帖子在回收站中，暂时无法回复', 403);
-        }
+        self::assertTopicInteractable($topic, $viewer, '回复');
         self::assertTopicCircleAccess($topic, $viewer, '请先加入圈子后再回复');
+
+        $circle = self::circleById((int) ($topic['circle_id'] ?? 0), (int) $viewer['uid']);
+        if ($circle !== null && !self::canAccessCircle($circle, $viewer, 'post')) {
+            $label = self::followLabel(Settings::values());
+            Response::error('请先' . $label . '圈子后再回复', 403);
+        }
+        WriteThrottle::guard('forum-reply-create', (int) $viewer['uid'], 20, 60);
 
         $content = self::longText($data['content'] ?? '', 5000);
         if ($content === '') {
@@ -2002,6 +2060,7 @@ final class Forum
      */
     public static function handleJoin(array $data): array
     {
+        self::assertReady();
         $viewer = self::requireViewer();
         $permissions = self::permissions($viewer);
         if (!$permissions['join']) {
@@ -2013,6 +2072,7 @@ final class Forum
         if ($circle === null) {
             Response::error('圈子不存在', 404);
         }
+        WriteThrottle::guard('forum-join', (int) $viewer['uid'], 30, 60);
 
         $uid = (int) $viewer['uid'];
         $db = Db::get();
@@ -2050,6 +2110,7 @@ final class Forum
      */
     public static function handleReact(array $data): array
     {
+        self::assertReady();
         $viewer = self::requireViewer();
         $permissions = self::permissions($viewer);
         if (!$permissions['react']) {
@@ -2061,15 +2122,14 @@ final class Forum
         if ($topic === null) {
             Response::error('帖子不存在', 404);
         }
-        if ((string) ($topic['status'] ?? '') === 'deleted') {
-            Response::error('帖子在回收站中，暂时无法互动', 403);
-        }
+        self::assertTopicInteractable($topic, $viewer, '互动');
         self::assertTopicCircleAccess($topic, $viewer, '请先加入圈子后再互动');
 
         $type = strtolower(trim((string) ($data['type'] ?? 'like')));
         if (!in_array($type, ['like', 'favorite'], true)) {
             Response::error('不支持的操作', 422);
         }
+        WriteThrottle::guard('forum-react', (int) $viewer['uid'], 120, 60);
 
         $uid = (int) $viewer['uid'];
         $db = Db::get();
@@ -2082,14 +2142,17 @@ final class Forum
                 ->limit(1)
         );
 
-        $active = !is_array($row);
-        if ($active) {
-            $db->query($db->insert('table.sunken_forum_reactions')->rows([
-                'topic_id' => $topicId,
-                'uid' => $uid,
-                'type' => $type,
-                'created' => time(),
-            ]));
+        if (!is_array($row)) {
+            try {
+                $db->query($db->insert('table.sunken_forum_reactions')->rows([
+                    'topic_id' => $topicId,
+                    'uid' => $uid,
+                    'type' => $type,
+                    'created' => time(),
+                ]));
+            } catch (\Throwable $exception) {
+                error_log('SunkenBoat forum reaction insert failed: ' . $exception->getMessage());
+            }
         } else {
             $db->query(
                 $db->delete('table.sunken_forum_reactions')
@@ -2099,6 +2162,15 @@ final class Forum
             );
         }
 
+        $current = $db->fetchRow(
+            $db->select('id')
+                ->from('table.sunken_forum_reactions')
+                ->where('topic_id = ?', $topicId)
+                ->where('uid = ?', $uid)
+                ->where('type = ?', $type)
+                ->limit(1)
+        );
+        $active = is_array($current);
         self::recountTopic($topicId);
 
         return [
@@ -2119,6 +2191,7 @@ final class Forum
      */
     public static function handleRate(array $data): array
     {
+        self::assertReady();
         $viewer = self::requireViewer();
         $permissions = self::permissions($viewer);
         if (!$permissions['react']) {
@@ -2130,9 +2203,7 @@ final class Forum
         if ($topic === null) {
             Response::error('帖子不存在', 404);
         }
-        if ((string) ($topic['status'] ?? '') === 'deleted') {
-            Response::error('帖子在回收站中，暂时无法评分', 403);
-        }
+        self::assertTopicInteractable($topic, $viewer, '评分');
         self::assertTopicCircleAccess($topic, $viewer, '请先加入圈子后再评分');
 
         $value = self::intValue($data['value'] ?? 0);
@@ -2142,6 +2213,7 @@ final class Forum
         if (!in_array($value, [0, 1, 2, 3, 4, 5], true)) {
             Response::error('评分只能是 1–5 星', 422);
         }
+        WriteThrottle::guard('forum-rate', (int) $viewer['uid'], 60, 60);
 
         $uid = (int) $viewer['uid'];
         try {
@@ -2180,12 +2252,32 @@ final class Forum
                     );
                 }
             } else {
-                $db->query($db->insert('table.sunken_forum_ratings')->rows([
-                    'topic_id' => $topicId,
-                    'uid' => $uid,
-                    'value' => $value,
-                    'created' => time(),
-                ]));
+                try {
+                    $db->query($db->insert('table.sunken_forum_ratings')->rows([
+                        'topic_id' => $topicId,
+                        'uid' => $uid,
+                        'value' => $value,
+                        'created' => time(),
+                    ]));
+                } catch (\Throwable $exception) {
+                    // A concurrent request may already hold the UNIQUE row.
+                    $existing = $db->fetchRow(
+                        $db->select('id')
+                            ->from('table.sunken_forum_ratings')
+                            ->where('topic_id = ?', $topicId)
+                            ->where('uid = ?', $uid)
+                            ->limit(1)
+                    );
+                    if (!is_array($existing)) {
+                        throw $exception;
+                    }
+
+                    $db->query(
+                        $db->update('table.sunken_forum_ratings')
+                            ->rows(['value' => $value, 'created' => time()])
+                            ->where('id = ?', (int) ($existing['id'] ?? 0))
+                    );
+                }
             }
         } catch (\Throwable) {
             Response::error('评分功能尚未初始化，请管理员在主题设置中保存一次。', 503);
@@ -2301,6 +2393,30 @@ final class Forum
         }
 
         return self::permissions($viewer)['moderate'];
+    }
+
+    /**
+     * Replies, likes, favourites and ratings only apply to published topics.
+     * Authors can open their own pending or rejected topic, but the community
+     * interaction surface stays closed until a moderator publishes it.
+     * Managers keep access to every state except the recycle bin.
+     *
+     * @param array<string, mixed> $topic
+     * @param array<string, mixed> $viewer
+     */
+    private static function assertTopicInteractable(
+        array $topic,
+        array $viewer,
+        string $action
+    ): void
+    {
+        $status = (string) ($topic['status'] ?? 'publish');
+        if ($status === 'deleted') {
+            Response::error('帖子在回收站中，暂时无法' . $action, 403);
+        }
+        if ($status !== 'publish' && !self::permissions($viewer)['moderate']) {
+            Response::error('帖子尚未通过审核，暂时无法' . $action, 403);
+        }
     }
 
     private static function groupAtLeast(string $group, string $minimum): bool
@@ -3227,7 +3343,7 @@ final class Forum
         $content = (string) ($row['content'] ?? '');
         $created = (int) ($row['created'] ?? 0);
         $viewer = self::currentUser();
-        $isManager = in_array((string) ($viewer['group'] ?? ''), ['editor', 'administrator'], true);
+        $isManager = (string) ($viewer['group'] ?? '') === 'administrator';
         $status = (string) ($row['status'] ?? 'publish');
         $deleted = $status === 'deleted';
         $restricted = $deleted && !$isManager;
@@ -3302,7 +3418,9 @@ final class Forum
         $ratings = self::ratingsForTopics([$topicId], $viewerUid);
         $topic = self::formatTopic($row, $reactions, $ratings);
         $topic['ratingUsers'] = self::ratingUsers($topicId);
-        $topic['rawContent'] = (string) ($row['content'] ?? '');
+        if (($topic['restricted'] ?? false) !== true) {
+            $topic['rawContent'] = (string) ($row['content'] ?? '');
+        }
 
         return $topic;
     }
@@ -3319,7 +3437,7 @@ final class Forum
         try {
             $db = Db::get();
             $viewer = self::currentUser();
-            $isManager = in_array((string) ($viewer['group'] ?? ''), ['editor', 'administrator'], true);
+            $isManager = (string) ($viewer['group'] ?? '') === 'administrator';
             $row = $db->fetchRow(
                 $db->select('*')
                     ->from('table.sunken_forum_topics')
@@ -3349,7 +3467,7 @@ final class Forum
         try {
             $db = Db::get();
             $viewer = self::currentUser();
-            $isManager = in_array((string) ($viewer['group'] ?? ''), ['editor', 'administrator'], true);
+            $isManager = (string) ($viewer['group'] ?? '') === 'administrator';
             $row = $db->fetchRow(
                 $db->select('*')
                     ->from('table.sunken_forum_topics')
@@ -4022,7 +4140,7 @@ final class Forum
         try {
             $html = \Typecho\Common::stripTags($html, $allowed);
         } catch (\Throwable) {
-            $html = strip_tags($html, $allowed);
+            $html = self::fallbackStripTags((string) strip_tags($html, $allowed));
         }
 
         return (string) preg_replace_callback(
@@ -4048,6 +4166,49 @@ final class Forum
                 }
 
                 return preg_match('#^https?://[^/\s]+#', $value) === 1 ? $match[0] : '';
+            },
+            $html
+        );
+    }
+
+    /**
+     * Typecho's stripTags removes unsafe attributes. The fallback is only used
+     * when that API is unavailable, so it must enforce the same attribute
+     * allowlist instead of leaving unquoted event handlers intact.
+     */
+    private static function fallbackStripTags(string $html): string
+    {
+        $allow = [
+            'a' => ['href', 'title', 'rel'],
+            'img' => ['src', 'alt', 'title', 'loading'],
+        ];
+
+        return (string) preg_replace_callback(
+            '/<([a-z0-9-]+)(\s+[^>]*)?>/i',
+            static function (array $match) use ($allow): string {
+                $tag = strtolower((string) $match[1]);
+                $attrs = '';
+                $allowedAttrs = $allow[$tag] ?? [];
+
+                if ($allowedAttrs !== [] && preg_match_all(
+                    '/([a-z0-9:_-]+)\s*=\s*(["\'])(.*?)\2/is',
+                    (string) ($match[2] ?? ''),
+                    $pairs,
+                    PREG_SET_ORDER
+                )) {
+                    foreach ($pairs as $pair) {
+                        $name = strtolower((string) $pair[1]);
+                        if (!in_array($name, $allowedAttrs, true)) {
+                            continue;
+                        }
+
+                        $attrs .= ' ' . $name . '="'
+                            . htmlspecialchars((string) $pair[3], ENT_QUOTES | ENT_HTML5, 'UTF-8')
+                            . '"';
+                    }
+                }
+
+                return '<' . $tag . $attrs . '>';
             },
             $html
         );

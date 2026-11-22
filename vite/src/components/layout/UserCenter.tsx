@@ -6,6 +6,7 @@ import {
     LogOut,
     MessageSquare,
     Shield,
+    ShieldCheck,
     UserRound,
 } from 'lucide-react';
 import { Button } from '../ui/button';
@@ -337,6 +338,14 @@ export default function UserCenter({ api, show, site }: Props) {
                                     <a href={contentUrl}>
                                         <FileText strokeWidth={1.8} />
                                         <span>内容管理</span>
+                                    </a>
+                                </DropdownMenuItem>
+                            ) : null}
+                            {api.operations?.enabled ? (
+                                <DropdownMenuItem asChild className="user-menu-link">
+                                    <a href={api.operations.home}>
+                                        <ShieldCheck strokeWidth={1.8} />
+                                        <span>运营中心</span>
                                     </a>
                                 </DropdownMenuItem>
                             ) : null}

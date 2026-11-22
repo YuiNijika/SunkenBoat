@@ -5,6 +5,7 @@ import AccountPanel from './components/layout/AccountPanel';
 import ActionRail from './components/layout/ActionRail';
 import EditorWorkspace from './components/layout/EditorWorkspace';
 import ForumTopicEditor from './components/layout/ForumTopicEditor';
+import OperationsCenter from './components/layout/OperationsCenter';
 import ReadingProgress from './components/layout/ReadingProgress';
 import SiteFooter from './components/layout/SiteFooter';
 import SiteHeader from './components/layout/SiteHeader';
@@ -355,7 +356,12 @@ function SiteApp({ data, appStyle }: { data: PageData; appStyle: CSSProperties }
                     ) : (
                         <div className="grid grid-cols-[minmax(0,1fr)] gap-[15px]">
                             {contentBlocks.map(({ block, index }) => renderBlock(block, index))}
-                            {data.kind === 'account' ? (
+                            {data.kind === 'operations' ? (
+                                <OperationsCenter
+                                    api={data.api?.user}
+                                    enabled={data.operationsEnabled !== false}
+                                />
+                            ) : data.kind === 'account' ? (
                                 <AccountPanel
                                     api={data.api?.user}
                                     section={data.userSection ?? 'profile'}

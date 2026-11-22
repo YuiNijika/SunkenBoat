@@ -3,8 +3,11 @@ import type { FormEvent, ReactNode } from 'react';
 import { useLocation } from 'react-router-dom';
 import {
     BadgeCheck,
+    CalendarCheck,
     Camera,
     CircleDot,
+    CircleAlert,
+    Coins,
     ExternalLink,
     FileText,
     KeyRound,
@@ -16,6 +19,8 @@ import {
     MessageSquare,
     Newspaper,
     ShieldCheck,
+    Sparkles,
+    Trophy,
     Unlink,
     UserCheck,
     UserRound,
@@ -32,15 +37,19 @@ import type {
     OAuthProvider,
     UserApiEndpoints,
     UserCertification,
+    UserEconomySummary,
     UserProfile,
 } from '../../types';
 import { notifyError, notifySuccess } from '../../lib/notify';
 import { refreshApp } from '../../lib/appNavigation';
+import { cssUrl } from '../../lib/css';
 import ContentManager from './ContentManager';
 import AuthDialog from './AuthDialog';
 import UserAvatar from './UserAvatar';
 import DownloadHistory from '../content/DownloadHistory';
 import MediaLibrary from '../content/MediaLibrary';
+import CaptchaField from './CaptchaField';
+import type { CaptchaValue } from './CaptchaField';
 
 const GROUP_LABELS: Record<string, string> = {
     administrator: '管理员',
@@ -199,6 +208,9 @@ export default function AccountPanel({ api, section = 'profile' }: Props) {
     const [pendingCertLoading, setPendingCertLoading] = useState(false);
     const [certReviewBusy, setCertReviewBusy] = useState(0);
     const [certReason, setCertReason] = useState('');
+    const [economy, setEconomy] = useState<UserEconomySummary | null>(null);
+    const [checkinCaptcha, setCheckinCaptcha] = useState<CaptchaValue | null>(null);
+    const [checkinBusy, setCheckinBusy] = useState(false);
 
     const sessionEndpoint = api?.session;
     const meEndpoint = api?.me;
@@ -207,6 +219,33 @@ export default function AccountPanel({ api, section = 'profile' }: Props) {
     useEffect(() => {
         setOauthProviders(api?.oauth?.providers ?? []);
     }, [api?.oauth]);
+
+    useEffect(() => {
+        if (status !== 'ready' || !api?.economy?.summary) {
+            return;
+        }
+        let active = true;
+        void fetch(api.economy.summary, {
+            credentials: 'same-origin',
+            headers: {
+                Accept: 'application/json',
+                'X-Typecho-Token': api.economy.nonce,
+            },
+        })
+            .then((response) => readPayload(response))
+            .then((payload) => {
+                const data = (payload?.data as { economy?: UserEconomySummary } | undefined)
+                    ?.economy;
+                if (active && data) {
+                    setEconomy(data);
+                }
+            })
+            .catch(() => undefined);
+
+        return () => {
+            active = false;
+        };
+    }, [status, api?.economy?.summary, profile?.uid]);
 
     useEffect(() => {
         const params = new URLSearchParams(location.search);
@@ -975,7 +1014,7 @@ export default function AccountPanel({ api, section = 'profile' }: Props) {
         ? {
               backgroundImage:
                   'linear-gradient(180deg, rgba(8, 12, 18, 0.12), rgba(8, 12, 18, 0.34)), '
-                  + `url(${JSON.stringify(coverUrl)})`,
+                  + cssUrl(coverUrl),
               backgroundSize: 'cover',
               backgroundPosition: 'center',
           }
@@ -985,6 +1024,41 @@ export default function AccountPanel({ api, section = 'profile' }: Props) {
     const pageUrls = api.pages;
     const spaceUrl = `${pageUrls.space.replace(/\/+$/, '')}/${profile.uid}`;
     const forumLabel = api.forum?.label || '圈子';
+
+    const checkin = async () => {
+        if (checkinBusy || !api.economy?.checkin) {
+            return;
+        }
+        setCheckinBusy(true);
+        try {
+            const response = await fetch(api.economy.checkin, {
+                method: 'POST',
+                credentials: 'same-origin',
+                headers: {
+                    Accept: 'application/json',
+                    'Content-Type': 'application/json',
+                    'X-Typecho-Token': api.economy.nonce,
+                },
+                body: JSON.stringify(checkinCaptcha ? { captcha: checkinCaptcha } : {}),
+            });
+            const payload = await readPayload(response);
+            if (!response.ok) {
+                throw new Error(errorMessage(payload, '签到失败'));
+            }
+            const next = (payload?.data as { economy?: UserEconomySummary } | undefined)
+                ?.economy;
+            if (next) {
+                setEconomy(next);
+            }
+            setCheckinCaptcha(null);
+            notifySuccess('签到成功，奖励已到账。');
+        } catch (reason) {
+            notifyError(reason instanceof Error ? reason.message : '签到失败');
+        } finally {
+            setCheckinBusy(false);
+        }
+    };
+
     const navItems: { id: AccountSection; href: string; label: string; icon: ReactNode }[] = [
         {
             id: 'profile',
@@ -1152,6 +1226,14 @@ export default function AccountPanel({ api, section = 'profile' }: Props) {
                             </div>
                         </div>
                         <div className="flex flex-wrap items-center gap-2 sm:justify-end">
+                            {api.operations?.enabled ? (
+                                <Button asChild type="button" size="sm">
+                                    <a href={api.operations.home}>
+                                        <ShieldCheck aria-hidden="true" />
+                                        运营中心
+                                    </a>
+                                </Button>
+                            ) : null}
                             <Button asChild type="button" variant="outline" size="sm">
                                 <a href={spaceUrl}>
                                     <ExternalLink aria-hidden="true" />
@@ -1195,6 +1277,124 @@ export default function AccountPanel({ api, section = 'profile' }: Props) {
                     </a>
                 ))}
             </nav>
+
+            {economy && (economy.enabled || economy.status.banned) ? (
+                <section className="surface-card card-pad">
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div>
+                            <p className="section-label">Account wallet</p>
+                            <h3 className="mt-1.5 flex items-center gap-2 text-[18px] font-medium">
+                                {economy.enabled ? (
+                                    <>
+                                        <Trophy className="size-4" style={{ color: economy.level.color }} aria-hidden="true" />
+                                        {economy.level.title}
+                                    </>
+                                ) : (
+                                    '账号状态'
+                                )}
+                            </h3>
+                            {economy.enabled ? (
+                                <p className="mt-1 text-[12px] leading-5 text-ink-mute">
+                                    经验 {economy.experience}
+                                    {economy.level.nextExperience > economy.experience
+                                        ? ` · 距「${economy.level.nextTitle}」还需 ${economy.level.nextExperience - economy.experience} 经验`
+                                        : ' · 已达到当前最高等级'}
+                                </p>
+                            ) : null}
+                        </div>
+                        {economy.enabled && economy.checkin.enabled ? (
+                            <Button
+                                type="button"
+                                size="sm"
+                                onClick={() => void checkin()}
+                                disabled={checkinBusy || economy.checkin.checkedIn}
+                            >
+                                {checkinBusy ? (
+                                    <LoaderCircle className="animate-spin" aria-hidden="true" />
+                                ) : (
+                                    <CalendarCheck aria-hidden="true" />
+                                )}
+                                {economy.checkin.checkedIn
+                                    ? `已签到 · 连续 ${economy.checkin.streak} 天`
+                                    : `签到 · 连续 ${economy.checkin.streak} 天`}
+                            </Button>
+                        ) : null}
+                    </div>
+
+                    {economy.status.banned ? (
+                        <div className="mt-4 flex items-start gap-2 rounded-lg border border-danger/30 bg-danger/5 p-3 text-[12px] leading-5 text-danger">
+                            <CircleAlert className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
+                            <span>{economy.status.message}</span>
+                        </div>
+                    ) : null}
+
+                    {economy.enabled ? (
+                        <>
+                            <div className="mt-4 grid gap-2 sm:grid-cols-3">
+                                <div className="rounded-lg border border-line bg-surface-mute p-3">
+                                    <p className="flex items-center gap-1.5 text-[11px] text-ink-faint">
+                                        <Coins className="size-3.5" aria-hidden="true" />
+                                        {economy.labels.balance}
+                                    </p>
+                                    <p className="mt-1 text-lg font-semibold tabular-nums text-ink">
+                                        ¥{economy.balance}
+                                    </p>
+                                </div>
+                                <div className="rounded-lg border border-line bg-surface-mute p-3">
+                                    <p className="flex items-center gap-1.5 text-[11px] text-ink-faint">
+                                        <Sparkles className="size-3.5" aria-hidden="true" />
+                                        {economy.labels.points}
+                                    </p>
+                                    <p className="mt-1 text-lg font-semibold tabular-nums text-ink">
+                                        {economy.points}
+                                    </p>
+                                </div>
+                                <div className="rounded-lg border border-line bg-surface-mute p-3">
+                                    <p className="flex items-center gap-1.5 text-[11px] text-ink-faint">
+                                        <Trophy className="size-3.5" aria-hidden="true" />
+                                        等级进度
+                                    </p>
+                                    <div
+                                        className="mt-2.5 h-1.5 overflow-hidden rounded-full bg-line"
+                                        role="progressbar"
+                                        aria-valuemin={0}
+                                        aria-valuemax={100}
+                                        aria-valuenow={economy.level.progress}
+                                    >
+                                        <span
+                                            className="block h-full rounded-full"
+                                            style={{
+                                                width: `${economy.level.progress}%`,
+                                                background: economy.level.color,
+                                            }}
+                                        />
+                                    </div>
+                                    <p className="mt-1.5 text-[11px] text-ink-faint">
+                                        {economy.level.progress}%
+                                    </p>
+                                </div>
+                            </div>
+                            {economy.checkin.enabled && !economy.checkin.checkedIn ? (
+                                <div className="mt-4 grid gap-2">
+                                    <p className="text-[12px] text-ink-mute">
+                                        今日签到可获经验 {economy.checkin.rewards.experience}、
+                                        {economy.labels.points} {economy.checkin.rewards.points}
+                                        {economy.checkin.rewards.balanceCents > 0
+                                            ? `、${economy.labels.balance} ¥${(economy.checkin.rewards.balanceCents / 100).toFixed(2)}`
+                                            : ''}
+                                        。
+                                    </p>
+                                    <CaptchaField
+                                        config={api.captcha}
+                                        scene="checkin"
+                                        onChange={setCheckinCaptcha}
+                                    />
+                                </div>
+                            ) : null}
+                        </>
+                    ) : null}
+                </section>
+            ) : null}
 
             <section className="surface-card card-pad">
                         <div className="mb-5">
@@ -1285,9 +1485,9 @@ export default function AccountPanel({ api, section = 'profile' }: Props) {
                                                     style={
                                                         details.background !== ''
                                                             ? {
-                                                                  backgroundImage: `url(${JSON.stringify(
+                                                                  backgroundImage: cssUrl(
                                                                       details.background
-                                                                  )})`,
+                                                                  ),
                                                               }
                                                             : undefined
                                                     }

@@ -132,7 +132,10 @@ final class Flow
 
         return $provider->authorizeUrl(
             $config,
-            $this->callbackUrl($providerId),
+            $this->callbackUrl(
+                $providerId,
+                $provider->requiresStateEcho() ? null : $state
+            ),
             $state,
             $challenge
         );
@@ -149,7 +152,7 @@ final class Flow
         $stateData = $this->consumeState(
             $routeId,
             $state,
-            true
+            false
         );
         if ($stateData === null) {
             return CallbackResult::error($routeId, 'oauth_state');
@@ -216,13 +219,18 @@ final class Flow
         }
     }
 
-    public function callbackUrl(string $providerId): string
+    public function callbackUrl(string $providerId, ?string $nonce = null): string
     {
         $base = rtrim($this->callbackBase, '/');
         $provider = $this->registry->get($providerId);
         $callbackId = $provider?->callbackId() ?? $providerId;
 
-        return $base . '/ttdf/oauth/' . rawurlencode($callbackId) . '/callback';
+        $url = $base . '/ttdf/oauth/' . rawurlencode($callbackId) . '/callback';
+        if ($nonce !== null && preg_match('/^[a-f0-9]{32}$/', $nonce) === 1) {
+            $url .= '/' . $nonce;
+        }
+
+        return $url;
     }
 
     /**

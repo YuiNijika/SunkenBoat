@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { ArrowDownToLine, CheckCircle2, CreditCard, ExternalLink, LoaderCircle, LockKeyhole } from 'lucide-react';
+import { ArrowDownToLine, CheckCircle2, CreditCard, ExternalLink, LoaderCircle, LockKeyhole, Wallet } from 'lucide-react';
 import { Badge } from '../ui/badge';
 import { Button } from '../ui/button';
 import {
@@ -13,6 +13,7 @@ import {
 import {
     checkDownloadOrder,
     createDownloadOrder,
+    payDownloadWithBalance,
     resolveDownload,
     safeDownloadUrl,
 } from '../../lib/downloads';
@@ -74,8 +75,9 @@ function PaymentDialog({
     onOrderChange: (order: DownloadOrder) => void;
 }) {
     const [checking, setChecking] = useState(false);
+    const [payingBalance, setPayingBalance] = useState(false);
     const controller = useRef<AbortController | null>(null);
-    const paymentUrl = safeDownloadUrl(order.paymentUrl);
+    const paymentOptions = order.paymentOptions.filter((option) => safeDownloadUrl(option.url) !== '');
 
     useEffect(() => () => controller.current?.abort(), []);
 
@@ -114,6 +116,34 @@ function PaymentDialog({
         }
     };
 
+    const payWithBalance = async () => {
+        if (payingBalance) {
+            return;
+        }
+        setPayingBalance(true);
+        controller.current?.abort();
+        const request = new AbortController();
+        controller.current = request;
+        try {
+            const next = await payDownloadWithBalance({
+                client,
+                orderNumber: order.number,
+                signal: request.signal,
+            });
+            onOrderChange(next);
+            notifySuccess('余额支付成功，可以下载资源了。');
+            onOpenChange(false);
+        } catch (reason) {
+            if (!request.signal.aborted) {
+                notifyError(reason instanceof Error ? reason.message : '余额支付失败');
+            }
+        } finally {
+            if (!request.signal.aborted) {
+                setPayingBalance(false);
+            }
+        }
+    };
+
     return (
         <Dialog open={open} onOpenChange={onOpenChange}>
             <DialogContent>
@@ -134,23 +164,37 @@ function PaymentDialog({
                         </div>
                     </dl>
                 </div>
-                {paymentUrl === '' ? (
+                {paymentOptions.length === 0 && !client.balanceEnabled ? (
                     <p className="text-sm text-ink-mute">支付链接暂不可用，请返回资源页重新下单。</p>
+                ) : paymentOptions.length === 0 ? (
+                    <p className="text-sm text-ink-mute">
+                        可使用{client.balanceLabel}直接结算，支付成功后立即解锁资源。
+                    </p>
+                ) : paymentOptions.length > 1 ? (
+                    <p className="text-sm text-ink-mute">可选择一种付款方式完成支付，付款后返回这里确认结果。</p>
                 ) : null}
                 <DialogFooter>
-                    <Button type="button" variant="outline" onClick={() => void checkPayment()} disabled={checking}>
-                        {checking ? <LoaderCircle className="animate-spin" aria-hidden="true" /> : <CheckCircle2 aria-hidden="true" />}
-                        {checking ? '查询中…' : '我已支付'}
-                    </Button>
-                    {paymentUrl !== '' ? (
-                        <Button asChild>
-                            <a href={paymentUrl} target="_blank" rel="noopener noreferrer" data-ttdf-reload>
-                                <CreditCard aria-hidden="true" />
-                                前往付款
-                                <ExternalLink aria-hidden="true" />
-                            </a>
+                    <div className="flex w-full flex-wrap justify-end gap-2">
+                        <Button type="button" variant="outline" onClick={() => void checkPayment()} disabled={checking}>
+                            {checking ? <LoaderCircle className="animate-spin" aria-hidden="true" /> : <CheckCircle2 aria-hidden="true" />}
+                            {checking ? '查询中…' : '我已支付'}
                         </Button>
-                    ) : null}
+                        {client.balanceEnabled ? (
+                            <Button type="button" onClick={() => void payWithBalance()} disabled={payingBalance}>
+                                {payingBalance ? <LoaderCircle className="animate-spin" aria-hidden="true" /> : <Wallet aria-hidden="true" />}
+                                {payingBalance ? '支付中…' : `用${client.balanceLabel}支付`}
+                            </Button>
+                        ) : null}
+                        {paymentOptions.map((option) => (
+                            <Button asChild key={option.method + '\n' + option.url}>
+                                <a href={option.url} target="_blank" rel="noopener noreferrer" data-ttdf-reload>
+                                    <CreditCard aria-hidden="true" />
+                                    {option.method === 'default' ? option.label : `前往${option.label}付款`}
+                                    <ExternalLink aria-hidden="true" />
+                                </a>
+                            </Button>
+                        ))}
+                    </div>
                 </DialogFooter>
             </DialogContent>
         </Dialog>
@@ -243,7 +287,9 @@ export default function DownloadCard({ offer }: { offer: DownloadOffer }) {
     const controller = useRef<AbortController | null>(null);
     const purchased = offer.purchased || order?.status === 'paid';
     const exhausted = !offer.paid && remaining !== null && remaining <= 0;
-    const unavailable = !offer.available || (offer.paid && !purchased && !offer.paymentEnabled);
+    const unavailable =
+        !offer.available
+        || (offer.paid && !purchased && !offer.paymentEnabled && !offer.balanceEnabled);
 
     useEffect(() => {
         setOrder(null);

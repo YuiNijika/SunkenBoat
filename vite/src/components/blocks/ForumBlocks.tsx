@@ -67,6 +67,7 @@ import { Input } from '../ui/input';
 import { Popover, PopoverContent, PopoverTrigger } from '../ui/popover';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../ui/tabs';
 import { Textarea } from '../ui/textarea';
+import { cssUrl } from '../../lib/css';
 import type {
     ForumCircle,
     ForumCircleBlock,
@@ -575,7 +576,7 @@ export function CircleDialog({
                                 style={
                                     background !== ''
                                         ? {
-                                              backgroundImage: `linear-gradient(135deg, rgba(15, 23, 42, 0.12), rgba(15, 23, 42, 0.48)), url("${background}")`,
+                                              backgroundImage: `linear-gradient(135deg, rgba(15, 23, 42, 0.12), rgba(15, 23, 42, 0.48)), ${cssUrl(background)}`,
                                           }
                                         : undefined
                                 }
@@ -1344,7 +1345,7 @@ export function ForumCircleBlock({
                             style={
                                 circle.background !== ''
                                     ? {
-                                          backgroundImage: `linear-gradient(100deg, rgba(8, 15, 30, 0.82), rgba(8, 15, 30, 0.38)), url("${circle.background}")`,
+                                          backgroundImage: `linear-gradient(100deg, rgba(8, 15, 30, 0.82), rgba(8, 15, 30, 0.38)), ${cssUrl(circle.background)}`,
                                       }
                                     : undefined
                             }
@@ -2547,7 +2548,7 @@ export function ForumTopicBlock({
                                 style={
                                     circle.background !== ''
                                         ? {
-                                              backgroundImage: `linear-gradient(180deg, rgba(10, 18, 35, 0.08), rgba(10, 18, 35, 0.58)), url("${circle.background}")`,
+                                              backgroundImage: `linear-gradient(180deg, rgba(10, 18, 35, 0.08), rgba(10, 18, 35, 0.58)), ${cssUrl(circle.background)}`,
                                           }
                                         : undefined
                                 }

@@ -14,6 +14,7 @@ import {
     ShieldCheck,
     UserRound,
 } from 'lucide-react';
+import { cssUrl } from '../../lib/css';
 import type { ForumCircle, PostSummary, UserSpaceComment, UserSpaceProfile } from '../../types';
 
 const GROUP_LABELS: Record<string, string> = {
@@ -181,7 +182,7 @@ export default function UserSpaceBlock({
         ? {
               backgroundImage:
                   'linear-gradient(180deg, rgba(8, 12, 18, 0.08), rgba(8, 12, 18, 0.3)), '
-                  + `url(${JSON.stringify(profile.background)})`,
+                  + cssUrl(profile.background),
               backgroundSize: 'cover',
               backgroundPosition: 'center',
           }

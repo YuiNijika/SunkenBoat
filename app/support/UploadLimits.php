@@ -44,7 +44,7 @@ final class UploadLimits
     public static function guard(string $method, string $path, string $scope): void
     {
         if ($scope === 'v2.admin' && $method === 'POST' && $path === 'admin/media') {
-            self::enforce('background');
+            self::enforce(self::purpose());
             return;
         }
 

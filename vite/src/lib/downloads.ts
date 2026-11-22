@@ -10,9 +10,12 @@ export interface DownloadConfig {
 export interface DownloadsClient {
     enabled: boolean;
     paymentEnabled: boolean;
+    balanceEnabled: boolean;
+    balanceLabel: string;
     nonce: string;
     endpoints: {
         order: string;
+        balance: string;
         status: string;
         download: string;
         history: string;
@@ -34,11 +37,18 @@ export interface DownloadOffer extends DownloadsClient {
     purchased: boolean;
 }
 
+export interface DownloadPaymentOption {
+    method: string;
+    label: string;
+    url: string;
+}
+
 export interface DownloadOrder {
     number: string;
     status: 'pending' | 'paid' | 'free' | 'cancelled';
     amount: string;
     paymentUrl?: string;
+    paymentOptions: DownloadPaymentOption[];
     createdAt: number;
     paidAt: number;
     contentType: 'article' | 'topic';
@@ -148,11 +158,42 @@ function orderFrom(value: unknown): DownloadOrder {
         throw new Error('订单数据不完整，请刷新后重试');
     }
 
+    const paymentOptions: DownloadPaymentOption[] = [];
+    const seen = new Set<string>();
+    if (Array.isArray(order.paymentOptions)) {
+        for (const item of order.paymentOptions) {
+            if (!item || typeof item !== 'object') {
+                continue;
+            }
+            const option = item as Partial<DownloadPaymentOption>;
+            const method = String(option.method ?? '').trim();
+            const url = safeDownloadUrl(option.url);
+            if (
+                !/^[a-z][a-z0-9-]{0,63}$/.test(method)
+                || url === ''
+                || seen.has(method + '\n' + url)
+            ) {
+                continue;
+            }
+            seen.add(method + '\n' + url);
+            paymentOptions.push({
+                method,
+                label: String(option.label ?? method).trim() || method,
+                url,
+            });
+        }
+    }
+    const legacyUrl = safeDownloadUrl(order.paymentUrl);
+    if (paymentOptions.length === 0 && legacyUrl !== '') {
+        paymentOptions.push({ method: 'default', label: '前往付款', url: legacyUrl });
+    }
+
     return {
         number: order.number,
         status: order.status as DownloadOrder['status'],
         amount: typeof order.amount === 'string' ? order.amount : '0.00',
-        paymentUrl: safeDownloadUrl(order.paymentUrl),
+        paymentUrl: paymentOptions[0]?.url ?? '',
+        paymentOptions,
         createdAt: Number(order.createdAt) || 0,
         paidAt: Number(order.paidAt) || 0,
         contentType: order.contentType as DownloadOrder['contentType'],
@@ -197,6 +238,26 @@ export async function checkDownloadOrder({
     const endpoint = new URL(client.endpoints.status, window.location.href);
     endpoint.searchParams.set('orderNumber', orderNumber);
     const data = await requestDownload({ client, endpoint: endpoint.href, signal });
+
+    return orderFrom(data.order);
+}
+
+export async function payDownloadWithBalance({
+    client,
+    orderNumber,
+    signal,
+}: {
+    client: DownloadsClient;
+    orderNumber: string;
+    signal?: AbortSignal;
+}): Promise<DownloadOrder> {
+    const data = await requestDownload({
+        client,
+        endpoint: client.endpoints.balance,
+        method: 'POST',
+        body: { orderNumber },
+        signal,
+    });
 
     return orderFrom(data.order);
 }

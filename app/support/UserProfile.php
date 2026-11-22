@@ -141,6 +141,7 @@ final class UserProfile
                 Response::error('Enhanced user center is disabled', 403);
             }
 
+            WriteThrottle::guard('user-profile-update', $uid, 30, 60);
             self::save($uid, $data);
         }
 
@@ -365,7 +366,7 @@ final class UserProfile
             'name' => (string) ($row['name'] ?? ''),
             'screenName' => (string) ($row['screenName'] ?? ''),
             'mail' => $mail,
-            'url' => (string) ($row['url'] ?? ''),
+            'url' => self::website($row['url'] ?? ''),
             'group' => (string) ($row['group'] ?? ''),
             'created' => $created > 0 ? date('c', $created) : '',
             'avatar' => Avatar::forUser($uid, $mail, 160, $customAvatar),
@@ -462,7 +463,7 @@ final class UserProfile
             ),
             'customAvatar' => $customAvatar,
             'background' => $customBackground,
-            'url' => (string) ($row['url'] ?? ''),
+            'url' => self::website($row['url'] ?? ''),
             'group' => (string) ($row['group'] ?? ''),
             'created' => $created > 0 ? date('c', $created) : '',
             'posts' => self::countPosts($uid),
@@ -494,6 +495,15 @@ final class UserProfile
     public static function canWrite(): bool
     {
         return self::canWriteGroup(self::currentGroup());
+    }
+
+    /**
+     * Editors and administrators can enter the operations center. User
+     * management endpoints still require the administrator tier.
+     */
+    public static function canOperate(): bool
+    {
+        return in_array(self::currentGroup(), ['editor', 'administrator'], true);
     }
 
     public static function canWriteGroup(string $group): bool
@@ -696,6 +706,41 @@ final class UserProfile
         return function_exists('mb_substr')
             ? mb_substr($value, 0, $limit, 'UTF-8')
             : substr($value, 0, $limit);
+    }
+
+    private static function website(mixed $value): string
+    {
+        if (!is_string($value)) {
+            return '';
+        }
+
+        $url = trim($value);
+        if (
+            $url === ''
+            || strlen($url) > 512
+            || str_starts_with($url, '//')
+            || preg_match('/[\x00-\x20\x7f"\'<>`\\\\]/', $url) === 1
+            || filter_var($url, FILTER_VALIDATE_URL) === false
+        ) {
+            return '';
+        }
+
+        $parts = parse_url($url);
+        if (!is_array($parts)) {
+            return '';
+        }
+
+        $scheme = strtolower((string) ($parts['scheme'] ?? ''));
+        if (
+            !in_array($scheme, ['http', 'https'], true)
+            || (string) ($parts['host'] ?? '') === ''
+            || array_key_exists('user', $parts)
+            || array_key_exists('pass', $parts)
+        ) {
+            return '';
+        }
+
+        return $url;
     }
 
     private static function length(string $value): int

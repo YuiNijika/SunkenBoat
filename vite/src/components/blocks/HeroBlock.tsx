@@ -8,6 +8,7 @@ import {
 import { useId } from 'react';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
+import { cssUrl, safeCssUrl } from '../../lib/css';
 
 export interface HeroCardData {
     title: string;
@@ -69,7 +70,8 @@ export default function HeroBlock({
     const compact = variant === 'compact';
     const primary = actions.find((action) => action.style === 'primary') ?? actions[0];
     const secondary = actions.filter((action) => action !== primary);
-    const hasImage = background === 'image' && image !== '';
+    const imageUrl = safeCssUrl(image);
+    const hasImage = background === 'image' && imageUrl !== null;
     const hasVideo = background === 'video' && video !== '';
     const hasMedia = hasImage || hasVideo;
     const cardRows = cards.filter((card) => card.title !== '' || card.text !== '').slice(0, 4);
@@ -102,13 +104,13 @@ export default function HeroBlock({
                     imageEffect === 'fixed' ? (
                         <span
                             className="hero-bg hero-bg-fixed"
-                            style={{ backgroundImage: `url("${image}")` }}
+                            style={{ backgroundImage: cssUrl(imageUrl) }}
                             aria-hidden="true"
                         />
                     ) : (
                         <img
                             className="hero-bg"
-                            src={image}
+                            src={imageUrl ?? undefined}
                             alt=""
                             loading="eager"
                             decoding="async"

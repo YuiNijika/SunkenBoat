@@ -31,10 +31,14 @@ if (PHP_VERSION_ID < 80200) {
 \TTDF\Hooks\Hooks::addAction('framework.boot', [\SunkenBoat\Support\API::class, 'register']);
 \TTDF\Hooks\Hooks::addAction('framework.boot', [\SunkenBoat\Support\ArticleBatch::class, 'register']);
 \TTDF\Hooks\Hooks::addAction('framework.boot', [\SunkenBoat\Support\AuthHooks::class, 'register']);
+\TTDF\Hooks\Hooks::addAction('framework.boot', [\SunkenBoat\Support\Captcha::class, 'register']);
 \TTDF\Hooks\Hooks::addAction('framework.boot', [\SunkenBoat\Support\CommentMarkup::class, 'register']);
+\TTDF\Hooks\Hooks::addAction('framework.boot', [\SunkenBoat\Support\ContentGate::class, 'register']);
+\TTDF\Hooks\Hooks::addAction('framework.boot', [\SunkenBoat\Support\ContentGuard::class, 'register']);
 \TTDF\Hooks\Hooks::addAction('framework.boot', [\SunkenBoat\Support\Downloads::class, 'register']);
 \TTDF\Hooks\Hooks::addAction('framework.boot', [\SunkenBoat\Support\Forum::class, 'register']);
 \TTDF\Hooks\Hooks::addAction('framework.boot', [\SunkenBoat\Support\UserProfile::class, 'register']);
+\TTDF\Hooks\Hooks::addAction('framework.boot', [\SunkenBoat\Support\UserEconomy::class, 'register']);
 \TTDF\Hooks\Hooks::addAction('framework.boot', [\SunkenBoat\Support\OAuth::class, 'register']);
 \TTDF\Hooks\Hooks::addAction('framework.boot', [\SunkenBoat\Support\Seo::class, 'register']);
 \TTDF\Hooks\Hooks::addAction('framework.boot', [\SunkenBoat\Support\Sms::class, 'register']);

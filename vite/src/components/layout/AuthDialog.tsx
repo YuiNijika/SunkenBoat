@@ -11,6 +11,8 @@ import {
 } from '../ui/dialog';
 import { Input } from '../ui/input';
 import { notifyError, notifySuccess } from '../../lib/notify';
+import CaptchaField from './CaptchaField';
+import type { CaptchaValue } from './CaptchaField';
 import {
     errorMessage,
     profileFrom,
@@ -51,6 +53,7 @@ export default function AuthDialog({
     const [phoneCode, setPhoneCode] = useState('');
     const [sendingSms, setSendingSms] = useState(false);
     const [smsCooldown, setSmsCooldown] = useState(0);
+    const [captcha, setCaptcha] = useState<CaptchaValue | null>(null);
 
     useEffect(() => {
         if (!open) {
@@ -68,6 +71,7 @@ export default function AuthDialog({
         setRemember(false);
         setCooldown(0);
         setSmsCooldown(0);
+        setCaptcha(null);
     }, [open]);
 
     useEffect(() => {
@@ -108,6 +112,7 @@ export default function AuthDialog({
         setConfirm('');
         setCode('');
         setPhoneCode('');
+        setCaptcha(null);
         setMode((current) => (current === 'login' ? 'register' : 'login'));
     };
 
@@ -116,6 +121,7 @@ export default function AuthDialog({
         setConfirm('');
         setCode('');
         setPhoneCode('');
+        setCaptcha(null);
         setMode('reset');
     };
 
@@ -123,6 +129,7 @@ export default function AuthDialog({
         setPassword('');
         setConfirm('');
         setCode('');
+        setCaptcha(null);
         setPhoneCode('');
         setMode('login');
     };
@@ -224,6 +231,7 @@ export default function AuthDialog({
                         ...(api.smsVerify
                             ? { phone: phone.trim(), phoneCode: phoneCode.trim() }
                             : {}),
+                        ...(captcha ? { captcha } : {}),
                     }),
                 });
                 const payload = await readPayload(response);
@@ -281,7 +289,12 @@ export default function AuthDialog({
                     Accept: 'application/json',
                     'Content-Type': 'application/json',
                 },
-                body: JSON.stringify({ name: name.trim(), password, remember }),
+                body: JSON.stringify({
+                    name: name.trim(),
+                    password,
+                    remember,
+                    ...(captcha ? { captcha } : {}),
+                }),
             });
             const payload = await readPayload(response);
             if (!response.ok) {
@@ -535,6 +548,14 @@ export default function AuthDialog({
                                         required
                                     />
                                 </label>
+                            ) : null}
+
+                            {mode !== 'reset' ? (
+                                <CaptchaField
+                                    config={api.captcha}
+                                    scene={mode === 'login' ? 'login' : 'register'}
+                                    onChange={setCaptcha}
+                                />
                             ) : null}
 
                             {mode === 'login' ? (

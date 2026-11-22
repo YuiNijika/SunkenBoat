@@ -28,9 +28,13 @@ final class Sms
 
     private const IP_PREFIX = 'sunken_si_';
 
+    private const FAIL_PREFIX = 'sunken_sf_';
+
     private const IP_WINDOW = 600;
 
     private const IP_LIMIT = 10;
+
+    private const FAIL_WINDOW = 1800;
 
     public static function register(): void
     {
@@ -78,6 +82,14 @@ final class Sms
         $phone = self::normalizePhone($data['phone'] ?? '');
         if ($phone === '') {
             Response::error('手机号格式无效', 422, ['phone' => '请输入有效的手机号']);
+        }
+
+        $verificationRetry = self::retryAfter($phone, 'register');
+        if ($verificationRetry > 0) {
+            Response::error('验证码错误次数过多', 429, [
+                'phone' => '请 ' . $verificationRetry . ' 秒后再试',
+                'retryAfter' => $verificationRetry,
+            ]);
         }
 
         $retry = self::ipRetryAfter();
@@ -128,6 +140,10 @@ final class Sms
             return false;
         }
 
+        if (self::retryAfter($phone, $purpose) > 0) {
+            return false;
+        }
+
         $record = self::readCode($phone, $purpose);
         if ($record === null) {
             return false;
@@ -142,9 +158,11 @@ final class Sms
 
         $expected = self::codeHash($phone, $purpose, $code);
         if (!hash_equals($hash, $expected)) {
+            self::recordFailure($phone, $purpose);
             return false;
         }
 
+        self::clearFailures($phone, $purpose);
         self::clearCode($phone, $purpose);
 
         return true;
@@ -159,6 +177,17 @@ final class Sms
         $phone = preg_replace('/[\s\-().]/', '', trim((string) $value)) ?? '';
 
         return preg_match('/^\+?[0-9]{6,20}$/', $phone) === 1 ? $phone : '';
+    }
+
+    public static function retryAfter(mixed $phone, string $purpose = 'register'): int
+    {
+        $phone = self::normalizePhone($phone);
+        $purpose = strtolower(trim($purpose));
+        if ($phone === '' || $purpose === '') {
+            return 0;
+        }
+
+        return self::failureRetryAfter($phone, $purpose);
     }
 
     /**
@@ -544,6 +573,79 @@ final class Sms
         } catch (\Throwable) {
             // Expired codes are harmless; failing to delete must not break verification.
         }
+    }
+
+    private static function failureRetryAfter(string $phone, string $purpose): int
+    {
+        $record = self::readFailure($phone, $purpose);
+        $blockedUntil = (int) ($record['blockedUntil'] ?? 0);
+
+        return $blockedUntil > time() ? $blockedUntil - time() : 0;
+    }
+
+    private static function recordFailure(string $phone, string $purpose): void
+    {
+        $now = time();
+        $record = self::readFailure($phone, $purpose);
+        $lastAt = (int) ($record['lastAt'] ?? 0);
+        $failures = $now > $lastAt + self::FAIL_WINDOW
+            ? 0
+            : (int) ($record['failures'] ?? 0);
+        $failures++;
+
+        $blockedUntil = 0;
+        if ($failures >= 10) {
+            $blockedUntil = $now + 180;
+        } elseif ($failures >= 5) {
+            $blockedUntil = $now + 30;
+        }
+
+        self::writeFailure($phone, $purpose, [
+            'failures' => $failures,
+            'lastAt' => $now,
+            'blockedUntil' => $blockedUntil,
+        ], $record !== null);
+    }
+
+    private static function clearFailures(string $phone, string $purpose): void
+    {
+        $record = self::readFailure($phone, $purpose);
+        if ($record !== null) {
+            self::writeFailure($phone, $purpose, [
+                'failures' => 0,
+                'lastAt' => 0,
+                'blockedUntil' => 0,
+            ], true);
+        }
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    private static function readFailure(string $phone, string $purpose): ?array
+    {
+        return self::readOption(self::failureKey($phone, $purpose));
+    }
+
+    /**
+     * @param array<string, mixed> $record
+     */
+    private static function writeFailure(
+        string $phone,
+        string $purpose,
+        array $record,
+        bool $exists
+    ): void {
+        try {
+            self::writeOption(self::failureKey($phone, $purpose), $record, $exists);
+        } catch (\Throwable) {
+            // Failure tracking must never block the verification response.
+        }
+    }
+
+    private static function failureKey(string $phone, string $purpose): string
+    {
+        return self::FAIL_PREFIX . substr(hash('sha256', $phone . '|' . $purpose), 0, 20);
     }
 
     private static function codeHash(string $phone, string $purpose, string $code): string

@@ -61,13 +61,20 @@ final class API
     public static function dispatch(string $endpoint): never
     {
         $method = strtoupper((string) ($_SERVER['REQUEST_METHOD'] ?? 'GET'));
+        if ($endpoint === 'payment/notify') {
+            if (!in_array($method, ['GET', 'POST'], true)) {
+                Response::error('Method not allowed', 405);
+            }
+
+            Downloads::paymentNotify();
+        }
+
         if ($method !== 'GET') {
             Response::error('Method not allowed', 405);
         }
 
         try {
             $data = match ($endpoint) {
-                'payment/notify' => null,
                 'sidebar' => PageData::sidebarData(),
                 'site' => PageData::siteCard(),
                 'categories' => PageData::categoriesData(),
@@ -83,9 +90,6 @@ final class API
         }
 
         if ($data === null) {
-            if ($endpoint === 'payment/notify') {
-                Downloads::paymentNotify();
-            }
             Response::error('Endpoint not found', 404);
         }
 

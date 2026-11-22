@@ -48,6 +48,8 @@ final class OAuth
 
     private const RATE_WINDOW = 1800;
 
+    private const AUTO_ACCOUNT_OPTION = 'sunken_oauth_auto';
+
     /** @var array<string, string> */
     private const SETTING_PREFIXES = [
         'qq' => 'OAuth_QQ',
@@ -76,6 +78,8 @@ final class OAuth
     public static function register(): void
     {
         Hooks::addFilter('router.match', [self::class, 'match']);
+        Hooks::addAction('rest.v2.password.reset.after', [self::class, 'clearAutoAccount']);
+        Hooks::addAction('rest.v2.password.change.after', [self::class, 'clearAutoAccount']);
         Endpoint::register('oauth-unbind', [self::class, 'unbind'], [
             'auth' => 'user',
             'method' => 'POST',
@@ -107,7 +111,7 @@ final class OAuth
         }
 
         if ($step === 'callback') {
-            self::callback($provider);
+            self::callback($provider, (string) ($params['nonce'] ?? ''));
         }
 
         self::fail('oauth_failed');
@@ -126,7 +130,13 @@ final class OAuth
             ];
         }
 
-        if (preg_match('#^ttdf/oauth/([a-z0-9][a-z0-9_-]{0,31})/(start|callback)$#', $path, $matches) !== 1) {
+        if (
+            preg_match(
+                '#^ttdf/oauth/([a-z0-9][a-z0-9_-]{0,31})/(start|callback)(?:/([a-f0-9]{32}))?$#',
+                $path,
+                $matches
+            ) !== 1
+        ) {
             return $value;
         }
 
@@ -135,6 +145,7 @@ final class OAuth
             'params' => [
                 'provider' => $matches[1],
                 'step' => $matches[2],
+                'nonce' => $matches[3] ?? '',
             ],
         ];
     }
@@ -227,6 +238,21 @@ final class OAuth
         }
 
         try {
+            $bindings = self::flow()->bindings($uid);
+            if (!isset($bindings[$provider])) {
+                Response::error('该社交账号尚未绑定', 404, [
+                    'provider' => '该社交账号尚未绑定',
+                ]);
+            }
+
+            if (count($bindings) <= 1 && self::isAutoAccount($uid)) {
+                Response::error(
+                    '这是当前账号唯一的登录方式。请先在账号安全设置真实邮箱并重置密码，或绑定其他社交账号后再解绑。',
+                    409,
+                    ['provider' => '不能解绑最后一个登录方式']
+                );
+            }
+
             self::flow()->unbind($uid, $provider);
         } catch (InvalidArgumentException) {
             Response::error('Invalid request body', 422, [
@@ -235,6 +261,34 @@ final class OAuth
         }
 
         return ['oauth' => self::client()];
+    }
+
+    /**
+     * A password reset proves the owner can recover the local account, so the
+     * provider is no longer the only way back in.
+     *
+     * @param mixed $user
+     * @param mixed $mail
+     */
+    public static function clearAutoAccount(mixed $user, mixed $mail = null): void
+    {
+        unset($mail);
+
+        $uid = is_array($user) ? (int) ($user['uid'] ?? 0) : 0;
+        if ($uid <= 0) {
+            return;
+        }
+
+        try {
+            $db = Db::get();
+            $db->query(
+                $db->delete('table.options')
+                    ->where('name = ?', self::AUTO_ACCOUNT_OPTION)
+                    ->where('user = ?', $uid)
+            );
+        } catch (\Throwable $exception) {
+            error_log('SunkenBoat OAuth auto-account marker cleanup failed: ' . $exception->getMessage());
+        }
     }
 
     /**
@@ -258,6 +312,10 @@ final class OAuth
             self::renderCompleteError('绑定信息已过期，请重新发起社交账号登录。', 410);
         }
 
+        if (self::rateLimited($pending['provider'])) {
+            self::renderCompleteError('尝试次数过多，请稍后再试。', 429);
+        }
+
         try {
             $flow = self::flow();
             if (!$flow->isEnabled()) {
@@ -277,7 +335,11 @@ final class OAuth
         }
 
         if ($method === 'GET') {
-            self::renderPendingPage($pending, $provider);
+            $reason = is_string($_GET['reason'] ?? null) ? (string) $_GET['reason'] : '';
+            $notice = $reason === 'verification'
+                ? '站点已启用注册验证，请先通过登录框注册并完成邮箱或短信验证，再回来绑定这个社交账号。'
+                : '';
+            self::renderPendingPage($pending, $provider, '', 200, $notice);
         }
 
         if (!RestAuth::originMatches()) {
@@ -304,6 +366,7 @@ final class OAuth
 
         $uid = is_array($user) ? (int) ($user['uid'] ?? 0) : 0;
         if ($uid <= 0) {
+            self::recordRateFailure($pending['provider']);
             self::renderPendingPage($pending, $provider, '用户名或密码无效。', 422);
         }
 
@@ -320,6 +383,7 @@ final class OAuth
         }
 
         self::clearPending();
+        self::clearRateFailures($pending['provider']);
         self::login($uid);
         self::redirect(
             self::userUrl('social') . '?oauth=bound&provider=' . rawurlencode($pending['provider'])
@@ -342,7 +406,7 @@ final class OAuth
         self::redirect($url);
     }
 
-    private static function callback(string $provider): never
+    private static function callback(string $provider, string $pathNonce = ''): never
     {
         $source = strtoupper((string) ($_SERVER['REQUEST_METHOD'] ?? 'GET')) === 'POST'
             ? $_POST
@@ -358,6 +422,9 @@ final class OAuth
         }
 
         $state = is_string($source['state'] ?? null) ? (string) $source['state'] : '';
+        if ($state === '' && preg_match('/^[a-f0-9]{32}$/', $pathNonce) === 1) {
+            $state = $pathNonce;
+        }
         $code = is_string($source['code'] ?? null) ? (string) $source['code'] : '';
         $result = self::flow()->callback($provider, $code, $state);
 
@@ -383,8 +450,9 @@ final class OAuth
 
             $mode = self::registerMode();
             $allowRegister = (bool) (Typecho::options()?->allowRegister ?? false);
-            if ($mode !== 'auto' || !$allowRegister) {
-                self::redirectToBind($identity);
+            $requiresVerification = self::registrationVerificationRequired();
+            if ($mode !== 'auto' || !$allowRegister || $requiresVerification) {
+                self::redirectToBind($identity, $requiresVerification ? 'verification' : '');
             }
 
             $newUid = self::createUser($result->provider, $identity);
@@ -469,7 +537,7 @@ final class OAuth
         return self::$flow;
     }
 
-    private static function redirectToBind(Identity $identity): never
+    private static function redirectToBind(Identity $identity, string $reason = ''): never
     {
         try {
             self::writePending($identity);
@@ -478,7 +546,12 @@ final class OAuth
             self::fail('oauth_failed');
         }
 
-        self::redirect(self::completeUrl());
+        $url = self::completeUrl();
+        if ($reason !== '') {
+            $url .= '?reason=' . rawurlencode($reason);
+        }
+
+        self::redirect($url);
     }
 
     private static function writePending(Identity $identity): void
@@ -569,7 +642,8 @@ final class OAuth
         array $pending,
         ProviderInterface $provider,
         string $error = '',
-        int $status = 200
+        int $status = 200,
+        string $notice = ''
     ): never {
         http_response_code($status);
         header('Content-Type: text/html; charset=UTF-8');
@@ -586,6 +660,9 @@ final class OAuth
         $label = $provider->label();
         $errorHtml = $error !== ''
             ? '<p class="alert" role="alert">' . self::e($error) . '</p>'
+            : '';
+        $noticeHtml = $notice !== ''
+            ? '<p class="notice" role="status">' . self::e($notice) . '</p>'
             : '';
 
         echo '<!doctype html><html lang="zh-CN"><head><meta charset="utf-8">'
@@ -610,7 +687,9 @@ final class OAuth
             . 'background:#fff;color:var(--ink);font:inherit;font-weight:400;outline:none}'
             . 'input:focus{border-color:var(--brand);box-shadow:0 0 0 3px rgba(37,99,235,.12)}'
             . '.alert{margin:0 0 16px;padding:10px 12px;border-radius:7px;background:#fef3f2;'
-            . 'color:var(--danger);font-size:12px}.actions{display:flex;gap:10px;align-items:center;margin-top:20px}'
+            . 'color:var(--danger);font-size:12px}.notice{margin:0 0 16px;padding:10px 12px;'
+            . 'border-radius:7px;background:#eff8ff;color:#175cd3;font-size:12px}'
+            . '.actions{display:flex;gap:10px;align-items:center;margin-top:20px}'
             . 'button,.cancel{display:inline-flex;height:40px;align-items:center;justify-content:center;'
             . 'border-radius:7px;padding:0 16px;font:inherit;font-weight:600;text-decoration:none}'
             . 'button{border:0;background:var(--brand);color:#fff;cursor:pointer;flex:1}'
@@ -621,6 +700,7 @@ final class OAuth
             . '<div class="identity"><span class="dot" aria-hidden="true"></span><div>'
             . '<strong>' . self::e($identityName) . '</strong>'
             . '<span>' . self::e($label) . ' · 尚未绑定</span></div></div>'
+            . $noticeHtml
             . $errorHtml
             . '<form method="post" action="' . self::e($action) . '" autocomplete="on">'
             . '<input type="hidden" name="csrf" value="' . self::e($pending['csrf']) . '">'
@@ -750,6 +830,19 @@ final class OAuth
     }
 
     /**
+     * Auto-registration must not create an account that skipped the
+     * registration proof configured in the theme. In that case the visitor is
+     * sent to the normal account-binding flow instead.
+     */
+    private static function registrationVerificationRequired(): bool
+    {
+        $values = Settings::values();
+
+        return ($values['Mail_Verify_Register'] ?? false) === true
+            || ($values['Sms_Verify_Register'] ?? false) === true;
+    }
+
+    /**
      * @param array<string, mixed> $values
      * @return list<string>
      */
@@ -816,12 +909,99 @@ final class OAuth
                 'screenName' => $identity->name !== '' ? $identity->name : $name,
             ]);
 
-            return (int) ($created['uid'] ?? 0);
+            $uid = (int) ($created['uid'] ?? 0);
+            if ($uid > 0) {
+                self::markAutoAccount($uid);
+            }
+
+            return $uid;
         } catch (\Throwable $exception) {
             error_log('SunkenBoat OAuth registration failed: ' . $exception->getMessage());
 
             return 0;
         }
+    }
+
+    private static function markAutoAccount(int $uid): void
+    {
+        if ($uid <= 0) {
+            return;
+        }
+
+        try {
+            $db = Db::get();
+            $exists = $db->fetchRow(
+                $db->select('name')
+                    ->from('table.options')
+                    ->where('name = ?', self::AUTO_ACCOUNT_OPTION)
+                    ->where('user = ?', $uid)
+                    ->limit(1)
+            );
+
+            if (is_array($exists)) {
+                $db->query(
+                    $db->update('table.options')
+                        ->rows(['value' => '1'])
+                        ->where('name = ?', self::AUTO_ACCOUNT_OPTION)
+                        ->where('user = ?', $uid)
+                );
+                return;
+            }
+
+            $db->query($db->insert('table.options')->rows([
+                'name' => self::AUTO_ACCOUNT_OPTION,
+                'value' => '1',
+                'user' => $uid,
+            ]));
+        } catch (\Throwable $exception) {
+            error_log('SunkenBoat OAuth auto-account marker failed: ' . $exception->getMessage());
+        }
+    }
+
+    private static function isAutoAccount(int $uid): bool
+    {
+        if ($uid <= 0) {
+            return false;
+        }
+
+        try {
+            $db = Db::get();
+            $marker = $db->fetchRow(
+                $db->select('value')
+                    ->from('table.options')
+                    ->where('name = ?', self::AUTO_ACCOUNT_OPTION)
+                    ->where('user = ?', $uid)
+                    ->limit(1)
+            );
+            if (is_array($marker) && (string) ($marker['value'] ?? '') === '1') {
+                return true;
+            }
+
+            $row = $db->fetchRow(
+                $db->select('mail')
+                    ->from('table.users')
+                    ->where('uid = ?', $uid)
+                    ->limit(1)
+            );
+        } catch (\Throwable) {
+            return false;
+        }
+
+        if (!is_array($row)) {
+            return false;
+        }
+
+        $mail = (string) ($row['mail'] ?? '');
+        $at = strrpos($mail, '@');
+        if ($at === false) {
+            return false;
+        }
+
+        $local = substr($mail, 0, $at);
+        $host = substr($mail, $at + 1);
+
+        return strcasecmp($host, self::mailHost()) === 0
+            && preg_match('/^[a-z0-9][a-z0-9-]{0,31}_[a-f0-9]{16}$/i', $local) === 1;
     }
 
     private static function uniqueName(string $provider, string $label): string
@@ -864,6 +1044,10 @@ final class OAuth
 
         if (!is_array($user) || $uid <= 0) {
             self::fail('oauth_failed');
+        }
+
+        if (UserEconomy::isBanned($uid)) {
+            self::fail('account_banned');
         }
 
         RestAuth::startCookieSession($user, 0);

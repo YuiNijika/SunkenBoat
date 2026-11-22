@@ -105,6 +105,90 @@ export interface UserForumEndpoints {
     kinds: ForumTopicKind[];
 }
 
+export interface UserEconomyLevel {
+    level: number;
+    title: string;
+    color: string;
+    minExperience: number;
+    nextTitle: string;
+    nextExperience: number;
+    progress: number;
+}
+
+export interface UserEconomyStatus {
+    banned: boolean;
+    status: 'normal' | 'banned' | string;
+    type: 'none' | 'permanent' | 'temporary' | string;
+    until: number;
+    reason: string;
+    message: string;
+}
+
+export interface UserEconomySummary {
+    enabled: boolean;
+    uid: number;
+    balance: string;
+    balanceCents: number;
+    points: number;
+    experience: number;
+    level: UserEconomyLevel;
+    status: UserEconomyStatus;
+    labels: {
+        balance: string;
+        points: string;
+    };
+    checkin: {
+        enabled: boolean;
+        checkedIn: boolean;
+        streak: number;
+        total: number;
+        rewards: {
+            experience: number;
+            points: number;
+            balanceCents: number;
+            streak: number;
+        };
+    };
+}
+
+export interface UserEconomyEndpoints {
+    enabled: boolean;
+    checkinEnabled: boolean;
+    summary: string;
+    checkin: string;
+    nonce: string;
+    labels: {
+        balance: string;
+        points: string;
+    };
+}
+
+export interface UserCaptchaConfig {
+    enabled: boolean;
+    provider: 'math' | 'slider' | 'geetest' | 'tencent' | 'aliyun' | string;
+    scenes: string[];
+    challenge: string;
+    geetestId: string;
+    tencentAppId: string;
+    aliyunAppKey: string;
+    aliyunScene: string;
+}
+
+export interface UserOperationsEndpoints {
+    enabled: boolean;
+    admin: boolean;
+    home: string;
+    overview: string;
+    users: string;
+    userUpdate: string;
+    userStatus: string;
+    nonce: string;
+    labels: {
+        balance: string;
+        points: string;
+    };
+}
+
 export interface UserApiEndpoints {
     enabled: boolean;
     centerEnabled: boolean;
@@ -134,6 +218,9 @@ export interface UserApiEndpoints {
     avatarMedia: string;
     avatarMediaEnabled: boolean;
     downloads: DownloadsClient;
+    economy: UserEconomyEndpoints;
+    captcha: UserCaptchaConfig;
+    operations: UserOperationsEndpoints;
     pages: {
         profile: string;
         account: string;
@@ -142,6 +229,7 @@ export interface UserApiEndpoints {
         editor: string;
         space: string;
         downloads: string;
+        operations: string;
     };
     content: {
         enabled: boolean;
@@ -295,6 +383,7 @@ export interface LinkItem {
 export interface CommentsData {
     allow: boolean;
     nullImage: string;
+    captcha: UserCaptchaConfig;
     apiEnabled: boolean;
     apiUrl: string;
     mediaEnabled: boolean;
@@ -1321,6 +1410,7 @@ export interface PageData {
         | 'custom'
         | 'account'
         | 'editor'
+        | 'operations'
         | 'user-space'
         | 'forum-home'
         | 'forum-circle'
@@ -1330,6 +1420,7 @@ export interface PageData {
     editorMode?: 'article' | 'forum-topic';
     forumEditor?: ForumEditorData;
     forumLayout?: ForumLayout;
+    operationsEnabled?: boolean;
     site: SiteInfo;
     theme: ThemeOptions;
     api?: ApiEndpoints;

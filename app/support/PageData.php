@@ -162,6 +162,36 @@ final class PageData
     }
 
     /**
+     * Operations center shell for editors and administrators. Regular users
+     * keep using /user/content for their own drafts and published items.
+     *
+     * @return array<string, mixed>
+     */
+    public static function operations(): array
+    {
+        $enabled = UserProfile::canOperate();
+        $site = self::site(null);
+        $title = $enabled ? '运营中心' : '无权访问';
+
+        return [
+            'kind' => 'operations',
+            'operationsEnabled' => $enabled,
+            'site' => $site,
+            'theme' => self::theme(),
+            'api' => self::api(),
+            'blocks' => [],
+            'widgets' => self::widgets(),
+            'title' => $title,
+            'documentTitle' => Seo::documentTitle(
+                $title,
+                (string) ($site['title'] ?? ''),
+                (string) ($site['subtitle'] ?? '')
+            ),
+            'fields' => [],
+        ];
+    }
+
+    /**
      * Field declarations from `app/config/fields.php`, normalised for the
      * React editor. Only metadata is exposed; values come from the content API.
      *
@@ -1322,7 +1352,7 @@ final class PageData
                 $html = self::content($archive);
                 $cid = (int) ($archive->cid ?? 0);
 
-                $html = $cid > 0 ? ContentGate::render($html, $cid) : $html;
+                $html = ContentGate::render($html, $cid);
 
                 return ContentComponents::render($html);
             }),
@@ -1942,6 +1972,7 @@ final class PageData
                     ->from('table.contents')
                     ->where('type = ?', 'post')
                     ->where('status = ?', 'publish')
+                    ->where('(password IS NULL OR password = ?)', '')
             );
             foreach (is_array($postRows) ? $postRows : [] as $postRow) {
                 $uid = (int) ($postRow['authorId'] ?? 0);
@@ -2700,17 +2731,19 @@ final class PageData
                     if (!is_array($child)) {
                         continue;
                     }
+                    $childUrl = self::safeUrl($child['url'] ?? '');
                     $children[] = [
                         'label' => (string) ($child['label'] ?? ''),
-                        'url' => (string) ($child['url'] ?? ''),
-                        'active' => self::navActive((string) ($child['url'] ?? ''), $currentUrl),
+                        'url' => $childUrl,
+                        'active' => self::navActive($childUrl, $currentUrl),
                     ];
                 }
 
+                $itemUrl = self::safeUrl($item['url'] ?? '');
                 $nav[] = [
                     'label' => (string) ($item['label'] ?? ''),
-                    'url' => (string) ($item['url'] ?? ''),
-                    'active' => self::navActive((string) ($item['url'] ?? ''), $currentUrl),
+                    'url' => $itemUrl,
+                    'active' => self::navActive($itemUrl, $currentUrl),
                     'children' => $children,
                 ];
             }
@@ -3183,6 +3216,9 @@ final class PageData
                     && UserProfile::enabled()
                     && UserProfile::viewerUid() > 0,
                 'downloads' => Downloads::client(),
+                'economy' => UserEconomy::client(),
+                'captcha' => Captcha::client(),
+                'operations' => UserEconomy::operationsClient(),
                 'pages' => [
                     'profile' => rtrim($index, '/') . '/user/profile',
                     'account' => rtrim($index, '/') . '/user/account',
@@ -3190,6 +3226,7 @@ final class PageData
                     'content' => rtrim($index, '/') . '/user/content',
                     'editor' => rtrim($index, '/') . '/user/content/editor',
                     'downloads' => rtrim($index, '/') . '/user/downloads',
+                    'operations' => rtrim($index, '/') . '/operations',
                     'space' => rtrim($index, '/') . '/users',
                 ],
                 'content' => [
@@ -3345,6 +3382,7 @@ final class PageData
                         ->where('table.contents.status = ?', 'publish')
                         ->where('table.contents.type = ?', 'post')
                         ->where('table.contents.created < ?', $now)
+                        ->where('(table.contents.password IS NULL OR table.contents.password = ?)', '')
                         ->order('table.contents.created', \Typecho\Db::SORT_DESC)
                         ->limit(12);
 
@@ -3510,7 +3548,7 @@ final class PageData
 
         while ($archive->next()) {
             $text = self::rowText($archive);
-            $excerpt = trim(strip_tags((string) ($archive->excerpt ?? '')));
+            $excerpt = trim(strip_tags(ContentGate::redact((string) ($archive->excerpt ?? ''))));
             $excerpt = trim((string) preg_replace('/\s+/u', ' ', $excerpt));
             if ($excerpt !== '') {
                 $excerpt = \Typecho\Common::subStr($excerpt, 0, 120, '…');
@@ -3942,7 +3980,7 @@ final class PageData
         $values = Settings::values();
         $useFirstImage = ($values['Thumbnail_Use_First_Image'] ?? true) === true;
         if ($useFirstImage) {
-            $firstImage = self::firstBodyImage($text, $siteUrl);
+            $firstImage = self::firstBodyImage(ContentGate::redact($text), $siteUrl);
             if ($firstImage !== '') {
                 return $firstImage;
             }
@@ -4445,6 +4483,7 @@ final class PageData
         $data['apiEnabled'] = ThemeConfig::restEnabled() && ThemeConfig::restV2Enabled();
         $data['mediaEndpoint'] = rtrim($indexUrl, '/') . '/' . Prefixes::v2() . '/media';
         $data['mediaEnabled'] = ThemeConfig::restV2Enabled() && UserProfile::canWrite();
+        $data['captcha'] = Captcha::client();
         $data['pageSize'] = 20;
         $data['collapsed'] = (Settings::values()['Comments_Collapsed'] ?? true) === true;
 

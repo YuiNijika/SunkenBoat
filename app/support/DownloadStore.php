@@ -87,6 +87,35 @@ final class DownloadStore
         }
     }
 
+    /**
+     * Check schema availability without running DDL. User-facing requests must
+     * use this method; installation is reserved for admin save/install paths.
+     */
+    public static function available(): bool
+    {
+        if (self::$installed) {
+            return true;
+        }
+
+        try {
+            $db = Db::get();
+            $db->fetchRow(
+                $db->select('number')
+                    ->from('table.sunken_download_orders')
+                    ->limit(1)
+            );
+            $db->fetchRow(
+                $db->select('id')
+                    ->from('table.sunken_download_records')
+                    ->limit(1)
+            );
+        } catch (\Throwable) {
+            return false;
+        }
+
+        return self::$installed = true;
+    }
+
     public static function driver(): string
     {
         $db = Db::get();

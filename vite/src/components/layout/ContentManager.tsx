@@ -72,6 +72,7 @@ import type {
 interface Props {
     api: UserApiEndpoints;
     profile: UserProfile;
+    allContent?: boolean;
 }
 
 type Tab = 'dashboard' | 'posts' | 'topics' | 'circles' | 'comments' | 'moderation';
@@ -201,7 +202,7 @@ const chartConfig: ChartConfig = {
     },
 };
 
-export default function ContentManager({ api, profile }: Props) {
+export default function ContentManager({ api, profile, allContent = false }: Props) {
     const articleEnabled = profile.canWrite === true && api.content.enabled;
     const canManageArticles = articleEnabled && profile.group === 'administrator';
     const forumEnabled = api.forum?.enabled === true;
@@ -258,7 +259,9 @@ export default function ContentManager({ api, profile }: Props) {
             try {
                 const endpoint = new URL(api.content.contents, window.location.href);
                 endpoint.searchParams.set('type', 'post');
-                endpoint.searchParams.set('authorId', String(profile.uid));
+                if (!allContent) {
+                    endpoint.searchParams.set('authorId', String(profile.uid));
+                }
                 endpoint.searchParams.set('page', '1');
                 endpoint.searchParams.set('pageSize', '50');
 
@@ -297,7 +300,7 @@ export default function ContentManager({ api, profile }: Props) {
             active = false;
             controller.abort();
         };
-    }, [articleEnabled, api.content.contents, profile.uid]);
+    }, [articleEnabled, allContent, api.content.contents, profile.uid]);
 
     useEffect(() => {
         if (!forumEnabled || forumLoaded) {

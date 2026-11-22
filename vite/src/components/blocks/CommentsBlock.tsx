@@ -15,6 +15,8 @@ import { notifyError, notifySuccess } from '../../lib/notify';
 import { Input } from '../ui/input';
 import { Label } from '../ui/label';
 import { Textarea } from '../ui/textarea';
+import CaptchaField from '../layout/CaptchaField';
+import type { CaptchaValue } from '../layout/CaptchaField';
 
 interface ApiComment {
     coid: number;
@@ -276,6 +278,7 @@ export default function CommentsBlock({ data }: Props) {
     const [author, setAuthor] = useState(data.remember.author);
     const [mail, setMail] = useState(data.remember.mail);
     const [url, setUrl] = useState(data.remember.url);
+    const [captcha, setCaptcha] = useState<CaptchaValue | null>(null);
     const [expanded, setExpanded] = useState(!data.collapsed);
     const formRef = useRef<HTMLFormElement>(null);
     const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -396,6 +399,7 @@ export default function CommentsBlock({ data }: Props) {
                     author,
                     mail,
                     url,
+                    ...(captcha ? { captcha } : {}),
                 }),
             });
             const payload = await response.json().catch(() => null);
@@ -406,6 +410,7 @@ export default function CommentsBlock({ data }: Props) {
             setText('');
             setParent(0);
             setParentTarget('');
+            setCaptcha(null);
             const status = String(payload.data?.status ?? '');
             notifySuccess(
                 status === 'waiting'
@@ -543,6 +548,13 @@ export default function CommentsBlock({ data }: Props) {
                                     </div>
                                 </div>
                             )
+                        }
+                        verification={
+                            <CaptchaField
+                                config={data.captcha}
+                                scene="comment"
+                                onChange={setCaptcha}
+                            />
                         }
                     />
                     <MediaLibrary

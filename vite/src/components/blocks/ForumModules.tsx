@@ -11,6 +11,7 @@ import {
 import UserAvatar from '../layout/UserAvatar';
 import { Button } from '../ui/button';
 import { navigateApp } from '../../lib/appNavigation';
+import { cssUrl } from '../../lib/css';
 import { Input } from '../ui/input';
 import type {
     ForumAuthorsBlock,
@@ -638,7 +639,7 @@ export function ForumCircleHero({ forum, circle }: ForumCircleHeroBlock) {
                 style={
                     circle.background !== ''
                         ? {
-                              backgroundImage: `linear-gradient(100deg, rgba(8, 15, 30, 0.82), rgba(8, 15, 30, 0.38)), url("${circle.background}")`,
+                              backgroundImage: `linear-gradient(100deg, rgba(8, 15, 30, 0.82), rgba(8, 15, 30, 0.38)), ${cssUrl(circle.background)}`,
                           }
                         : undefined
                 }
