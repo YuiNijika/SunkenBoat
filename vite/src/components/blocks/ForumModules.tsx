@@ -587,12 +587,32 @@ export function ForumJoinGate({ forum, circle, title, text }: ForumJoinGateBlock
                 <span className="forum-join-gate-icon" aria-hidden="true">
                     <LockKeyhole className="size-6" strokeWidth={1.7} />
                 </span>
-                <div className="min-w-0">
-                    <h1 className="text-[19px] font-medium leading-[1.45] text-ink">{title}</h1>
-                    <p className="mt-1.5 max-w-2xl text-[12.5px] leading-[1.7] text-ink-mute">{text}</p>
+                <div className="forum-join-gate-copy min-w-0">
+                    <h1 className="forum-join-gate-title text-[19px] font-medium leading-[1.45] text-ink">
+                        {title}
+                    </h1>
+                    <span className="forum-join-gate-divider" aria-hidden="true" />
+                    <p className="forum-join-gate-text max-w-2xl text-[12.5px] leading-[1.7] text-ink-mute">
+                        {text}
+                    </p>
                 </div>
                 <div className="forum-join-gate-actions">
-                    <JoinButton forum={forum} circle={circle} />
+                    {forum.viewer.loggedIn ? (
+                        <JoinButton forum={forum} circle={circle} />
+                    ) : (
+                        <Button
+                            type="button"
+                            className="h-8 rounded-[4px] px-3 text-[12px]"
+                            onClick={requestLogin}
+                        >
+                            <LockKeyhole
+                                className="size-3.5"
+                                strokeWidth={1.8}
+                                aria-hidden="true"
+                            />
+                            登录后{forum.followLabel}
+                        </Button>
+                    )}
                     <a className="text-[11.5px] text-ink-faint hover:text-brand" href={forum.homeUrl}>
                         返回{forum.displayName}
                     </a>

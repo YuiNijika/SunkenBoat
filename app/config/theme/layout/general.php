@@ -140,6 +140,22 @@ return [
                 'description' => '评论列表默认只显示前三条，读者点击“查看更多评论”后展开全部；关闭后直接显示全部评论。',
             ],
             [
+                'type' => 'Switch',
+                'name' => 'Comments_Require_Login',
+                'value' => false,
+                'inline' => true,
+                'label' => '评论需要登录',
+                'description' => '仅作用于文章与独立页面；论坛回复始终要求登录。开启后未登录读者只能查看评论，提交前会显示登录与注册入口。',
+            ],
+            [
+                'type' => 'Switch',
+                'name' => 'Comments_Memes',
+                'value' => true,
+                'inline' => true,
+                'label' => '启用评论区表情',
+                'description' => '读取 assets/meme.json，并通过站点代理加载 B 站表情，避免第三方图片防盗链导致裂图。',
+            ],
+            [
                 'type' => 'Select',
                 'name' => 'Footer_Layout',
                 'value' => 'columns',

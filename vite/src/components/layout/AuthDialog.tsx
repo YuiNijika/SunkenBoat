@@ -29,6 +29,7 @@ interface Props {
     onOpenChange: (open: boolean) => void;
     api: UserApiEndpoints;
     checking: boolean;
+    initialMode?: 'login' | 'register';
     onAuthenticated: (profile: UserProfile) => void;
 }
 
@@ -37,6 +38,7 @@ export default function AuthDialog({
     onOpenChange,
     api,
     checking,
+    initialMode = 'login',
     onAuthenticated,
 }: Props) {
     const [mode, setMode] = useState<Mode>('login');
@@ -60,7 +62,7 @@ export default function AuthDialog({
             return;
         }
 
-        setMode('login');
+        setMode(initialMode);
         setName('');
         setMail('');
         setCode('');
@@ -72,7 +74,7 @@ export default function AuthDialog({
         setCooldown(0);
         setSmsCooldown(0);
         setCaptcha(null);
-    }, [open]);
+    }, [initialMode, open]);
 
     useEffect(() => {
         if (cooldown <= 0) {

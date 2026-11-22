@@ -2003,6 +2003,8 @@ export function ForumTopicBlock({
                 parent_id: replyTo?.id ?? 0,
                 content: comment,
             });
+            setComment('');
+            setReplyTo(null);
             notifySuccess('评论已发布。');
             refreshApp();
         } catch (reason) {
@@ -2450,6 +2452,7 @@ export function ForumTopicBlock({
                                 onChange={setComment}
                                 onSubmit={submitReply}
                                 busy={busy}
+                                meme={forum.meme}
                                 placeholder="友善交流，请勿发表情、请勿灌水，违者封号"
                                 submitLabel="提交回复"
                                 label="回复内容"

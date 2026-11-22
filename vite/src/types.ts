@@ -406,6 +406,12 @@ export interface CommentsData {
     viewerAvatar: string;
     profileUrl: string;
     logoutUrl: string;
+    loginUrl: string;
+    registerUrl: string;
+    registerEnabled: boolean;
+    requireLogin: boolean;
+    meme: MemeConfig | null;
+    auth: UserApiEndpoints | null;
     remember: {
         author: string;
         mail: string;
@@ -413,6 +419,11 @@ export interface CommentsData {
     };
     requireMail: boolean;
     requireUrl: boolean;
+}
+
+export interface MemeConfig {
+    manifest: string;
+    proxy: string;
 }
 
 interface BlockBase {
@@ -1021,6 +1032,7 @@ export interface ForumConfig {
     quickReply: ForumQuickReply;
     canUseMedia: boolean;
     mediaEndpoint: string;
+    meme: MemeConfig | null;
     nullImage: string;
     reportEmail: string;
     postPerPage: number;

@@ -10,12 +10,14 @@ import {
     Eye,
     FileText,
     ImagePlus,
+    Images,
     Link2,
     LoaderCircle,
     PencilLine,
     Plus,
     Save,
     Send,
+    Trash2,
     Upload,
     UserRound,
     X,
@@ -30,13 +32,25 @@ import DownloadSettings, { downloadConfigError } from '../content/DownloadSettin
 import MetaBox from '../content/EditorMetaBox';
 import MarkdownToolbar from '../content/MarkdownToolbar';
 import MediaLibrary from '../content/MediaLibrary';
+import {
+    attachmentsInText,
+    attachmentReference,
+    mergeAttachments,
+    resolveAttachmentPreview,
+    stripMarkdownMarker,
+} from '../../lib/attachments';
 import { renderMarkdown } from '../../lib/markdown';
 import { notifyError, notifySuccess } from '../../lib/notify';
 import { errorMessage, readPayload } from '../../lib/user';
 import { termsFrom } from '../../lib/content';
 import type { ContentItem, TermItem } from '../../lib/content';
 import type { DownloadConfig } from '../../lib/downloads';
-import type { ArticleField, MediaItem, UserApiEndpoints, UserProfile } from '../../types';
+import type {
+    ArticleField,
+    MediaItem,
+    UserApiEndpoints,
+    UserProfile,
+} from '../../types';
 
 interface Props {
     api: UserApiEndpoints;
@@ -48,6 +62,7 @@ interface Props {
 
 type SaveState = 'draft' | 'publish' | null;
 type ViewMode = 'write' | 'split' | 'preview';
+
 const EMPTY_FIELDS: ArticleField[] = [];
 const DOWNLOAD_FIELDS = new Set([
     'Download_Enabled',
@@ -91,6 +106,19 @@ function countWords(value: string): number {
     return latin + cjk;
 }
 
+function cleanEditorText(value: string, attachmentIds: number[] = []): string {
+    const text = stripMarkdownMarker(value);
+    if (attachmentIds.length === 0) {
+        return text;
+    }
+
+    const allowed = new Set(attachmentIds);
+    return text.replace(
+        /^\s{0,3}\[(\d{1,12})\]:[^\n]*(?:\n|$)/gm,
+        (match, rawId: string) => (allowed.has(Number(rawId)) ? '' : match)
+    );
+}
+
 export default function ContentEditor({
     api,
     profile,
@@ -103,6 +131,7 @@ export default function ContentEditor({
     const [categories, setCategories] = useState<TermItem[]>([]);
     const [title, setTitle] = useState('');
     const [text, setText] = useState('');
+    const [attachments, setAttachments] = useState<MediaItem[]>([]);
     const [slug, setSlug] = useState('');
     const [selectedCategories, setSelectedCategories] = useState<number[]>([]);
     const [tags, setTags] = useState<string[]>([]);
@@ -125,6 +154,7 @@ export default function ContentEditor({
     const [dragging, setDragging] = useState(false);
     const [dirty, setDirty] = useState(false);
     const textareaRef = useRef<HTMLTextAreaElement>(null);
+    const previewRef = useRef<HTMLDivElement>(null);
     const baseline = useRef('');
     const articleFields = fields.filter((field) => !DOWNLOAD_FIELDS.has(field.name));
     const download: DownloadConfig = {
@@ -212,6 +242,10 @@ export default function ContentEditor({
 
                     if (active) {
                         const nextStatus = item.status === 'draft' ? 'draft' : 'publish';
+                        const nextText = cleanEditorText(
+                            item.text,
+                            (item.attachments ?? []).map((attachment) => attachment.id)
+                        );
                         const nextCategories = item.categories.map((category) => category.mid);
                         const nextTags = item.tags.map((tag) => tag.name);
                         const nextFields = {
@@ -219,7 +253,8 @@ export default function ContentEditor({
                             ...(item.fields ?? {}),
                         };
                         setTitle(item.title);
-                        setText(item.text);
+                        setText(nextText);
+                        setAttachments(item.attachments ?? []);
                         setSlug(item.slug);
                         setStatus(nextStatus);
                         setSelectedCategories(nextCategories);
@@ -231,7 +266,7 @@ export default function ContentEditor({
                         setPermalink(item.permalink);
                         baseline.current = snapshotOf({
                             title: item.title,
-                            text: item.text,
+                            text: nextText,
                             status: nextStatus,
                             slug: item.slug,
                             categories: nextCategories,
@@ -288,7 +323,99 @@ export default function ContentEditor({
         };
     }, [text]);
 
-    const previewHtml = useMemo(() => renderMarkdown(text), [text]);
+    useEffect(() => {
+        if (viewMode !== 'split') {
+            return;
+        }
+
+        const editor = textareaRef.current;
+        const preview = previewRef.current;
+        if (!editor || !preview) {
+            return;
+        }
+
+        let editorStamp = 0;
+        let previewStamp = 0;
+        const sync = (from: HTMLElement, to: HTMLElement) => {
+            if (window.innerWidth <= 760) {
+                return;
+            }
+
+            const fromRange = from.scrollHeight - from.clientHeight;
+            const toRange = to.scrollHeight - to.clientHeight;
+            if (fromRange <= 0 || toRange <= 0) {
+                return;
+            }
+
+            const ratio = Math.min(1, Math.max(0, from.scrollTop / fromRange));
+            to.scrollTop = ratio * toRange;
+        };
+        const onEditorScroll = () => {
+            const now = performance.now();
+            if (now - previewStamp < 80) {
+                return;
+            }
+            editorStamp = now;
+            sync(editor, preview);
+        };
+        const onPreviewScroll = () => {
+            const now = performance.now();
+            if (now - editorStamp < 80) {
+                return;
+            }
+            previewStamp = now;
+            sync(preview, editor);
+        };
+
+        editor.addEventListener('scroll', onEditorScroll, { passive: true });
+        preview.addEventListener('scroll', onPreviewScroll, { passive: true });
+
+        return () => {
+            editor.removeEventListener('scroll', onEditorScroll);
+            preview.removeEventListener('scroll', onPreviewScroll);
+        };
+    }, [viewMode]);
+
+    const bodyAttachments = useMemo(
+        () => attachmentsInText(text, attachments),
+        [attachments, text]
+    );
+    const previewHtml = useMemo(
+        () => renderMarkdown(resolveAttachmentPreview(text, attachments)),
+        [attachments, text]
+    );
+
+    const insertSnippet = (snippet: string, incoming: MediaItem[] = []) => {
+        if (incoming.length > 0) {
+            setAttachments((current) => mergeAttachments(current, incoming));
+        }
+
+        const textarea = textareaRef.current;
+        if (!textarea) {
+            setText((current) => current + snippet);
+            return;
+        }
+
+        const start = textarea.selectionStart ?? textarea.value.length;
+        const end = textarea.selectionEnd ?? start;
+        const next = textarea.value.slice(0, start) + snippet + textarea.value.slice(end);
+        setText(next);
+        window.requestAnimationFrame(() => {
+            textarea.focus();
+            const cursor = start + snippet.length;
+            textarea.setSelectionRange(cursor, cursor);
+        });
+    };
+
+    const insertMedia = (item: MediaItem) => {
+        insertSnippet(`\n${attachmentReference(item)}\n`, [item]);
+    };
+
+    const removeAttachmentReference = (item: MediaItem) => {
+        const pattern = new RegExp(`\\n?!\\[[^\\]]*\\]\\[${item.id}\\]\\n?`, 'g');
+        setText((current) => current.replace(pattern, '\n'));
+        setAttachments((current) => current.filter((entry) => entry.id !== item.id));
+    };
 
     const addTag = (event: FormEvent<HTMLFormElement>) => {
         event.preventDefault();
@@ -309,34 +436,10 @@ export default function ContentEditor({
         );
     };
 
-    const insertSnippet = (snippet: string) => {
-        const textarea = textareaRef.current;
-        if (!textarea) {
-            setText((current) => current + snippet);
-            return;
-        }
-
-        const start = textarea.selectionStart ?? textarea.value.length;
-        const end = textarea.selectionEnd ?? start;
-        const next = textarea.value.slice(0, start) + snippet + textarea.value.slice(end);
-        setText(next);
-        window.requestAnimationFrame(() => {
-            textarea.focus();
-            const cursor = start + snippet.length;
-            textarea.setSelectionRange(cursor, cursor);
-        });
-    };
-
-    const insertMedia = (item: MediaItem) => {
-        const alt = item.title.replace(/[[\]]/g, '').trim();
-        insertSnippet(`\n![${alt}](${item.url})\n`);
-    };
-
     const selectMedia = (item: MediaItem) => {
         if (fieldMediaTarget !== null) {
             setFieldValues((current) => ({ ...current, [fieldMediaTarget]: item.url }));
             setFieldMediaTarget(null);
-            setMediaOpen(false);
             return;
         }
 
@@ -374,36 +477,48 @@ export default function ContentEditor({
         }
 
         setUploading(true);
+        const uploaded: MediaItem[] = [];
 
         try {
             for (const file of images) {
-                const body = new FormData();
-                body.append('file', file);
-                const response = await fetch(api.content.media, {
-                    method: 'POST',
-                    credentials: 'same-origin',
-                    headers: {
-                        Accept: 'application/json',
-                        'X-Upload-Purpose': 'article',
-                    },
-                    body,
-                });
-                const payload = await readPayload(response);
-                if (!response.ok) {
-                    throw new Error(errorMessage(payload, '图片上传失败'));
-                }
+                try {
+                    const body = new FormData();
+                    body.append('file', file);
+                    const response = await fetch(api.content.media, {
+                        method: 'POST',
+                        credentials: 'same-origin',
+                        headers: {
+                            Accept: 'application/json',
+                            'X-Upload-Purpose': 'article',
+                        },
+                        body,
+                    });
+                    const payload = await readPayload(response);
+                    if (!response.ok) {
+                        throw new Error(errorMessage(payload, '图片上传失败'));
+                    }
 
-                const item =
-                    payload?.data && typeof payload.data === 'object'
-                        ? (payload.data as MediaItem)
-                        : null;
-                if (item) {
-                    insertMedia(item);
+                    const item =
+                        payload?.data && typeof payload.data === 'object'
+                            ? (payload.data as MediaItem)
+                            : null;
+                    if (item) {
+                        uploaded.push(item);
+                    }
+                } catch (reason) {
+                    notifyError(
+                        reason instanceof Error ? reason.message : '图片上传失败'
+                    );
                 }
             }
-            notifySuccess('图片已插入正文。');
-        } catch (reason) {
-            notifyError(reason instanceof Error ? reason.message : '图片上传失败');
+
+            if (uploaded.length > 0) {
+                insertSnippet(
+                    '\n' + uploaded.map((item) => attachmentReference(item)).join('\n\n') + '\n',
+                    uploaded
+                );
+                notifySuccess(`已插入 ${uploaded.length} 张图片附件。`);
+            }
         } finally {
             setUploading(false);
         }
@@ -446,6 +561,7 @@ export default function ContentEditor({
                     tags,
                     allowComment,
                     fields: fieldValues,
+                    attachments: bodyAttachments.map((item) => item.id),
                 }),
             });
             const payload = await readPayload(response);
@@ -458,7 +574,13 @@ export default function ContentEditor({
                     ? (payload.data as ContentItem)
                     : null;
             if (saved) {
+                const savedText = cleanEditorText(
+                    saved.text,
+                    (saved.attachments ?? []).map((attachment) => attachment.id)
+                );
                 setEditingId(saved.cid);
+                setText(savedText);
+                setAttachments(saved.attachments ?? attachments);
                 setSlug(saved.slug);
                 setCreated(saved.created);
                 setModified(saved.modified);
@@ -476,7 +598,12 @@ export default function ContentEditor({
 
             baseline.current = snapshotOf({
                 title,
-                text,
+                text: saved
+                    ? cleanEditorText(
+                          saved.text,
+                          (saved.attachments ?? []).map((attachment) => attachment.id)
+                      )
+                    : text,
                 status: nextStatus,
                 slug: saved?.slug ?? slug,
                 categories: selectedCategories,
@@ -675,7 +802,7 @@ export default function ContentEditor({
                     </div>
                 </div>
                 <div className="editor-topbar-sub">
-                    <span>Markdown 写作 · 组件库 · 媒体库 · 文章字段</span>
+                    <span>Markdown · 附件 cid · 组件库 · 媒体库</span>
                     <span className="editor-shortcut">
                         <kbd>Ctrl</kbd>+<kbd>S</kbd> 保存草稿
                         <kbd>Ctrl</kbd>+<kbd>Enter</kbd> 发布
@@ -698,7 +825,11 @@ export default function ContentEditor({
                             />
                             <div className="editor-document-meta">
                                 <span>
-                                    <UserRound className="size-3.5" strokeWidth={1.8} aria-hidden="true" />
+                                    <UserRound
+                                        className="size-3.5"
+                                        strokeWidth={1.8}
+                                        aria-hidden="true"
+                                    />
                                     {profile.screenName || profile.name}
                                 </span>
                                 {created !== '' ? (
@@ -713,9 +844,14 @@ export default function ContentEditor({
                                 ) : null}
                                 <span>{stats.chars} 字</span>
                                 <span>{stats.words} 词</span>
+                                <span>{bodyAttachments.length} 张图片</span>
                             </div>
                             <div className="editor-permalink">
-                                <Link2 className="size-3.5" strokeWidth={1.7} aria-hidden="true" />
+                                <Link2
+                                    className="size-3.5"
+                                    strokeWidth={1.7}
+                                    aria-hidden="true"
+                                />
                                 <span>固定链接</span>
                                 <Input
                                     value={slug}
@@ -734,7 +870,11 @@ export default function ContentEditor({
 
                         <section className="editor-card editor-writing-card">
                             <div className="editor-writing-head">
-                                <div className="editor-view-switch" role="group" aria-label="编辑视图">
+                                <div
+                                    className="editor-view-switch"
+                                    role="group"
+                                    aria-label="编辑视图"
+                                >
                                     <button
                                         type="button"
                                         className={viewMode === 'write' ? 'is-active' : ''}
@@ -773,6 +913,16 @@ export default function ContentEditor({
                                     >
                                         <Blocks aria-hidden="true" />
                                         组件
+                                    </Button>
+                                    <Button
+                                        type="button"
+                                        variant="ghost"
+                                        size="xs"
+                                        onClick={openBodyMedia}
+                                        disabled={saving !== null}
+                                    >
+                                        <ImagePlus aria-hidden="true" />
+                                        图片
                                     </Button>
                                     <div className="editor-stats">
                                         <span>{stats.chars} 字</span>
@@ -815,13 +965,15 @@ export default function ContentEditor({
                                             onPaste={(event) => {
                                                 const files = Array.from(
                                                     event.clipboardData.files ?? []
-                                                ).filter((file) => file.type.startsWith('image/'));
+                                                ).filter((file) =>
+                                                    file.type.startsWith('image/')
+                                                );
                                                 if (files.length > 0) {
                                                     event.preventDefault();
                                                     void uploadFiles(files);
                                                 }
                                             }}
-                                            placeholder="开始写作…支持 Markdown、组件、代码块与图片；可直接拖拽或粘贴图片上传。"
+                                            placeholder="开始写作。图片会以 ![文件名][附件ID] 写入，并由 Typecho 附件系统关联。"
                                             aria-label="文章正文"
                                             spellCheck={false}
                                         />
@@ -829,7 +981,7 @@ export default function ContentEditor({
                                 ) : null}
 
                                 {viewMode !== 'write' ? (
-                                    <div className="editor-preview">
+                                    <div className="editor-preview" ref={previewRef}>
                                         {text.trim() === '' ? (
                                             <p className="editor-preview-empty">
                                                 还没有正文内容，开始写作后这里会显示预览。
@@ -846,14 +998,16 @@ export default function ContentEditor({
                                 {dragging ? (
                                     <div className="editor-drop-overlay">
                                         <Upload aria-hidden="true" />
-                                        <span>松开上传图片</span>
+                                        <span>松开上传图片附件</span>
                                     </div>
                                 ) : null}
                             </div>
 
                             <div className="editor-writing-foot">
                                 <span>
-                                    {uploading ? '图片上传中…' : '支持拖拽、粘贴、组件与媒体库'}
+                                    {uploading
+                                        ? '图片上传中…'
+                                        : '支持拖拽、粘贴、组件、媒体库与附件 cid 引用'}
                                 </span>
                                 <div className="editor-writing-foot-actions">
                                     <Button
@@ -871,7 +1025,7 @@ export default function ContentEditor({
                                         size="xs"
                                         onClick={openBodyMedia}
                                     >
-                                        <ImagePlus aria-hidden="true" />
+                                        <Images aria-hidden="true" />
                                         媒体库
                                     </Button>
                                 </div>
@@ -929,6 +1083,40 @@ export default function ContentEditor({
                             onChange={setDownload}
                         />
 
+                        <MetaBox title={`正文图片${bodyAttachments.length > 0 ? ` · ${bodyAttachments.length}` : ''}`}>
+                            {bodyAttachments.length > 0 ? (
+                                <div className="editor-attachment-grid">
+                                    {bodyAttachments.map((item) => (
+                                        <div key={item.id} className="editor-attachment">
+                                            <img src={item.url} alt={item.title} loading="lazy" />
+                                            <button
+                                                type="button"
+                                                aria-label={`从正文移除 ${item.title}`}
+                                                onClick={() => removeAttachmentReference(item)}
+                                            >
+                                                <Trash2 aria-hidden="true" />
+                                            </button>
+                                            <span title={item.title}>#{item.id}</span>
+                                        </div>
+                                    ))}
+                                </div>
+                            ) : (
+                                <p className="editor-meta-note">
+                                    暂无正文图片。图片从媒体库插入后会自动登记附件。
+                                </p>
+                            )}
+                            <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                className="w-full"
+                                onClick={openBodyMedia}
+                            >
+                                <ImagePlus aria-hidden="true" />
+                                打开媒体库
+                            </Button>
+                        </MetaBox>
+
                         {articleFields.length > 0 ? (
                             <MetaBox title="文章字段">
                                 <div className="editor-fields">
@@ -980,7 +1168,11 @@ export default function ContentEditor({
                             {tags.length > 0 ? (
                                 <div className="content-tag-list">
                                     {tags.map((tag) => (
-                                        <Badge key={tag} variant="secondary" className="content-tag">
+                                        <Badge
+                                            key={tag}
+                                            variant="secondary"
+                                            className="content-tag"
+                                        >
                                             {tag}
                                             <button
                                                 type="button"
@@ -1008,19 +1200,27 @@ export default function ContentEditor({
                             <label className="content-check">
                                 <Checkbox
                                     checked={allowComment}
-                                    onCheckedChange={(checked) => setAllowComment(checked === true)}
+                                    onCheckedChange={(checked) =>
+                                        setAllowComment(checked === true)
+                                    }
                                 />
                                 <span>允许评论</span>
                             </label>
                             {modified !== '' ? (
-                                <p className="editor-meta-note">最近更新：{modified.slice(0, 16)}</p>
+                                <p className="editor-meta-note">
+                                    最近更新：{modified.slice(0, 16)}
+                                </p>
                             ) : null}
                         </MetaBox>
 
                         <MetaBox title="文档">
                             <p className="editor-meta-note">
-                                <FileText className="mr-1 inline size-3.5" aria-hidden="true" />
-                                正文使用 Markdown 编写，发布后由 Typecho 渲染。
+                                <FileText
+                                    className="mr-1 inline size-3.5"
+                                    aria-hidden="true"
+                                />
+                                正文使用 Markdown 保存，图片以附件 cid 引用，前台由
+                                Typecho 渲染并自动关联媒体库。
                             </p>
                         </MetaBox>
                     </aside>
@@ -1053,6 +1253,8 @@ export default function ContentEditor({
                 open={libraryOpen}
                 onOpenChange={setLibraryOpen}
                 onInsert={insertSnippet}
+                api={api}
+                uploadPurpose="article"
             />
 
             <MediaLibrary

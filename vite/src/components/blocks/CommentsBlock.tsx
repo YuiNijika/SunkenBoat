@@ -3,15 +3,20 @@ import type { FormEvent } from 'react';
 import { ChevronDown, ChevronUp } from 'lucide-react';
 import type { CommentsData } from '../../types';
 import {
+    CommentLoginGate,
     CommentComposer,
     CommentEmpty,
     CommentEntry,
     CommentSection,
 } from '../content/CommentSection';
+import { memeShortcode } from '../content/MemePicker';
+import type { MemeItem } from '../content/MemePicker';
 import MarkdownToolbar from '../content/MarkdownToolbar';
 import MediaLibrary from '../content/MediaLibrary';
+import AuthDialog from '../layout/AuthDialog';
 import { Button } from '../ui/button';
 import { notifyError, notifySuccess } from '../../lib/notify';
+import { refreshApp } from '../../lib/appNavigation';
 import { Input } from '../ui/input';
 import { Label } from '../ui/label';
 import { Textarea } from '../ui/textarea';
@@ -74,6 +79,28 @@ function insertMediaMarkdown(
 ) {
     const alt = title.replace(/[[\]]/g, '').trim();
     const snippet = `\n![${alt}](${url})\n`;
+    if (!textarea) {
+        setText(snippet);
+        return;
+    }
+
+    const start = textarea.selectionStart ?? textarea.value.length;
+    const end = textarea.selectionEnd ?? start;
+    const next = textarea.value.slice(0, start) + snippet + textarea.value.slice(end);
+    setText(next);
+    window.requestAnimationFrame(() => {
+        textarea.focus();
+        const cursor = start + snippet.length;
+        textarea.setSelectionRange(cursor, cursor);
+    });
+}
+
+function insertMemeMarkdown(
+    textarea: HTMLTextAreaElement | null,
+    setText: (value: string) => void,
+    item: MemeItem
+) {
+    const snippet = memeShortcode(item);
     if (!textarea) {
         setText(snippet);
         return;
@@ -163,7 +190,13 @@ function LegacyComments({ data }: Props) {
                 />
             ) : null}
 
-            {data.allow ? (
+            {data.allow && data.requireLogin && !data.loggedIn ? (
+                <CommentLoginGate
+                    loginUrl={data.loginUrl}
+                    registerUrl={data.registerUrl}
+                    registerEnabled={data.registerEnabled}
+                />
+            ) : data.allow ? (
                 <div id={data.respondId} className="respond comment-respond mt-6">
                     {data.cancelReplyHtml ? (
                         <div
@@ -185,6 +218,14 @@ function LegacyComments({ data }: Props) {
                                     target={textareaRef}
                                     onChange={setText}
                                     onImage={data.mediaEnabled ? () => setMediaOpen(true) : undefined}
+                                    meme={data.meme}
+                                    onMemePick={(item) =>
+                                        insertMemeMarkdown(
+                                            textareaRef.current,
+                                            setText,
+                                            item
+                                        )
+                                    }
                                 />
                                 <Textarea
                                     ref={textareaRef}
@@ -280,6 +321,7 @@ export default function CommentsBlock({ data }: Props) {
     const [url, setUrl] = useState(data.remember.url);
     const [captcha, setCaptcha] = useState<CaptchaValue | null>(null);
     const [expanded, setExpanded] = useState(!data.collapsed);
+    const [authMode, setAuthMode] = useState<'login' | 'register' | null>(null);
     const formRef = useRef<HTMLFormElement>(null);
     const textareaRef = useRef<HTMLTextAreaElement>(null);
     const listRef = useRef<HTMLUListElement>(null);
@@ -371,6 +413,15 @@ export default function CommentsBlock({ data }: Props) {
     }, [comments]);
 
     const handleReply = (comment: ApiComment) => {
+        if (data.requireLogin && !data.loggedIn) {
+            if (data.auth) {
+                setAuthMode('login');
+            } else if (data.loginUrl !== '') {
+                window.location.href = data.loginUrl;
+            }
+            return;
+        }
+
         setParent(comment.coid);
         setParentTarget(comment.author || '匿名');
         formRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -444,6 +495,26 @@ export default function CommentsBlock({ data }: Props) {
                 <LegacyComments data={data} />
             ) : (
                 <>
+                    {data.requireLogin && !data.loggedIn ? (
+                        <CommentLoginGate
+                            loginUrl={data.loginUrl}
+                            registerUrl={data.registerUrl}
+                            registerEnabled={
+                                data.auth?.registerEnabled
+                                ?? data.registerEnabled
+                            }
+                            onLogin={
+                                data.auth
+                                    ? () => setAuthMode('login')
+                                    : undefined
+                            }
+                            onRegister={
+                                data.auth
+                                    ? () => setAuthMode('register')
+                                    : undefined
+                            }
+                        />
+                    ) : (
                     <CommentComposer
                         formRef={formRef}
                         textareaRef={textareaRef}
@@ -456,6 +527,7 @@ export default function CommentsBlock({ data }: Props) {
                         onChange={setText}
                         onSubmit={submit}
                         busy={submitting}
+                        meme={data.meme}
                         placeholder="写下你的想法…支持 Markdown 语法"
                         replyTo={
                             parent > 0
@@ -557,6 +629,7 @@ export default function CommentsBlock({ data }: Props) {
                             />
                         }
                     />
+                    )}
                     <MediaLibrary
                         open={mediaOpen}
                         onOpenChange={setMediaOpen}
@@ -567,6 +640,26 @@ export default function CommentsBlock({ data }: Props) {
                             setMediaOpen(false);
                         }}
                     />
+                    {data.auth ? (
+                        <AuthDialog
+                            open={authMode !== null}
+                            onOpenChange={(nextOpen) => {
+                                if (!nextOpen) {
+                                    setAuthMode(null);
+                                }
+                            }}
+                            api={data.auth}
+                            checking={false}
+                            initialMode={authMode ?? 'login'}
+                            onAuthenticated={() => {
+                                setAuthMode(null);
+                                window.dispatchEvent(
+                                    new Event('ttdf:auth-changed')
+                                );
+                                refreshApp();
+                            }}
+                        />
+                    ) : null}
 
                     {loading ? (
                         <div className="comment-skeleton" aria-busy="true" aria-label="正在加载评论">

@@ -14,11 +14,16 @@ import {
 import { Button } from '../ui/button';
 import { applyMarkdownAction } from '../../lib/markdown';
 import type { MarkdownAction } from '../../lib/markdown';
+import MemePicker from './MemePicker';
+import type { MemeItem } from './MemePicker';
+import type { MemeConfig } from '../../types';
 
 interface Props {
     target: RefObject<HTMLTextAreaElement | null>;
     onChange: (value: string) => void;
     onImage?: () => void;
+    meme?: MemeConfig | null;
+    onMemePick?: (item: MemeItem) => void;
     disabled?: boolean;
     className?: string;
 }
@@ -36,7 +41,15 @@ const ACTIONS: { action: MarkdownAction; label: string; icon: typeof Bold }[] = 
     { action: 'ol', label: '有序列表', icon: ListOrdered },
 ];
 
-export default function MarkdownToolbar({ target, onChange, onImage, disabled, className }: Props) {
+export default function MarkdownToolbar({
+    target,
+    onChange,
+    onImage,
+    meme,
+    onMemePick,
+    disabled,
+    className,
+}: Props) {
     return (
         <div
             className={'markdown-toolbar' + (className ? ' ' + className : '')}
@@ -65,6 +78,9 @@ export default function MarkdownToolbar({ target, onChange, onImage, disabled, c
                     <Icon aria-hidden="true" />
                 </Button>
             ))}
+            {meme && onMemePick ? (
+                <MemePicker config={meme} onPick={onMemePick} disabled={disabled} />
+            ) : null}
         </div>
     );
 }

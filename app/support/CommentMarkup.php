@@ -146,7 +146,7 @@ final class CommentMarkup
             return '';
         }
 
-        return self::sanitize(Typecho::markdown($text));
+        return self::sanitize(Meme::expandShortcodes(Typecho::markdown($text)));
     }
 
     /**
@@ -313,8 +313,15 @@ final class CommentMarkup
             $value = trim($element->getAttribute($name));
 
             if ($lower === 'href' || $lower === 'src') {
+                if ($lower === 'src' && Meme::isProxyable($value)) {
+                    $value = Meme::proxyUrl($value);
+                }
                 if (!self::safeUrl($value, $lower === 'src')) {
                     $element->removeAttribute($name);
+                    continue;
+                }
+                if ($lower === 'src') {
+                    $element->setAttribute($name, $value);
                 }
                 continue;
             }

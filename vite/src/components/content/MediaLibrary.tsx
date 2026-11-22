@@ -25,6 +25,7 @@ import {
     Dialog,
     DialogContent,
     DialogDescription,
+    DialogFooter,
     DialogHeader,
     DialogTitle,
 } from '../ui/dialog';
@@ -43,7 +44,9 @@ interface Props {
     allowDelete?: boolean;
     title?: string;
     description?: string;
-    onSelect: (item: MediaItem) => void;
+    multiple?: boolean;
+    onSelect?: (item: MediaItem) => void;
+    onSelectMany?: (items: MediaItem[]) => void;
 }
 
 interface MediaPayload {
@@ -88,7 +91,9 @@ export default function MediaLibrary({
     allowDelete = true,
     title = '媒体库',
     description,
+    multiple = false,
     onSelect,
+    onSelectMany,
 }: Props) {
     const [items, setItems] = useState<MediaItem[]>([]);
     const [total, setTotal] = useState(0);
@@ -100,6 +105,9 @@ export default function MediaLibrary({
     const [deleteTarget, setDeleteTarget] = useState<MediaItem | null>(null);
     const [deleting, setDeleting] = useState(false);
     const [copied, setCopied] = useState<number | null>(null);
+    const [selectedItems, setSelectedItems] = useState<Map<number, MediaItem>>(
+        () => new Map()
+    );
     const fileInput = useRef<HTMLInputElement>(null);
     const requestId = useRef(0);
     const endpointUrl = mediaEndpoint ?? api?.content.media ?? '';
@@ -167,6 +175,12 @@ export default function MediaLibrary({
 
         return () => window.clearTimeout(timer);
     }, [open, keyword, load]);
+
+    useEffect(() => {
+        if (open) {
+            setSelectedItems(new Map());
+        }
+    }, [open]);
 
     const upload = async (files: File[]) => {
         const images = files.filter((file) => file.type.startsWith('image/'));
@@ -250,14 +264,48 @@ export default function MediaLibrary({
         }
     };
 
+    const toggleSelection = (item: MediaItem) => {
+        setSelectedItems((current) => {
+            const next = new Map(current);
+            if (next.has(item.id)) {
+                next.delete(item.id);
+            } else {
+                next.set(item.id, item);
+            }
+            return next;
+        });
+    };
+
+    const choose = (item: MediaItem) => {
+        if (multiple) {
+            toggleSelection(item);
+            return;
+        }
+
+        onSelect?.(item);
+        onOpenChange(false);
+    };
+
+    const confirmMultiple = () => {
+        if (selectedItems.size === 0) {
+            return;
+        }
+
+        onSelectMany?.([...selectedItems.values()]);
+        onOpenChange(false);
+    };
+
     return (
         <>
             <Dialog open={open} onOpenChange={onOpenChange}>
-                <DialogContent className="max-h-[90dvh] overflow-hidden sm:max-w-4xl">
+                <DialogContent className="flex max-h-[90dvh] flex-col overflow-hidden sm:max-w-4xl">
                     <DialogHeader>
                         <DialogTitle>{title}</DialogTitle>
                         <DialogDescription>
-                            {description ?? `共 ${total} 张图片 · 点击图片选择 · 支持拖拽上传`}
+                            {description ??
+                                (multiple
+                                    ? `共 ${total} 张图片 · 点击图片多选 · 支持拖拽上传`
+                                    : `共 ${total} 张图片 · 点击图片选择 · 支持拖拽上传`)}
                         </DialogDescription>
                     </DialogHeader>
 
@@ -300,7 +348,7 @@ export default function MediaLibrary({
                     </div>
 
                     <div
-                        className="min-h-[260px] overflow-y-auto pr-1"
+                        className="min-h-[260px] flex-1 overflow-y-auto pr-1"
                         onDragOver={(event) => event.preventDefault()}
                         onDrop={(event) => {
                             event.preventDefault();
@@ -333,10 +381,10 @@ export default function MediaLibrary({
                                             type="button"
                                             className="block w-full outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
                                             title={`${item.title} · ${formatBytes(item.size)}`}
-                                            onClick={() => {
-                                                onSelect(item);
-                                                onOpenChange(false);
-                                            }}
+                                            aria-pressed={
+                                                multiple ? selectedItems.has(item.id) : undefined
+                                            }
+                                            onClick={() => choose(item)}
                                         >
                                             <img
                                                 src={item.url}
@@ -344,6 +392,27 @@ export default function MediaLibrary({
                                                 loading="lazy"
                                                 className="aspect-[4/3] w-full object-cover transition-transform duration-200 group-hover:scale-[1.04]"
                                             />
+                                            {multiple ? (
+                                                <span
+                                                    className={
+                                                        'absolute top-1.5 left-1.5 grid size-6 place-content-center rounded-full border text-white shadow-sm transition-colors ' +
+                                                        (selectedItems.has(item.id)
+                                                            ? 'border-brand bg-brand'
+                                                            : 'border-white/80 bg-black/25')
+                                                    }
+                                                    aria-hidden="true"
+                                                >
+                                                    {selectedItems.has(item.id) ? (
+                                                        <Check className="size-3.5" />
+                                                    ) : null}
+                                                </span>
+                                            ) : null}
+                                            {multiple && selectedItems.has(item.id) ? (
+                                                <span
+                                                    className="pointer-events-none absolute inset-0 border-2 border-brand"
+                                                    aria-hidden="true"
+                                                />
+                                            ) : null}
                                         </button>
 
                                         <div className="absolute top-1.5 right-1.5 flex gap-1 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100 max-sm:opacity-100">
@@ -413,6 +482,30 @@ export default function MediaLibrary({
                                 <ChevronRight aria-hidden="true" />
                             </Button>
                         </div>
+                    ) : null}
+
+                    {multiple ? (
+                        <DialogFooter className="items-center justify-between gap-3 border-t pt-4 sm:space-x-0">
+                            <span className="text-xs text-ink-mute">
+                                已选择 {selectedItems.size} 张图片
+                            </span>
+                            <div className="flex gap-2">
+                                <Button
+                                    type="button"
+                                    variant="outline"
+                                    onClick={() => onOpenChange(false)}
+                                >
+                                    取消
+                                </Button>
+                                <Button
+                                    type="button"
+                                    disabled={selectedItems.size === 0}
+                                    onClick={confirmMultiple}
+                                >
+                                    使用所选图片
+                                </Button>
+                            </div>
+                        </DialogFooter>
                     ) : null}
                 </DialogContent>
             </Dialog>

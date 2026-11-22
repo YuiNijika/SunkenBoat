@@ -1,4 +1,5 @@
 import type { ApiPayload } from './user';
+import type { MediaItem } from '../types';
 
 export interface TermItem {
     mid: number;
@@ -22,6 +23,7 @@ export interface ContentItem {
     categories: TermItem[];
     tags: TermItem[];
     fields?: Record<string, string>;
+    attachments?: MediaItem[];
 }
 
 export interface CommentItem {

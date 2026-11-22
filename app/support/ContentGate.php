@@ -178,7 +178,7 @@ final class ContentGate
         $canLogin = $admin || $uid > 0;
         $canReply = $admin || ($uid > 0 && self::hasCommented($cid, $uid));
 
-        return self::rewriteBlocks(
+        $html = self::rewriteBlocks(
             $html,
             static function (array $match) use ($canLogin, $canReply, $uid): string {
                 $type = strtolower((string) ($match[1] ?? ''));
@@ -195,6 +195,14 @@ final class ContentGate
             },
             static fn (string $type): string => self::locked($type, $uid > 0)
         );
+
+        $cleaned = preg_replace(
+            '#<p>\s*(<section class="content-gate-hero"[\s\S]*?</section>)\s*</p>#i',
+            '$1',
+            $html
+        );
+
+        return is_string($cleaned) ? $cleaned : $html;
     }
 
     private static function protectMarkdown(
@@ -269,7 +277,6 @@ final class ContentGate
     private static function locked(string $type, bool $signedIn): string
     {
         $reply = $type === 'reply';
-        $eyebrow = $reply ? 'COMMENT ACCESS' : 'MEMBER ACCESS';
         $title = $reply ? '参与讨论后继续阅读' : '登录后继续阅读';
         $text = $reply
             ? ($signedIn
@@ -286,13 +293,12 @@ final class ContentGate
             . self::icon($reply ? 'message' : 'lock')
             . '</span>'
             . '<div class="content-gate-copy">'
-            . '<p class="content-gate-eyebrow">' . $eyebrow . '</p>'
             . '<h2 class="content-gate-title">' . $title . '</h2>'
+            . '<span class="content-gate-divider" aria-hidden="true"></span>'
             . '<p class="content-gate-text">' . $text . '</p>'
             . '</div>'
             . '<a class="content-gate-btn" href="' . htmlspecialchars($url, ENT_QUOTES, 'UTF-8') . '">'
-            . '<span>' . $label . '</span>'
-            . self::icon('arrow')
+            . $label
             . '</a>'
             . '</div>'
             . '</section>';

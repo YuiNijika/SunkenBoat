@@ -4499,7 +4499,15 @@ final class PageData
         $data['mediaEnabled'] = ThemeConfig::restV2Enabled() && UserProfile::canWrite();
         $data['captcha'] = Captcha::client();
         $data['pageSize'] = 20;
-        $data['collapsed'] = (Settings::values()['Comments_Collapsed'] ?? true) === true;
+        $values = Settings::values();
+        $data['collapsed'] = ($values['Comments_Collapsed'] ?? true) === true;
+        $data['requireLogin'] = ($values['Comments_Require_Login'] ?? false) === true;
+        $data['meme'] = ($values['Comments_Memes'] ?? true) === true ? Meme::client() : null;
+        $data['auth'] = null;
+        if (ThemeConfig::restV2Enabled()) {
+            $api = self::api();
+            $data['auth'] = is_array($api['user'] ?? null) ? $api['user'] : null;
+        }
 
         return $data;
     }

@@ -150,6 +150,9 @@ $payload = [
     'viewerAvatar' => $viewerAvatar,
     'profileUrl' => $capture(static fn () => $options->profileUrl()),
     'logoutUrl' => $capture(static fn () => $options->logoutUrl()),
+    'loginUrl' => (string) $options->loginUrl,
+    'registerUrl' => (string) $options->registerUrl,
+    'registerEnabled' => (bool) $options->allowRegister,
     'remember' => [
         'author' => (string) $archive->remember('author', true),
         'mail' => (string) $archive->remember('mail', true),

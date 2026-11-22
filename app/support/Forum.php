@@ -2565,6 +2565,7 @@ final class Forum
             'quickReply' => self::quickReply($values),
             'canUseMedia' => $mediaEnabled,
             'mediaEndpoint' => self::mediaEndpoint(),
+            'meme' => ($values['Comments_Memes'] ?? true) === true ? Meme::client() : null,
             'nullImage' => Assets::url('img/null.svg'),
             'reportEmail' => self::reportEmail($values),
             'postPerPage' => self::perPage($values),
@@ -4143,7 +4144,7 @@ final class Forum
             $html = self::fallbackStripTags((string) strip_tags($html, $allowed));
         }
 
-        return (string) preg_replace_callback(
+        $html = (string) preg_replace_callback(
             '/\s(href|src)\s*=\s*(["\'])(.*?)\2/is',
             static function (array $match): string {
                 $attribute = strtolower((string) ($match[1] ?? ''));
@@ -4169,6 +4170,8 @@ final class Forum
             },
             $html
         );
+
+        return Meme::rewriteHtml(Meme::expandShortcodes($html));
     }
 
     /**

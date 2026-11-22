@@ -2,13 +2,16 @@ import { useEffect, useMemo, useState } from 'react';
 import {
     Code2,
     Image as ImageIcon,
+    ImagePlus,
     Images,
     LockKeyhole,
     MessageSquareText,
     Minus,
     Quote,
+    Search,
     Sparkles,
     Table2,
+    Trash2,
     TriangleAlert,
 } from 'lucide-react';
 import { Button } from '../ui/button';
@@ -23,16 +26,20 @@ import {
 import { Input } from '../ui/input';
 import { Label } from '../ui/label';
 import { Textarea } from '../ui/textarea';
+import MediaLibrary from './MediaLibrary';
 import { renderMarkdown } from '../../lib/markdown';
+import type { MediaItem, UploadPurpose, UserApiEndpoints } from '../../types';
 
 interface Props {
     open: boolean;
     onOpenChange: (open: boolean) => void;
-    onInsert: (snippet: string) => void;
+    onInsert: (snippet: string, attachments?: MediaItem[]) => void;
     excluded?: Array<'login' | 'reply'>;
+    api?: UserApiEndpoints;
+    uploadPurpose?: UploadPurpose;
 }
 
-type FieldKind = 'text' | 'textarea' | 'select';
+type FieldKind = 'text' | 'textarea' | 'select' | 'media' | 'media-list';
 
 interface FieldDef {
     key: string;
@@ -42,6 +49,13 @@ interface FieldDef {
     options?: { value: string; label: string }[];
 }
 
+interface PickedMedia {
+    item: MediaItem;
+    caption: string;
+}
+
+type MediaValues = Record<string, PickedMedia[]>;
+
 interface ComponentDef {
     id: string;
     label: string;
@@ -49,7 +63,7 @@ interface ComponentDef {
     hint: string;
     icon: typeof Sparkles;
     fields: FieldDef[];
-    build: (values: Record<string, string>) => string;
+    build: (values: Record<string, string>, media: MediaValues) => string;
 }
 
 const FAMILIES = [
@@ -102,6 +116,21 @@ function attr(name: string, value: string): string {
 
 function blockBody(value: string): string {
     return value.trim();
+}
+
+function imageAlt(item: MediaItem, fallback = ''): string {
+    const value = (fallback.trim() || item.title || item.name || '图片')
+        .replace(/[[\]\r\n]/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+    return value.slice(0, 120) || '图片';
+}
+
+function imageReference(item: MediaItem, caption = '', altOverride = ''): string {
+    const reference = `![${imageAlt(item, altOverride)}][${item.id}]`;
+    return caption.trim() === ''
+        ? reference
+        : `${reference}\n\n*${caption.trim().replace(/\*/g, '')}*`;
 }
 
 const COMPONENTS: ComponentDef[] = [
@@ -167,43 +196,30 @@ const COMPONENTS: ComponentDef[] = [
         id: 'figure',
         label: '单张图片',
         family: 'media',
-        hint: '图片、替代文字与图注。',
+        hint: '从媒体库选择附件，正文写入文件名与附件 ID 引用。',
         icon: ImageIcon,
         fields: [
-            { key: 'src', label: '图片地址', kind: 'text', placeholder: 'https://' },
-            { key: 'alt', label: '替代文字', kind: 'text', placeholder: '无障碍描述' },
+            { key: 'image', label: '图片附件', kind: 'media', placeholder: '从媒体库选择' },
+            { key: 'alt', label: '替代文字', kind: 'text', placeholder: '留空使用文件名' },
             { key: 'caption', label: '图注', kind: 'text', placeholder: '选填' },
         ],
-        build: (values) => {
-            const alt = (values.alt ?? '').replace(/[[\]]/g, '');
-            const caption = (values.caption ?? '').trim();
-            return `![${alt}](${(values.src ?? '').trim()})${caption === '' ? '' : `\n\n*${caption}*`}`;
+        build: (values, media) => {
+            const picked = media.image?.[0];
+            return picked
+                ? imageReference(picked.item, values.caption ?? '', values.alt ?? '')
+                : '';
         },
     },
     {
         id: 'gallery',
         label: '图片组',
         family: 'media',
-        hint: '一行一个图片地址，可附加竖线分隔的图注。',
+        hint: '一次从媒体库选择多张附件，可逐张填写图注并调整顺序。',
         icon: Images,
-        fields: [
-            {
-                key: 'urls',
-                label: '图片列表',
-                kind: 'textarea',
-                placeholder: 'https://example.com/a.jpg|图注 A\nhttps://example.com/b.jpg|图注 B',
-            },
-        ],
-        build: (values) =>
-            (values.urls ?? '')
-                .split(/\r?\n/)
-                .map((line) => line.trim())
-                .filter((line) => line !== '')
-                .map((line) => {
-                    const [src, caption = ''] = line.split('|');
-                    const alt = caption.trim().replace(/[[\]]/g, '');
-                    return `![${alt}](${(src ?? '').trim()})${caption.trim() === '' ? '' : `\n\n*${caption.trim()}*`}`;
-                })
+        fields: [{ key: 'images', label: '图片附件', kind: 'media-list' }],
+        build: (_values, media) =>
+            (media.images ?? [])
+                .map((picked) => imageReference(picked.item, picked.caption))
                 .join('\n\n'),
     },
     {
@@ -296,19 +312,22 @@ const EMPTY_EXCLUDED: Array<'login' | 'reply'> = [];
 function defaultsOf(def: ComponentDef): Record<string, string> {
     const values: Record<string, string> = {};
     for (const field of def.fields) {
+        if (field.kind === 'media' || field.kind === 'media-list') {
+            continue;
+        }
         values[field.key] = field.kind === 'select' ? (field.options?.[0]?.value ?? '') : '';
     }
     return values;
 }
 
-function previewFor(def: ComponentDef, values: Record<string, string>): string {
+function previewFor(def: ComponentDef, values: Record<string, string>, media: MediaValues): string {
     const content = renderMarkdown(values.content ?? '');
     const title = escapeHtml((values.title ?? '').trim());
     const tone = ALERT_TONES.some((item) => item.value === values.type) ? values.type : 'info';
 
     if (def.id === 'login' || def.id === 'reply') {
         const reply = def.id === 'reply';
-        return `<section class="content-gate-hero"><div class="content-gate-hero-inner"><span class="content-gate-icon">${iconSvg(reply ? 'message' : 'lock')}</span><div class="content-gate-copy"><p class="content-gate-eyebrow">${reply ? 'COMMENT ACCESS' : 'MEMBER ACCESS'}</p><h2 class="content-gate-title">${reply ? '参与讨论后继续阅读' : '登录后继续阅读'}</h2><p class="content-gate-text">${reply ? '登录账号并参与评论后，即可查看被隐藏的完整内容。' : '这是一个仅对已登录成员开放的内容区域。登录后即可查看完整正文。'}</p></div><span class="content-gate-btn"><span>${reply ? '前往评论区' : '立即登录'}</span>${iconSvg('arrow')}</span></div></section>`;
+        return `<section class="content-gate-hero"><div class="content-gate-hero-inner"><span class="content-gate-icon">${iconSvg(reply ? 'message' : 'lock')}</span><div class="content-gate-copy"><h2 class="content-gate-title">${reply ? '参与讨论后继续阅读' : '登录后继续阅读'}</h2><span class="content-gate-divider"></span><p class="content-gate-text">${reply ? '登录账号并参与评论后，即可查看被隐藏的完整内容。' : '这是一个仅对已登录成员开放的内容区域。登录后即可查看完整正文。'}</p></div><span class="content-gate-btn">${reply ? '前往评论区' : '立即登录'}</span></div></section>`;
     }
 
     if (def.id === 'alert') {
@@ -324,26 +343,26 @@ function previewFor(def: ComponentDef, values: Record<string, string>): string {
     }
 
     if (def.id === 'figure') {
-        const src = escapeAttr((values.src ?? '').trim());
-        const alt = escapeAttr(values.alt ?? '');
-        return src === ''
-            ? '<p class="text-sm text-ink-faint">填写图片地址后显示预览。</p>'
-            : `<figure class="article-figure"><img src="${src}" alt="${alt}" loading="lazy"><figcaption>${escapeHtml(values.caption ?? '')}</figcaption></figure>`;
+        const picked = media.image?.[0];
+        if (!picked) {
+            return '<p class="text-sm text-ink-faint">从媒体库选择图片后显示预览。</p>';
+        }
+
+        return `<figure class="article-figure"><img src="${escapeAttr(picked.item.url)}" alt="${escapeAttr(imageAlt(picked.item, values.alt ?? ''))}" loading="lazy"><figcaption>${escapeHtml(values.caption ?? '')}</figcaption></figure>`;
     }
 
     if (def.id === 'gallery') {
-        const images = (values.urls ?? '')
-            .split(/\r?\n/)
-            .map((line) => line.trim())
-            .filter((line) => line !== '')
-            .map((line) => {
-                const [src, caption = ''] = line.split('|');
-                return `<figure class="article-figure"><img src="${escapeAttr((src ?? '').trim())}" alt="" loading="lazy"><figcaption>${escapeHtml(caption.trim())}</figcaption></figure>`;
-            })
-            .join('');
-        return images === ''
-            ? '<p class="text-sm text-ink-faint">填写图片地址后显示预览。</p>'
-            : `<div class="article-gallery">${images}</div>`;
+        const picked = media.images ?? [];
+        if (picked.length === 0) {
+            return '<p class="text-sm text-ink-faint">从媒体库选择图片后显示预览。</p>';
+        }
+
+        return `<div class="article-gallery">${picked
+            .map(
+                (entry) =>
+                    `<figure class="article-figure"><img src="${escapeAttr(entry.item.url)}" alt="${escapeAttr(imageAlt(entry.item))}" loading="lazy"><figcaption>${escapeHtml(entry.caption)}</figcaption></figure>`
+            )
+            .join('')}</div>`;
     }
 
     if (def.id === 'code') {
@@ -359,7 +378,22 @@ function previewFor(def: ComponentDef, values: Record<string, string>): string {
         return '<hr>';
     }
 
-    return renderMarkdown(def.build(values));
+    return renderMarkdown(def.build(values, media));
+}
+
+function pickedAttachments(media: MediaValues): MediaItem[] {
+    const map = new Map<number, MediaItem>();
+    for (const group of Object.values(media)) {
+        for (const entry of group) {
+            map.set(entry.item.id, entry.item);
+        }
+    }
+    return [...map.values()];
+}
+
+interface PickerState {
+    field: string;
+    multiple: boolean;
 }
 
 export default function ComponentLibrary({
@@ -367,6 +401,8 @@ export default function ComponentLibrary({
     onOpenChange,
     onInsert,
     excluded = EMPTY_EXCLUDED,
+    api,
+    uploadPurpose = 'article',
 }: Props) {
     const available = useMemo(
         () => COMPONENTS.filter((item) => !excluded.some((id) => id === item.id)),
@@ -374,186 +410,417 @@ export default function ComponentLibrary({
     );
     const initial = available[0] ?? INITIAL;
     const [type, setType] = useState(initial.id);
+    const [query, setQuery] = useState('');
     const [values, setValues] = useState<Record<string, string>>(() => defaultsOf(initial));
+    const [media, setMedia] = useState<MediaValues>({});
+    const [picker, setPicker] = useState<PickerState | null>(null);
 
     const def = useMemo(
         () => available.find((item) => item.id === type) ?? initial,
         [available, initial, type]
     );
-    const variants = useMemo(
-        () => available.filter((item) => item.family === def.family),
-        [available, def.family]
+    const search = query.trim().toLowerCase();
+    const visible = useMemo(
+        () =>
+            search === ''
+                ? available.filter((item) => item.family === def.family)
+                : available.filter((item) =>
+                      `${item.label} ${item.hint} ${item.family}`.toLowerCase().includes(search)
+                  ),
+        [available, def.family, search]
     );
-    const snippet = useMemo(() => def.build(values).trim(), [def, values]);
-    const preview = useMemo(() => previewFor(def, values), [def, values]);
+    const snippet = useMemo(() => def.build(values, media).trim(), [def, media, values]);
+    const preview = useMemo(() => previewFor(def, values, media), [def, media, values]);
+    const attachments = useMemo(() => pickedAttachments(media), [media]);
 
     useEffect(() => {
         if (!open) {
             return;
         }
+
         setValues(defaultsOf(def));
+        setMedia({});
     }, [open, def]);
+
+    useEffect(() => {
+        if (!open || search === '' || visible.length === 0) {
+            return;
+        }
+
+        if (!visible.some((item) => item.id === type)) {
+            setType(visible[0].id);
+        }
+    }, [open, search, type, visible]);
 
     const selectFamily = (family: string) => {
         const first = available.find((item) => item.family === family);
         if (first) {
+            setQuery('');
             setType(first.id);
         }
+    };
+
+    const chooseType = (id: string) => {
+        setType(id);
+    };
+
+    const setValue = (key: string, value: string) => {
+        setValues((current) => ({ ...current, [key]: value }));
+    };
+
+    const pickMedia = (items: MediaItem[]) => {
+        if (!picker || items.length === 0) {
+            return;
+        }
+
+        setMedia((current) => {
+            const field = picker.field;
+            const existing = picker.multiple ? current[field] ?? [] : [];
+            const map = new Map<number, PickedMedia>(
+                existing.map((entry) => [entry.item.id, entry])
+            );
+
+            for (const item of items) {
+                map.set(item.id, map.get(item.id) ?? { item, caption: '' });
+            }
+
+            return { ...current, [field]: [...map.values()] };
+        });
+    };
+
+    const removeMedia = (field: string, id: number) => {
+        setMedia((current) => ({
+            ...current,
+            [field]: (current[field] ?? []).filter((entry) => entry.item.id !== id),
+        }));
+    };
+
+    const setCaption = (field: string, id: number, caption: string) => {
+        setMedia((current) => ({
+            ...current,
+            [field]: (current[field] ?? []).map((entry) =>
+                entry.item.id === id ? { ...entry, caption } : entry
+            ),
+        }));
     };
 
     const insert = () => {
         if (snippet === '') {
             return;
         }
-        onInsert(`\n${snippet}\n`);
+
+        onInsert(`\n${snippet}\n`, attachments);
         onOpenChange(false);
     };
 
-    return (
-        <Dialog open={open} onOpenChange={onOpenChange}>
-            <DialogContent className="flex h-[min(88dvh,780px)] w-[min(1120px,calc(100vw-24px))] max-w-none flex-col gap-0 overflow-hidden p-0">
-                <DialogHeader className="shrink-0 border-b px-5 py-4">
-                    <DialogTitle>插入内容组件</DialogTitle>
-                    <DialogDescription>{def.hint}</DialogDescription>
-                </DialogHeader>
+    const renderMediaField = (field: FieldDef) => {
+        const picked = media[field.key] ?? [];
+        const multiple = field.kind === 'media-list';
 
-                <div className="grid min-h-0 flex-1 grid-cols-1 overflow-y-auto lg:grid-cols-[180px_290px_minmax(0,1fr)] lg:overflow-hidden">
-                    <nav
-                        className="border-b p-3 lg:min-h-0 lg:overflow-y-auto lg:border-r lg:border-b-0"
-                        aria-label="组件分类"
+        if (picked.length === 0) {
+            return (
+                <button
+                    type="button"
+                    className="grid w-full place-items-center gap-2 rounded-lg border border-dashed border-line bg-surface-2 px-4 py-6 text-center transition-colors hover:border-brand/40 hover:bg-brand-soft/40"
+                    onClick={() => setPicker({ field: field.key, multiple })}
+                >
+                    <ImagePlus className="size-5 text-ink-faint" aria-hidden="true" />
+                    <span className="text-xs text-ink-mute">
+                        {multiple ? '从媒体库选择多张图片' : '从媒体库选择图片'}
+                    </span>
+                    <span className="text-[10px] text-ink-faint">
+                        使用 Typecho 附件，正文只写入文件名与附件 ID
+                    </span>
+                </button>
+            );
+        }
+
+        return (
+            <div className="grid gap-2">
+                {picked.map((entry) => (
+                    <div
+                        key={entry.item.id}
+                        className="grid grid-cols-[64px_minmax(0,1fr)_auto] items-center gap-2.5 rounded-lg border border-line bg-surface p-2"
                     >
-                        <div className="grid grid-cols-2 gap-1 lg:grid-cols-1">
-                            {FAMILIES.filter((family) =>
-                                available.some((item) => item.family === family.id)
-                            ).map((family) => (
-                                <button
-                                    key={family.id}
-                                    type="button"
-                                    onClick={() => selectFamily(family.id)}
-                                    className={
-                                        'rounded-md px-2.5 py-2 text-left text-sm transition-colors ' +
-                                        (def.family === family.id
-                                            ? 'bg-accent font-medium text-ink'
-                                            : 'text-ink-mute hover:bg-accent hover:text-ink')
+                        <img
+                            src={entry.item.url}
+                            alt={entry.item.title}
+                            className="size-16 rounded-md object-cover"
+                            loading="lazy"
+                        />
+                        <div className="min-w-0">
+                            <p className="truncate text-xs font-medium text-ink">
+                                {entry.item.title}
+                            </p>
+                            <p className="mt-0.5 truncate text-[10px] text-ink-faint">
+                                #{entry.item.id} · {entry.item.name}
+                            </p>
+                            {multiple ? (
+                                <Input
+                                    value={entry.caption}
+                                    onChange={(event) =>
+                                        setCaption(field.key, entry.item.id, event.target.value)
                                     }
-                                >
-                                    {family.label}
-                                </button>
-                            ))}
+                                    placeholder="图注（选填）"
+                                    className="mt-1.5 h-7 text-xs"
+                                    aria-label={`图注 ${entry.item.title}`}
+                                />
+                            ) : null}
                         </div>
-                    </nav>
+                        <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon-sm"
+                            aria-label={`移除 ${entry.item.title}`}
+                            onClick={() => removeMedia(field.key, entry.item.id)}
+                        >
+                            <Trash2 aria-hidden="true" />
+                        </Button>
+                    </div>
+                ))}
+                <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setPicker({ field: field.key, multiple })}
+                >
+                    <ImagePlus aria-hidden="true" />
+                    {multiple ? '继续添加图片' : '更换图片'}
+                </Button>
+            </div>
+        );
+    };
 
-                    <div className="min-w-0 border-b p-4 lg:min-h-0 lg:overflow-y-auto lg:border-b-0">
-                        <div className="mb-4 flex flex-wrap gap-1.5">
-                            {variants.map((variant) => {
-                                const Icon = variant.icon;
-                                const active = variant.id === def.id;
-                                return (
+    return (
+        <>
+            <Dialog open={open} onOpenChange={onOpenChange}>
+                <DialogContent
+                    className="flex h-[min(90dvh,820px)] w-[min(1180px,calc(100vw-24px))] max-w-none flex-col gap-0 overflow-hidden p-0"
+                    style={{ maxWidth: 'min(1180px, calc(100vw - 24px))' }}
+                >
+                    <DialogHeader className="shrink-0 gap-3 border-b px-5 py-4">
+                        <div className="flex flex-wrap items-start justify-between gap-3 pr-8">
+                            <div>
+                                <DialogTitle>插入内容组件</DialogTitle>
+                                <DialogDescription>{def.hint}</DialogDescription>
+                            </div>
+                            <div className="relative w-full min-w-[200px] sm:w-64">
+                                <Search
+                                    className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-ink-faint"
+                                    aria-hidden="true"
+                                />
+                                <Input
+                                    value={query}
+                                    onChange={(event) => setQuery(event.target.value)}
+                                    placeholder="搜索组件"
+                                    className="pl-8"
+                                    aria-label="搜索内容组件"
+                                />
+                            </div>
+                        </div>
+                    </DialogHeader>
+
+                    <div className="grid min-h-0 flex-1 grid-cols-1 overflow-y-auto lg:grid-cols-[170px_370px_minmax(0,1fr)] lg:overflow-hidden">
+                        <nav
+                            className="border-b p-3 lg:min-h-0 lg:overflow-y-auto lg:border-r lg:border-b-0"
+                            aria-label="组件分类"
+                        >
+                            <p className="mb-2 px-2 text-[10px] font-medium tracking-wide text-ink-faint uppercase">
+                                分类
+                            </p>
+                            <div className="grid grid-cols-2 gap-1 lg:grid-cols-1">
+                                {FAMILIES.filter((family) =>
+                                    available.some((item) => item.family === family.id)
+                                ).map((family) => (
                                     <button
-                                        key={variant.id}
+                                        key={family.id}
                                         type="button"
-                                        onClick={() => setType(variant.id)}
+                                        onClick={() => selectFamily(family.id)}
                                         className={
-                                            'inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs transition-colors ' +
-                                            (active
-                                                ? 'border-brand/40 bg-brand-soft text-brand'
-                                                : 'border-line text-ink-mute hover:text-ink')
+                                            'rounded-md px-2.5 py-2 text-left text-sm transition-colors ' +
+                                            (def.family === family.id && search === ''
+                                                ? 'bg-accent font-medium text-ink'
+                                                : 'text-ink-mute hover:bg-accent hover:text-ink')
                                         }
                                     >
-                                        <Icon className="size-3.5" aria-hidden="true" />
-                                        {variant.label}
+                                        {family.label}
                                     </button>
-                                );
-                            })}
-                        </div>
-
-                        {def.fields.length === 0 ? (
-                            <p className="rounded-lg border border-dashed border-line p-4 text-xs leading-6 text-ink-faint">
-                                这个组件没有额外参数，点击下方按钮即可插入。
-                            </p>
-                        ) : (
-                            <div className="grid gap-3.5">
-                                {def.fields.map((field) => (
-                                    <div key={field.key} className="grid gap-1.5">
-                                        <Label htmlFor={`component-${field.key}`}>{field.label}</Label>
-                                        {field.kind === 'select' ? (
-                                            <select
-                                                id={`component-${field.key}`}
-                                                className="h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50"
-                                                value={values[field.key] ?? ''}
-                                                onChange={(event) =>
-                                                    setValues((current) => ({
-                                                        ...current,
-                                                        [field.key]: event.target.value,
-                                                    }))
-                                                }
-                                            >
-                                                {field.options?.map((option) => (
-                                                    <option key={option.value} value={option.value}>
-                                                        {option.label}
-                                                    </option>
-                                                ))}
-                                            </select>
-                                        ) : field.kind === 'textarea' ? (
-                                            <Textarea
-                                                id={`component-${field.key}`}
-                                                rows={5}
-                                                value={values[field.key] ?? ''}
-                                                placeholder={field.placeholder}
-                                                onChange={(event) =>
-                                                    setValues((current) => ({
-                                                        ...current,
-                                                        [field.key]: event.target.value,
-                                                    }))
-                                                }
-                                            />
-                                        ) : (
-                                            <Input
-                                                id={`component-${field.key}`}
-                                                value={values[field.key] ?? ''}
-                                                placeholder={field.placeholder}
-                                                onChange={(event) =>
-                                                    setValues((current) => ({
-                                                        ...current,
-                                                        [field.key]: event.target.value,
-                                                    }))
-                                                }
-                                            />
-                                        )}
-                                    </div>
                                 ))}
                             </div>
-                        )}
-                    </div>
+                        </nav>
 
-                    <div className="min-w-0 bg-surface-2 p-4 lg:min-h-0 lg:overflow-y-auto lg:border-l">
-                        <p className="mb-2 text-xs font-medium text-ink">效果预览</p>
-                        <div className="rounded-lg border border-line bg-surface p-4">
-                            {preview === '' ? (
-                                <p className="text-sm text-ink-faint">填写内容后在这里预览。</p>
-                            ) : (
-                                <div
-                                    className="prose"
-                                    dangerouslySetInnerHTML={{ __html: preview }}
-                                />
-                            )}
+                        <div className="flex min-h-0 min-w-0 flex-col border-b lg:border-r lg:border-b-0">
+                            <div className="max-h-[230px] shrink-0 overflow-y-auto border-b p-3">
+                                <p className="mb-2 text-[10px] font-medium tracking-wide text-ink-faint uppercase">
+                                    {search === '' ? '组件' : `搜索结果 ${visible.length}`}
+                                </p>
+                                {visible.length === 0 ? (
+                                    <p className="rounded-md border border-dashed border-line px-3 py-5 text-center text-xs text-ink-faint">
+                                        没有匹配的组件。
+                                    </p>
+                                ) : (
+                                    <div className="grid gap-1">
+                                        {visible.map((item) => {
+                                            const Icon = item.icon;
+                                            const active = item.id === def.id;
+                                            return (
+                                                <button
+                                                    key={item.id}
+                                                    type="button"
+                                                    onClick={() => chooseType(item.id)}
+                                                    className={
+                                                        'flex items-start gap-2.5 rounded-md border px-2.5 py-2 text-left transition-colors ' +
+                                                        (active
+                                                            ? 'border-brand/40 bg-brand-soft'
+                                                            : 'border-transparent hover:border-line hover:bg-surface-2')
+                                                    }
+                                                >
+                                                    <span
+                                                        className={
+                                                            'mt-0.5 grid size-7 shrink-0 place-content-center rounded-md ' +
+                                                            (active
+                                                                ? 'bg-brand text-white'
+                                                                : 'bg-surface-2 text-ink-mute')
+                                                        }
+                                                    >
+                                                        <Icon className="size-3.5" aria-hidden="true" />
+                                                    </span>
+                                                    <span className="min-w-0">
+                                                        <span className="block text-xs font-medium text-ink">
+                                                            {item.label}
+                                                        </span>
+                                                        <span className="mt-0.5 line-clamp-2 block text-[10px] leading-4 text-ink-faint">
+                                                            {item.hint}
+                                                        </span>
+                                                    </span>
+                                                </button>
+                                            );
+                                        })}
+                                    </div>
+                                )}
+                            </div>
+
+                            <div className="min-h-0 flex-1 overflow-y-auto p-4">
+                                <p className="mb-3 text-xs font-medium text-ink">
+                                    {def.label}设置
+                                </p>
+                                {def.fields.length === 0 ? (
+                                    <p className="rounded-lg border border-dashed border-line p-4 text-xs leading-6 text-ink-faint">
+                                        这个组件没有额外参数，点击下方按钮即可插入。
+                                    </p>
+                                ) : (
+                                    <div className="grid gap-3.5">
+                                        {def.fields.map((field) => (
+                                            <div key={field.key} className="grid gap-1.5">
+                                                <Label htmlFor={`component-${field.key}`}>
+                                                    {field.label}
+                                                </Label>
+                                                {field.kind === 'media' ||
+                                                field.kind === 'media-list' ? (
+                                                    renderMediaField(field)
+                                                ) : field.kind === 'select' ? (
+                                                    <select
+                                                        id={`component-${field.key}`}
+                                                        className="h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                                                        value={values[field.key] ?? ''}
+                                                        onChange={(event) =>
+                                                            setValue(field.key, event.target.value)
+                                                        }
+                                                    >
+                                                        {field.options?.map((option) => (
+                                                            <option
+                                                                key={option.value}
+                                                                value={option.value}
+                                                            >
+                                                                {option.label}
+                                                            </option>
+                                                        ))}
+                                                    </select>
+                                                ) : field.kind === 'textarea' ? (
+                                                    <Textarea
+                                                        id={`component-${field.key}`}
+                                                        rows={5}
+                                                        value={values[field.key] ?? ''}
+                                                        placeholder={field.placeholder}
+                                                        onChange={(event) =>
+                                                            setValue(field.key, event.target.value)
+                                                        }
+                                                    />
+                                                ) : (
+                                                    <Input
+                                                        id={`component-${field.key}`}
+                                                        value={values[field.key] ?? ''}
+                                                        placeholder={field.placeholder}
+                                                        onChange={(event) =>
+                                                            setValue(field.key, event.target.value)
+                                                        }
+                                                    />
+                                                )}
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
                         </div>
-                        <p className="mt-4 mb-2 text-xs font-medium text-ink">插入的 Markdown</p>
-                        <pre className="max-h-44 overflow-auto rounded-lg border border-line bg-[#17181a] p-3 text-[11px] leading-6 text-[#d6d8dc]">
-                            <code>{snippet || '（尚未生成内容）'}</code>
-                        </pre>
-                    </div>
-                </div>
 
-                <DialogFooter className="shrink-0 border-t px-5 py-4">
-                    <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
-                        取消
-                    </Button>
-                    <Button type="button" onClick={insert} disabled={snippet === ''}>
-                        插入到正文
-                    </Button>
-                </DialogFooter>
-            </DialogContent>
-        </Dialog>
+                        <div className="min-w-0 bg-surface-2 p-4 lg:min-h-0 lg:overflow-y-auto">
+                            <div className="mb-2 flex items-center justify-between gap-2">
+                                <p className="text-xs font-medium text-ink">效果预览</p>
+                                <span className="rounded-full border border-line bg-surface px-2 py-0.5 text-[10px] text-ink-faint">
+                                    {attachments.length} 张附件
+                                </span>
+                            </div>
+                            <div className="rounded-lg border border-line bg-surface p-4">
+                                {preview === '' ? (
+                                    <p className="text-sm text-ink-faint">填写内容后在这里预览。</p>
+                                ) : (
+                                    <div
+                                        className="prose"
+                                        dangerouslySetInnerHTML={{ __html: preview }}
+                                    />
+                                )}
+                            </div>
+                            <p className="mt-4 mb-2 text-xs font-medium text-ink">插入的 Markdown</p>
+                            <pre className="max-h-44 overflow-auto rounded-lg border border-line bg-[#17181a] p-3 text-[11px] leading-6 text-[#d6d8dc]">
+                                <code>{snippet || '（尚未生成内容）'}</code>
+                            </pre>
+                        </div>
+                    </div>
+
+                    <DialogFooter className="shrink-0 items-center justify-between gap-3 border-t px-5 py-4 sm:space-x-0">
+                        <span className="text-[11px] text-ink-faint">
+                            图片组件会自动登记附件，保存时写入附件关联。
+                        </span>
+                        <div className="flex gap-2">
+                            <Button
+                                type="button"
+                                variant="outline"
+                                onClick={() => onOpenChange(false)}
+                            >
+                                取消
+                            </Button>
+                            <Button type="button" onClick={insert} disabled={snippet === ''}>
+                                插入到正文
+                            </Button>
+                        </div>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
+
+            <MediaLibrary
+                open={picker !== null}
+                onOpenChange={(next) => {
+                    if (!next) {
+                        setPicker(null);
+                    }
+                }}
+                api={api}
+                uploadPurpose={uploadPurpose}
+                multiple={picker?.multiple ?? false}
+                onSelect={(item) => pickMedia([item])}
+                onSelectMany={pickMedia}
+                title={picker?.multiple ? '选择图片附件' : '选择图片附件'}
+            />
+        </>
     );
 }

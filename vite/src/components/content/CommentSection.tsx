@@ -1,9 +1,12 @@
 import type { FormEvent, ReactNode, RefObject } from 'react';
 import { BadgeCheck, MessageCircle } from 'lucide-react';
 import MarkdownToolbar from './MarkdownToolbar';
+import { memeShortcode } from './MemePicker';
+import type { MemeItem } from './MemePicker';
 import UserAvatar from '../layout/UserAvatar';
 import { Button } from '../ui/button';
 import { Textarea } from '../ui/textarea';
+import type { MemeConfig } from '../../types';
 
 function cx(...parts: Array<string | false | null | undefined>): string {
     return parts.filter(Boolean).join(' ');
@@ -24,6 +27,28 @@ function safeAuthorUrl(value?: string): string {
     }
 
     return '';
+}
+
+function insertMemeMarkdown(
+    textarea: HTMLTextAreaElement | null,
+    onChange: (value: string) => void,
+    item: MemeItem
+): void {
+    const snippet = memeShortcode(item);
+    if (!textarea) {
+        onChange(snippet);
+        return;
+    }
+
+    const start = textarea.selectionStart ?? textarea.value.length;
+    const end = textarea.selectionEnd ?? start;
+    const next = textarea.value.slice(0, start) + snippet + textarea.value.slice(end);
+    onChange(next);
+    window.requestAnimationFrame(() => {
+        textarea.focus();
+        const cursor = start + snippet.length;
+        textarea.setSelectionRange(cursor, cursor);
+    });
 }
 
 export interface CommentAuthor {
@@ -99,6 +124,7 @@ interface CommentComposerProps {
     guestFields?: ReactNode;
     verification?: ReactNode;
     footerNote?: ReactNode;
+    meme?: MemeConfig | null;
     id?: string;
     className?: string;
 }
@@ -123,6 +149,7 @@ export function CommentComposer({
     guestFields,
     verification,
     footerNote,
+    meme,
     id = 'comment-text',
     className,
 }: CommentComposerProps) {
@@ -172,6 +199,14 @@ export function CommentComposer({
                                 target={textareaRef}
                                 onChange={onChange}
                                 onImage={onImage}
+                                meme={meme}
+                                onMemePick={(item) =>
+                                    insertMemeMarkdown(
+                                        textareaRef.current,
+                                        onChange,
+                                        item
+                                    )
+                                }
                                 disabled={disabled || busy}
                             />
                             {quickReply}
@@ -323,6 +358,65 @@ export function CommentEmpty({ image, text }: { image?: string; text: string }) 
                 <img src={image} alt="" loading="lazy" decoding="async" />
             ) : null}
             <p>{text}</p>
+        </div>
+    );
+}
+
+interface CommentLoginGateProps {
+    onLogin?: () => void;
+    onRegister?: () => void;
+    loginUrl?: string;
+    registerUrl?: string;
+    registerEnabled?: boolean;
+}
+
+export function CommentLoginGate({
+    onLogin,
+    onRegister,
+    loginUrl = '',
+    registerUrl = '',
+    registerEnabled = false,
+}: CommentLoginGateProps) {
+    const loginClass =
+        'h-8 rounded-[4px] border-brand px-4 text-[12px] font-medium text-brand hover:bg-brand-soft hover:text-brand';
+    const registerClass =
+        'h-8 rounded-[4px] bg-brand px-4 text-[12px] font-medium text-brand-contrast hover:bg-brand-strong';
+
+    return (
+        <div className="comment-login-gate border-t border-line px-4 py-5">
+            <div className="comment-login-gate-panel">
+                <p className="comment-login-gate-title">请先登录！</p>
+                <div className="mt-3 flex flex-wrap items-center justify-center gap-2">
+                    {onLogin ? (
+                        <Button
+                            type="button"
+                            variant="outline"
+                            className={loginClass}
+                            onClick={onLogin}
+                        >
+                            登录
+                        </Button>
+                    ) : loginUrl !== '' ? (
+                        <Button asChild variant="outline" className={loginClass}>
+                            <a href={loginUrl}>登录</a>
+                        </Button>
+                    ) : null}
+
+                    {registerEnabled && onRegister ? (
+                        <Button
+                            type="button"
+                            className={registerClass}
+                            onClick={onRegister}
+                        >
+                            快速注册
+                        </Button>
+                    ) : registerEnabled && registerUrl !== '' ? (
+                        <Button asChild className={registerClass}>
+                            <a href={registerUrl}>快速注册</a>
+                        </Button>
+                    ) : null}
+                </div>
+            </div>
         </div>
     );
 }

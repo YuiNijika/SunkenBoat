@@ -209,14 +209,18 @@ body {
     box-shadow: 0 0 0 4px var(--surface), var(--elevation-card);
 }
 
-:focus-visible {
-    outline: 2px solid var(--accent);
-    outline-offset: 2px;
-}
+@layer properties, theme, base, components, utilities;
 
-#main:focus,
-#main:focus-visible {
-    outline: none;
+@layer base {
+    :focus-visible {
+        outline: 2px solid var(--accent);
+        outline-offset: 2px;
+    }
+
+    #main:focus,
+    #main:focus-visible {
+        outline: none;
+    }
 }
 
 @media (prefers-reduced-motion: reduce) {

@@ -432,6 +432,24 @@
 
 .editor-writing-body.is-split {
     grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    height: min(64dvh, 720px);
+    min-height: 0;
+}
+
+.editor-writing-body.is-split .editor-source {
+    min-height: 0;
+}
+
+.editor-writing-body.is-split .editor-markdown-input {
+    height: auto;
+    min-height: 0;
+    overflow-y: auto;
+    resize: none;
+}
+
+.editor-writing-body.is-split .editor-preview {
+    height: 100%;
+    max-height: none;
 }
 
 .editor-source {
@@ -616,6 +634,70 @@
     gap: 6px;
 }
 
+.editor-attachment-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 8px;
+}
+
+.editor-attachment {
+    position: relative;
+    overflow: hidden;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: var(--surface-2);
+}
+
+.editor-attachment img {
+    width: 100%;
+    aspect-ratio: 4 / 3;
+    object-fit: cover;
+}
+
+.editor-attachment > span {
+    position: absolute;
+    right: 4px;
+    bottom: 4px;
+    padding: 1px 5px;
+    border-radius: 999px;
+    background: color-mix(in srgb, #000 62%, transparent);
+    color: #fff;
+    font-size: 9px;
+    line-height: 1.5;
+    font-variant-numeric: tabular-nums;
+}
+
+.editor-attachment > button {
+    position: absolute;
+    top: 4px;
+    right: 4px;
+    display: grid;
+    width: 22px;
+    height: 22px;
+    place-content: center;
+    border: 0;
+    border-radius: 999px;
+    background: color-mix(in srgb, #000 58%, transparent);
+    color: #fff;
+    cursor: pointer;
+    opacity: 0;
+    transition: opacity 0.15s ease, background-color 0.15s ease;
+}
+
+.editor-attachment:hover > button,
+.editor-attachment:focus-within > button {
+    opacity: 1;
+}
+
+.editor-attachment > button:hover {
+    background: var(--status-danger, #c53030);
+}
+
+.editor-attachment > button svg {
+    width: 12px;
+    height: 12px;
+}
+
 .editor-mobile-bar {
     position: fixed;
     right: 12px;
@@ -670,11 +752,20 @@
 
     .editor-writing-body.is-split {
         grid-template-columns: minmax(0, 1fr);
+        height: auto;
     }
 
     .editor-writing-body.is-split .editor-source {
         border-right: 0;
         border-bottom: 1px solid var(--line);
+    }
+
+    .editor-writing-body.is-split .editor-markdown-input {
+        min-height: 320px;
+    }
+
+    .editor-writing-body.is-split .editor-preview {
+        height: auto;
     }
 
     .editor-preview {
