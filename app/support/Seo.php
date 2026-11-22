@@ -229,6 +229,7 @@ final class Seo
 
     private static function normalizeDescription(string $value): string
     {
+        $value = ContentComponents::stripShortcodes($value);
         $value = strip_tags($value);
         $value = preg_replace('/\s+/u', ' ', $value) ?? '';
         $value = trim($value);

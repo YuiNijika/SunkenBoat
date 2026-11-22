@@ -46,6 +46,42 @@ final class ContentComponents
     }
 
     /**
+     * Strip theme-owned shortcode syntax from excerpts and SEO descriptions.
+     * Protected login/reply bodies are redacted before the remaining shortcode
+     * wrappers are unwrapped or removed.
+     */
+    public static function stripShortcodes(string $text): string
+    {
+        if ($text === '' || !str_contains($text, '[')) {
+            return $text;
+        }
+
+        $text = ContentGate::redact($text);
+        $pattern = '/\[(alert|card|spoiler)\b[^\]]*\]([\s\S]*?)\[\/\1\]/i';
+
+        do {
+            $count = 0;
+            $next = preg_replace($pattern, '$2', $text, -1, $count);
+            if (!is_string($next)) {
+                break;
+            }
+            $text = $next;
+        } while ($count > 0);
+
+        $text = (string) preg_replace(
+            '/\[sunken_meme\][\s\S]*?\[\/sunken_meme\]/i',
+            ' ',
+            $text
+        );
+
+        return (string) preg_replace(
+            '/\[\/?(?:alert|card|spoiler|login|reply|sunken_meme)\b[^\]]*\](?![(\[])/i',
+            ' ',
+            $text
+        );
+    }
+
+    /**
      * @param array<string, string> $attributes
      */
     private static function alert(array $attributes, string $body): string

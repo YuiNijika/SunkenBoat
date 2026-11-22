@@ -306,13 +306,18 @@ final class Forum
             }
 
             $excerpt = trim((string) ($topic['excerpt'] ?? ''));
+            $thumbnail = trim((string) ($topic['thumbnail'] ?? ''));
+            if ($thumbnail === '') {
+                $thumbnail = PageData::fallbackThumbnail((int) ($topic['id'] ?? 0));
+            }
+
             $items[] = [
                 'title' => (string) ($topic['title'] ?? ''),
                 'url' => (string) ($topic['url'] ?? ''),
                 'excerpt' => $excerpt,
                 'date' => $created > 0 ? (new \Typecho\Date($created))->format('Y-m-d') : '',
                 'dateIso' => $created > 0 ? (new \Typecho\Date($created))->format('c') : '',
-                'thumb' => (string) ($topic['thumbnail'] ?? ''),
+                'thumb' => $thumbnail,
                 'author' => (string) (
                     $topic['author']['screenName']
                     ?? $topic['author']['name']
@@ -4234,6 +4239,7 @@ final class Forum
 
     private static function firstImage(string $source): string
     {
+        $source = ContentComponents::stripShortcodes($source);
         if (preg_match('/<img[^>]+src\s*=\s*(["\'])([^"\']+)\1/i', Typecho::markdown($source), $match) !== 1) {
             return '';
         }
@@ -4247,6 +4253,7 @@ final class Forum
             return '';
         }
 
+        $value = ContentComponents::stripShortcodes($value);
         $value = strip_tags($value);
         $value = html_entity_decode($value, ENT_QUOTES | ENT_HTML5, 'UTF-8');
         $value = (string) preg_replace('/\s+/u', ' ', $value);

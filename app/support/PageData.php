@@ -3472,7 +3472,7 @@ final class PageData
         }
 
         $text = (string) preg_replace('/<!--.*?-->/s', ' ', $text);
-        $text = ContentGate::redact($text);
+        $text = ContentComponents::stripShortcodes($text);
         $text = (string) preg_replace('/```.*?```/s', ' ', $text);
         $text = (string) preg_replace('/!\[[^\]]*\]\((?:[^()]|\([^)]*\))*\)/u', ' ', $text);
         $text = (string) preg_replace('/!\[[^\]]*\]\[[^\]]*\]/u', ' ', $text);
@@ -3562,7 +3562,9 @@ final class PageData
 
         while ($archive->next()) {
             $text = self::rowText($archive);
-            $excerpt = trim(strip_tags(ContentGate::redact((string) ($archive->excerpt ?? ''))));
+            $excerpt = trim(strip_tags(ContentComponents::stripShortcodes(
+                (string) ($archive->excerpt ?? '')
+            )));
             $excerpt = trim((string) preg_replace('/\s+/u', ' ', $excerpt));
             if ($excerpt !== '') {
                 $excerpt = \Typecho\Common::subStr($excerpt, 0, 120, '…');
@@ -4006,6 +4008,22 @@ final class PageData
         }
 
         return Assets::url('img/thumbnail.svg');
+    }
+
+    /**
+     * Resolve the configured default thumbnail for content that does not live
+     * in Typecho's contents table, such as forum topics.
+     */
+    public static function fallbackThumbnail(int $key = 0): string
+    {
+        $values = Settings::values();
+        $thumbnail = self::defaultThumbnail(
+            $key,
+            $values['Thumbnail_Default'] ?? '',
+            Typecho::siteUrl()
+        );
+
+        return $thumbnail !== '' ? $thumbnail : Assets::url('img/thumbnail.svg');
     }
 
     /**
