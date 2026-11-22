@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { RefreshCw, ShieldCheck } from 'lucide-react';
+import type { KeyboardEvent as ReactKeyboardEvent, PointerEvent as ReactPointerEvent } from 'react';
+import { GripVertical, RefreshCw, ShieldCheck } from 'lucide-react';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
 import { Label } from '../ui/label';
@@ -15,8 +16,10 @@ interface Challenge {
     id: string;
     provider: 'math' | 'slider';
     question?: string;
-    min?: number;
-    max?: number;
+    image?: string;
+    piece?: string;
+    pieceTop?: number;
+    pieceWidth?: number;
     expiresIn: number;
 }
 
@@ -85,9 +88,18 @@ export default function CaptchaField({ config, scene, onChange }: Props) {
     const [started, setStarted] = useState(false);
     const [challenge, setChallenge] = useState<Challenge | null>(null);
     const [answer, setAnswer] = useState('');
+    const [slide, setSlide] = useState(0);
+    const [dragging, setDragging] = useState(false);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState('');
     const [cloudBusy, setCloudBusy] = useState(false);
+    const stageRef = useRef<HTMLDivElement>(null);
+    const dragRef = useRef<{
+        pointerId: number;
+        startX: number;
+        startAnswer: number;
+        width: number;
+    } | null>(null);
     const geetest = useRef<{
         showCaptcha: () => void;
         onSuccess: (callback: () => void) => void;
@@ -96,6 +108,9 @@ export default function CaptchaField({ config, scene, onChange }: Props) {
     const onChangeRef = useRef(onChange);
     onChangeRef.current = onChange;
 
+    const pieceWidth = challenge?.pieceWidth ?? 17.5;
+    const maxAnswer = Math.max(1, 100 - pieceWidth);
+
     const refresh = useCallback(async () => {
         if (!enabled || !builtin || !config?.challenge) {
             return;
@@ -103,6 +118,9 @@ export default function CaptchaField({ config, scene, onChange }: Props) {
         setLoading(true);
         setError('');
         setAnswer('');
+        setSlide(0);
+        setDragging(false);
+        dragRef.current = null;
         onChangeRef.current(null);
         try {
             const response = await fetch(config.challenge, {
@@ -127,10 +145,101 @@ export default function CaptchaField({ config, scene, onChange }: Props) {
         setStarted(false);
         setChallenge(null);
         setAnswer('');
+        setSlide(0);
+        setDragging(false);
+        dragRef.current = null;
         setCloudBusy(false);
         setError('');
         onChangeRef.current(null);
     }, [enabled, provider, scene]);
+
+    const updateSlide = useCallback(
+        (value: number) => {
+            const clamped = Math.max(0, Math.min(maxAnswer, value));
+            const formatted = clamped.toFixed(2);
+            setSlide(clamped);
+            setAnswer(formatted);
+            onChangeRef.current(
+                challenge && clamped > 0.05
+                    ? { id: challenge.id, answer: formatted }
+                    : null
+            );
+        },
+        [challenge, maxAnswer]
+    );
+
+    useEffect(() => {
+        if (!dragging) {
+            return;
+        }
+
+        const move = (event: PointerEvent) => {
+            const drag = dragRef.current;
+            if (!drag || event.pointerId !== drag.pointerId) {
+                return;
+            }
+
+            event.preventDefault();
+            const delta = ((event.clientX - drag.startX) / drag.width) * 100;
+            updateSlide(drag.startAnswer + delta);
+        };
+        const end = (event: PointerEvent) => {
+            if (!dragRef.current || event.pointerId !== dragRef.current.pointerId) {
+                return;
+            }
+            dragRef.current = null;
+            setDragging(false);
+        };
+
+        window.addEventListener('pointermove', move, { passive: false });
+        window.addEventListener('pointerup', end);
+        window.addEventListener('pointercancel', end);
+
+        return () => {
+            window.removeEventListener('pointermove', move);
+            window.removeEventListener('pointerup', end);
+            window.removeEventListener('pointercancel', end);
+        };
+    }, [dragging, updateSlide]);
+
+    const beginSlideDrag = (event: ReactPointerEvent<HTMLElement>) => {
+        if (
+            challenge?.provider !== 'slider'
+            || !stageRef.current
+            || (event.pointerType === 'mouse' && event.button !== 0)
+        ) {
+            return;
+        }
+
+        event.preventDefault();
+        dragRef.current = {
+            pointerId: event.pointerId,
+            startX: event.clientX,
+            startAnswer: slide,
+            width: Math.max(1, stageRef.current.clientWidth),
+        };
+        setDragging(true);
+    };
+
+    const handleSlideKey = (event: ReactKeyboardEvent<HTMLElement>) => {
+        const step = event.shiftKey ? 10 : 2;
+        let next = slide;
+
+        if (event.key === 'ArrowLeft' || event.key === 'ArrowDown') {
+            next -= step;
+        } else if (event.key === 'ArrowRight' || event.key === 'ArrowUp') {
+            next += step;
+        } else if (event.key === 'Home') {
+            next = 0;
+        } else if (event.key === 'End') {
+            next = maxAnswer;
+        } else {
+            return;
+        }
+
+        event.preventDefault();
+        updateSlide(next);
+    };
 
     const submitBuiltin = (nextAnswer: string) => {
         setAnswer(nextAnswer);
@@ -236,6 +345,9 @@ export default function CaptchaField({ config, scene, onChange }: Props) {
         setStarted(true);
 
         if (builtin) {
+            setSlide(0);
+            setDragging(false);
+            dragRef.current = null;
             void refresh();
             return;
         }
@@ -305,16 +417,76 @@ export default function CaptchaField({ config, scene, onChange }: Props) {
             ) : builtin && challenge ? (
                 challenge.provider === 'slider' ? (
                     <div className="grid gap-2">
-                        <input
-                            type="range"
-                            min={challenge.min ?? 10}
-                            max={challenge.max ?? 90}
-                            value={answer === '' ? String(challenge.min ?? 10) : answer}
-                            aria-label="拖动滑块完成验证"
-                            onChange={(event) => submitBuiltin(event.target.value)}
-                            className="ttdf-captcha-range w-full"
-                        />
-                        <p className="text-xs text-ink-faint">拖动滑块到安全位置后提交。</p>
+                        {challenge.image && challenge.piece ? (
+                            <>
+                                <div
+                                    ref={stageRef}
+                                    className="relative aspect-[2/1] w-full select-none overflow-hidden rounded-md border border-line bg-surface-2"
+                                >
+                                    <img
+                                        src={challenge.image}
+                                        alt=""
+                                        aria-hidden="true"
+                                        draggable={false}
+                                        className="absolute inset-0 size-full object-cover"
+                                    />
+                                    <img
+                                        src={challenge.piece}
+                                        alt=""
+                                        aria-hidden="true"
+                                        draggable={false}
+                                        onPointerDown={beginSlideDrag}
+                                        className={`absolute touch-none drop-shadow-[0_2px_5px_rgba(0,0,0,0.28)] ${
+                                            dragging ? 'cursor-grabbing' : 'cursor-grab'
+                                        }`}
+                                        style={{
+                                            left: `${slide}%`,
+                                            top: `${challenge.pieceTop ?? 30}%`,
+                                            width: `${pieceWidth}%`,
+                                        }}
+                                    />
+                                </div>
+                                <div
+                                    role="slider"
+                                    tabIndex={0}
+                                    aria-label="拖动滑块完成图片拼图"
+                                    aria-valuemin={0}
+                                    aria-valuemax={Math.round(maxAnswer)}
+                                    aria-valuenow={Math.round(slide)}
+                                    aria-valuetext={`已拖动 ${Math.round((slide / maxAnswer) * 100)}%`}
+                                    onPointerDown={beginSlideDrag}
+                                    onKeyDown={handleSlideKey}
+                                    className={`relative h-10 w-full touch-none select-none overflow-hidden rounded-full border border-line bg-surface outline-none focus-visible:ring-2 focus-visible:ring-brand/35 ${
+                                        dragging ? 'cursor-grabbing' : 'cursor-grab'
+                                    }`}
+                                >
+                                    <span
+                                        className="absolute inset-y-0 left-0 bg-brand-soft"
+                                        style={{ width: `${(slide / maxAnswer) * 100}%` }}
+                                        aria-hidden="true"
+                                    />
+                                    <span className="pointer-events-none absolute inset-0 grid place-items-center text-[11px] text-ink-faint">
+                                        拖动滑块完成拼图
+                                    </span>
+                                    <span
+                                        className="absolute top-1/2 grid size-8 -translate-y-1/2 place-items-center rounded-full bg-brand text-brand-foreground shadow-sm"
+                                        style={{
+                                            left: `calc(${(slide / maxAnswer) * 100}% - ${
+                                                (slide / maxAnswer) * 32
+                                            }px)`,
+                                        }}
+                                        aria-hidden="true"
+                                    >
+                                        <GripVertical className="size-4" />
+                                    </span>
+                                </div>
+                                <p className="text-xs text-ink-faint">
+                                    按住拼图块或下方滑块拖动，把图片拼回缺口位置。
+                                </p>
+                            </>
+                        ) : (
+                            <p className="text-xs text-ink-faint">验证码图片加载失败，请点击刷新重试。</p>
+                        )}
                     </div>
                 ) : (
                     <div className="flex flex-wrap items-center gap-2">

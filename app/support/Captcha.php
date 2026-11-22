@@ -219,9 +219,19 @@ final class Captcha
             'tries' => 0,
         ];
         if ($provider === 'slider') {
-            $target = random_int(20, 80);
-            $record['target'] = $target;
-            $payload = ['id' => $id, 'provider' => 'slider', 'min' => 10, 'max' => 90, 'expiresIn' => self::ttl()];
+            $scene = self::sliderScene();
+            $pieceX = random_int(92, 222);
+            $pieceY = random_int(18, 100);
+            $record['target'] = round($pieceX / 320 * 100, 2);
+            $payload = [
+                'id' => $id,
+                'provider' => 'slider',
+                'image' => self::svgDataUrl(self::sliderSvg($scene, $pieceX, $pieceY, true)),
+                'piece' => self::svgDataUrl(self::sliderSvg($scene, $pieceX, $pieceY, false)),
+                'pieceTop' => round($pieceY / 160 * 100, 2),
+                'pieceWidth' => round(55 / 320 * 100, 2),
+                'expiresIn' => self::ttl(),
+            ];
         } else {
             $left = random_int(2, 19);
             $right = random_int(2, 19);
@@ -237,6 +247,151 @@ final class Captcha
         self::writeRecord($id, $record);
 
         return $payload;
+    }
+
+    /**
+     * Build one of the built-in scenic palettes. The scene is rendered as SVG
+     * so the theme does not depend on GD, Imagick or remote image hosts.
+     *
+     * @return array<string, mixed>
+     */
+    private static function sliderScene(): array
+    {
+        $palettes = [
+            [
+                'sky' => ['#dff1fb', '#7eb7d8'],
+                'sun' => '#ffe6a3',
+                'glow' => '#fff8dc',
+                'far' => '#7198b1',
+                'near' => '#31576c',
+                'water' => ['#a9d1df', '#3c7088'],
+                'line' => '#eaf7ff',
+            ],
+            [
+                'sky' => ['#f8d7bf', '#8ea8cd'],
+                'sun' => '#ffcf7a',
+                'glow' => '#fff0c8',
+                'far' => '#6d7797',
+                'near' => '#343f62',
+                'water' => ['#b7b7d1', '#4a557e'],
+                'line' => '#ffead8',
+            ],
+            [
+                'sky' => ['#17233f', '#456283'],
+                'sun' => '#f4e7b2',
+                'glow' => '#d8e8ff',
+                'far' => '#2f4962',
+                'near' => '#162737',
+                'water' => ['#35516b', '#142839'],
+                'line' => '#b9d8ef',
+            ],
+            [
+                'sky' => ['#f4e3c1', '#b6c9a8'],
+                'sun' => '#ffd36a',
+                'glow' => '#fff4ca',
+                'far' => '#6f8c76',
+                'near' => '#315445',
+                'water' => ['#b4cfb5', '#4c7562'],
+                'line' => '#f7f2d7',
+            ],
+        ];
+
+        return [
+            'palette' => $palettes[random_int(0, count($palettes) - 1)],
+            'sunX' => random_int(54, 264),
+            'sunY' => random_int(24, 52),
+            'cloudX' => random_int(8, 160),
+            'cloudY' => random_int(18, 48),
+            'bird' => random_int(190, 292),
+            'wave' => random_int(112, 132),
+        ];
+    }
+
+    /**
+     * Render the slider background (with the missing-piece slot) or a cropped
+     * puzzle piece. The target position never leaves the server.
+     *
+     * @param array<string, mixed> $scene
+     */
+    private static function sliderSvg(array $scene, int $pieceX, int $pieceY, bool $withSlot): string
+    {
+        $palette = is_array($scene['palette'] ?? null) ? $scene['palette'] : [];
+        $skyTop = (string) ($palette['sky'][0] ?? '#dff1fb');
+        $skyBottom = (string) ($palette['sky'][1] ?? '#7eb7d8');
+        $sun = (string) ($palette['sun'] ?? '#ffe6a3');
+        $glow = (string) ($palette['glow'] ?? '#fff8dc');
+        $far = (string) ($palette['far'] ?? '#7198b1');
+        $near = (string) ($palette['near'] ?? '#31576c');
+        $waterTop = (string) ($palette['water'][0] ?? '#a9d1df');
+        $waterBottom = (string) ($palette['water'][1] ?? '#3c7088');
+        $line = (string) ($palette['line'] ?? '#eaf7ff');
+        $sunX = (int) ($scene['sunX'] ?? 160);
+        $sunY = (int) ($scene['sunY'] ?? 40);
+        $cloudX = (int) ($scene['cloudX'] ?? 40);
+        $cloudY = (int) ($scene['cloudY'] ?? 30);
+        $bird = (int) ($scene['bird'] ?? 230);
+        $wave = (int) ($scene['wave'] ?? 120);
+        $maskX = $pieceX;
+        $maskY = $pieceY;
+
+        $defs = '<defs>'
+            . '<linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">'
+            . '<stop offset="0" stop-color="' . $skyTop . '"/>'
+            . '<stop offset="1" stop-color="' . $skyBottom . '"/>'
+            . '</linearGradient>'
+            . '<linearGradient id="water" x1="0" y1="0" x2="0" y2="1">'
+            . '<stop offset="0" stop-color="' . $waterTop . '"/>'
+            . '<stop offset="1" stop-color="' . $waterBottom . '"/>'
+            . '</linearGradient>'
+            . '<radialGradient id="sunGlow">'
+            . '<stop offset="0" stop-color="' . $glow . '" stop-opacity=".95"/>'
+            . '<stop offset="1" stop-color="' . $glow . '" stop-opacity="0"/>'
+            . '</radialGradient>'
+            . '<mask id="pieceMask" maskUnits="userSpaceOnUse" x="' . $maskX . '" y="' . $maskY . '" width="55" height="48">'
+            . '<rect x="' . $maskX . '" y="' . $maskY . '" width="48" height="48" rx="11" fill="#fff"/>'
+            . '<circle cx="' . ($maskX + 48) . '" cy="' . ($maskY + 24) . '" r="7" fill="#fff"/>'
+            . '</mask>'
+            . '</defs>';
+
+        $body = '<rect width="320" height="160" fill="url(#sky)"/>'
+            . '<circle cx="' . $sunX . '" cy="' . $sunY . '" r="38" fill="url(#sunGlow)"/>'
+            . '<circle cx="' . $sunX . '" cy="' . $sunY . '" r="12" fill="' . $sun . '"/>'
+            . '<g fill="#fff" opacity=".42">'
+            . '<ellipse cx="' . $cloudX . '" cy="' . $cloudY . '" rx="34" ry="7"/>'
+            . '<ellipse cx="' . ($cloudX + 24) . '" cy="' . ($cloudY + 5) . '" rx="22" ry="5"/>'
+            . '<ellipse cx="' . ($cloudX + 230) . '" cy="' . ($cloudY + 17) . '" rx="28" ry="6"/>'
+            . '</g>'
+            . '<path d="M0 116 L38 78 L70 101 L108 68 L144 102 L182 74 L220 101 L256 71 L292 100 L320 84 L320 160 L0 160 Z" fill="' . $far . '" opacity=".86"/>'
+            . '<path d="M0 139 L48 108 L84 128 L122 97 L160 125 L198 102 L236 130 L274 105 L320 125 L320 160 L0 160 Z" fill="' . $near . '"/>'
+            . '<rect y="' . $wave . '" width="320" height="' . (160 - $wave) . '" fill="url(#water)"/>'
+            . '<g fill="none" stroke="' . $line . '" stroke-linecap="round" opacity=".3">'
+            . '<path d="M18 138 H76"/><path d="M96 146 H166"/><path d="M188 136 H250"/>'
+            . '<path d="M42 151 H92"/><path d="M226 152 H292"/>'
+            . '</g>'
+            . '<path d="M' . $bird . ' 48 q5 -5 10 0 q-5 -2 -10 0" fill="none" stroke="' . $near . '" stroke-width="1.4" stroke-linecap="round" opacity=".55"/>';
+
+        if ($withSlot) {
+            $body .= '<g mask="url(#pieceMask)">'
+                . '<rect x="' . $maskX . '" y="' . $maskY . '" width="55" height="48" fill="#07111f" fill-opacity=".56"/>'
+                . '</g>'
+                . '<rect x="' . ($maskX + 0.75) . '" y="' . ($maskY + 0.75) . '" width="46.5" height="46.5" rx="10.5" fill="none" stroke="#fff" stroke-opacity=".9" stroke-width="1.5"/>'
+                . '<circle cx="' . ($maskX + 48) . '" cy="' . ($maskY + 24) . '" r="6.25" fill="none" stroke="#fff" stroke-opacity=".9" stroke-width="1.5"/>';
+            $viewBox = '0 0 320 160';
+            $size = '<svg xmlns="http://www.w3.org/2000/svg" width="320" height="160" viewBox="' . $viewBox . '">';
+        } else {
+            $body = '<g mask="url(#pieceMask)">' . $body . '</g>'
+                . '<rect x="' . ($maskX + 0.75) . '" y="' . ($maskY + 0.75) . '" width="46.5" height="46.5" rx="10.5" fill="none" stroke="#fff" stroke-opacity=".8" stroke-width="1.5"/>'
+                . '<circle cx="' . ($maskX + 48) . '" cy="' . ($maskY + 24) . '" r="6.25" fill="none" stroke="#fff" stroke-opacity=".8" stroke-width="1.5"/>';
+            $viewBox = $maskX . ' ' . $maskY . ' 55 48';
+            $size = '<svg xmlns="http://www.w3.org/2000/svg" width="55" height="48" viewBox="' . $viewBox . '">';
+        }
+
+        return $size . $defs . $body . '</svg>';
+    }
+
+    private static function svgDataUrl(string $svg): string
+    {
+        return 'data:image/svg+xml;base64,' . base64_encode($svg);
     }
 
     /**
@@ -267,11 +422,12 @@ final class Captcha
             $valid = preg_match('/^\d{1,3}$/D', $answer) === 1
                 && hash_equals((string) ($record['answer'] ?? ''), hash('sha256', $answer));
         } else {
-            $position = is_numeric($answer) ? (int) $answer : -1;
-            $target = (int) ($record['target'] ?? -1);
-            $valid = $position >= 0
-                && $target >= 0
-                && abs($position - $target) <= 7;
+            $position = is_numeric($answer) ? (float) $answer : -1.0;
+            $target = (float) ($record['target'] ?? -1.0);
+            $valid = $position >= 0.0
+                && $position <= 100.0
+                && $target >= 0.0
+                && abs($position - $target) <= 4.0;
         }
 
         if ($valid) {

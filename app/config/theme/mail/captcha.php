@@ -25,10 +25,10 @@ return [
                         'value' => 'math',
                         'show_when' => ['Captcha_Enabled' => true],
                         'label' => '验证码类型',
-                        'description' => '内置算术题与滑块由主题直接校验；极验、腾讯云与阿里云需要填写对应服务商凭证。',
+                        'description' => '内置算术题与图片拼图滑块由主题直接校验，拼图目标坐标只保存在服务端；极验、腾讯云与阿里云需要填写对应服务商凭证。',
                         'options' => [
                             'math' => '内置算术题',
-                            'slider' => '内置滑块',
+                            'slider' => '内置图片拼图滑块',
                             'geetest' => '极验 Geetest 4',
                             'tencent' => '腾讯云验证码',
                             'aliyun' => '阿里云验证码',
