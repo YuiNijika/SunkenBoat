@@ -1089,7 +1089,7 @@ export default function AccountPanel({ api, section = 'profile' }: Props) {
                                     <span className="account-profile-level">
                                         <LevelBadge
                                             level={economy.level}
-                                            iconClassName="h-4.5 w-auto"
+                                            iconClassName="h-8 w-auto"
                                             showTitle={false}
                                         />
                                     </span>

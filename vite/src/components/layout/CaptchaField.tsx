@@ -108,6 +108,7 @@ export default function CaptchaField({
         pointerId: number;
         startX: number;
         startAnswer: number;
+        answer: number;
         width: number;
         moved: boolean;
     } | null>(null);
@@ -172,7 +173,7 @@ export default function CaptchaField({
     }, [enabled, provider, scene]);
 
     const updateSlide = useCallback(
-        (value: number): CaptchaValue | null => {
+        (value: number, emit = true): CaptchaValue | null => {
             const clamped = Math.max(0, Math.min(maxAnswer, value));
             const formatted = clamped.toFixed(2);
             const nextValue =
@@ -182,6 +183,9 @@ export default function CaptchaField({
 
             setSlide(clamped);
             setAnswer(formatted);
+            if (!emit) {
+                return nextValue;
+            }
             valueRef.current = nextValue;
             onChangeRef.current(nextValue);
 
@@ -206,17 +210,33 @@ export default function CaptchaField({
             if (Math.abs(event.clientX - drag.startX) > 2) {
                 drag.moved = true;
             }
-            updateSlide(drag.startAnswer + delta);
+            drag.answer = drag.startAnswer + delta;
+            updateSlide(drag.answer, false);
         };
         const end = (event: PointerEvent) => {
             if (!dragRef.current || event.pointerId !== dragRef.current.pointerId) {
                 return;
             }
-            const moved = dragRef.current.moved;
+            const drag = dragRef.current;
             dragRef.current = null;
             setDragging(false);
-            if (moved && valueRef.current) {
-                onCompleteRef.current?.(valueRef.current);
+
+            if (event.type !== 'pointerup') {
+                updateSlide(drag.startAnswer, false);
+                valueRef.current = null;
+                onChangeRef.current(null);
+                return;
+            }
+
+            if (!drag.moved) {
+                valueRef.current = null;
+                onChangeRef.current(null);
+                return;
+            }
+
+            const value = updateSlide(drag.answer);
+            if (value) {
+                onCompleteRef.current?.(value);
             }
         };
 
@@ -245,6 +265,7 @@ export default function CaptchaField({
             pointerId: event.pointerId,
             startX: event.clientX,
             startAnswer: slide,
+            answer: slide,
             width: Math.max(1, stageRef.current.clientWidth),
             moved: false,
         };
