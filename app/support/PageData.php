@@ -546,6 +546,18 @@ final class PageData
             ];
         }
 
+        if ($kind === 'forum-topic') {
+            foreach ($data['blocks'] as $block) {
+                if (($block['type'] ?? '') === 'forum-topic') {
+                    $data['paid'] = PaidContent::client(
+                        'topic',
+                        (int) ($block['topic']['id'] ?? 0)
+                    );
+                    break;
+                }
+            }
+        }
+
         return $data;
     }
 
@@ -739,7 +751,7 @@ final class PageData
             self::$postViews = ArticleViews::record((int) ($archive->cid ?? 0));
         }
 
-        return [
+        $data = [
             'kind' => $kind,
             'site' => self::site($archive),
             'theme' => self::theme(),
@@ -750,6 +762,12 @@ final class PageData
                 ? $archive->allow('comment')
                 : false,
         ];
+
+        if (in_array($kind, ['post', 'page'], true)) {
+            $data['paid'] = PaidContent::client('article', (int) ($archive->cid ?? 0));
+        }
+
+        return $data;
     }
 
     /**
@@ -1355,6 +1373,7 @@ final class PageData
                 $html = self::content($archive);
                 $cid = (int) ($archive->cid ?? 0);
 
+                $html = PaidContent::render($html, 'article', $cid);
                 $html = ContentGate::render($html, $cid);
 
                 return ContentComponents::render($html);

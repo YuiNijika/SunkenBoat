@@ -441,7 +441,12 @@ final class UserEconomy
                 return ['error' => '余额不足，请先充值', 'status' => 402];
             }
 
-            $updated = DownloadStore::markPaid($number, 'BAL' . bin2hex(random_bytes(10)), $amount);
+            $updated = DownloadStore::markPaid(
+                $number,
+                'BAL' . bin2hex(random_bytes(10)),
+                $amount,
+                false
+            );
             if ($updated === null) {
                 return ['error' => '支付确认失败，请稍后重试', 'status' => 409];
             }
@@ -449,11 +454,11 @@ final class UserEconomy
             return ['order' => $updated];
         });
 
-        if (isset($result['error'])) {
-            Response::error((string) $result['error'], (int) ($result['status'] ?? 400));
+        if (isset($paid['error'])) {
+            Response::error((string) $paid['error'], (int) ($paid['status'] ?? 400));
         }
 
-        return is_array($result['order'] ?? null) ? $result['order'] : [];
+        return is_array($paid['order'] ?? null) ? $paid['order'] : [];
     }
 
     public static function markOrderPaidWithPoints(array $order, int $uid): array
@@ -498,7 +503,8 @@ final class UserEconomy
                 $updated = DownloadStore::markPaid(
                     $number,
                     'PTS' . bin2hex(random_bytes(10)),
-                    $amount
+                    $amount,
+                    false
                 );
                 if ($updated === null) {
                     return ['error' => '支付确认失败，请稍后重试', 'status' => 409];
@@ -508,15 +514,15 @@ final class UserEconomy
             }
         );
 
-        if (isset($result['error'])) {
+        if (isset($paid['error'])) {
             Response::error(
-                (string) $result['error'],
-                (int) ($result['status'] ?? 400),
-                isset($result['cost']) ? ['points' => (int) $result['cost']] : []
+                (string) $paid['error'],
+                (int) ($paid['status'] ?? 400),
+                isset($paid['cost']) ? ['points' => (int) $paid['cost']] : []
             );
         }
 
-        return is_array($result['order'] ?? null) ? $result['order'] : [];
+        return is_array($paid['order'] ?? null) ? $paid['order'] : [];
     }
 
     public static function handleInstall(array $data): array
@@ -1113,6 +1119,11 @@ final class UserEconomy
         try {
             $db->query($db->update('table.users')->expression('uid', 'uid')->where('uid = ?', $uid));
             $result = $operation();
+            if (is_array($result) && isset($result['error']) && (string) $result['error'] !== '') {
+                $db->query('ROLLBACK', Db::WRITE, '');
+
+                return $result;
+            }
             $db->query('COMMIT', Db::WRITE, '');
 
             return $result;

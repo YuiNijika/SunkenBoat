@@ -141,9 +141,12 @@ final class ContentGate
         }
 
         if (isset($data['content']) && is_string($data['content'])) {
-            $data['content'] = $markdown
-                ? self::protectMarkdown($data['content'], $cid, $uid, $admin)
-                : self::renderFor($data['content'], $cid, $uid, $admin);
+            $data = PaidContent::filterApiData($data, 'article', $cid, $markdown);
+            if (isset($data['content']) && is_string($data['content'])) {
+                $data['content'] = $markdown
+                    ? self::protectMarkdown($data['content'], $cid, $uid, $admin)
+                    : self::renderFor($data['content'], $cid, $uid, $admin);
+            }
         }
 
         $payload['data'] = $data;
@@ -160,6 +163,7 @@ final class ContentGate
             return $text;
         }
 
+        $text = PaidContent::redact($text);
         $redacted = preg_replace(self::PATTERN, ' ', $text);
         return is_string($redacted) ? $redacted : $text;
     }
@@ -196,8 +200,19 @@ final class ContentGate
     ): string
     {
         if ($html === '' || !str_contains($html, '[')) {
-            return $html;
+            return self::unwrapSections($html);
         }
+
+        $html = preg_replace(
+            '#<p>\s*(\[(?:login|reply)\b[^\]]*\])\s*</p>#i',
+            '$1',
+            $html
+        ) ?? $html;
+        $html = preg_replace(
+            '#<p>\s*(\[/(?:login|reply)\])\s*</p>#i',
+            '$1',
+            $html
+        ) ?? $html;
 
         $canLogin = $admin || $uid > 0;
         $canReply = $replyAllowed ?? ($admin || ($uid > 0 && self::hasCommented($cid, $uid)));
@@ -210,9 +225,20 @@ final class ContentGate
                 $allowed = $type === 'reply' ? $canReply : $canLogin;
 
                 if ($allowed) {
-                    return '<div class="content-gate content-gate-open" data-gate="' . $type . '">'
+                    return '<section class="content-gate-hero content-gate-hero-open" data-gate="' . $type . '">'
+                        . '<div class="content-gate-open-head">'
+                        . '<span class="content-gate-open-icon" aria-hidden="true">'
+                        . self::icon('unlock')
+                        . '</span>'
+                        . '<span class="content-gate-open-label">内容已解锁</span>'
+                        . '<span class="content-gate-open-hint">'
+                        . ($type === 'reply' ? '回复可见' : '登录可见')
+                        . '</span>'
+                        . '</div>'
+                        . '<div class="content-gate-open-body">'
                         . $inner
-                        . '</div>';
+                        . '</div>'
+                        . '</section>';
                 }
 
                 return self::locked($type, $uid > 0);
@@ -220,8 +246,22 @@ final class ContentGate
             static fn (string $type): string => self::locked($type, $uid > 0)
         );
 
+        return self::unwrapSections($html);
+    }
+
+    /**
+     * Markdown wraps the block-level shortcode output in paragraph tags. The
+     * locked/unlocked panels are valid sections, so move them out of the
+     * invalid paragraph and drop dangling paragraph tags around block closes.
+     */
+    private static function unwrapSections(string $html): string
+    {
+        if (!str_contains($html, '<section')) {
+            return $html;
+        }
+
         $cleaned = preg_replace(
-            '#<p>\s*(<section class="content-gate-hero"[\s\S]*?</section>)\s*</p>#i',
+            '#<p>\s*(<section class="[^"]*(?:content-gate-hero|paid-gate)[^"]*"[\s\S]*?</section>)\s*</p>#i',
             '$1',
             $html
         );
@@ -334,6 +374,8 @@ final class ContentGate
             'message' => '<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>'
                 . '<path d="M8 9h8"/><path d="M8 13h5"/>',
             'arrow' => '<path d="M5 12h14"/><path d="m13 6 6 6-6 6"/>',
+            'unlock' => '<rect width="18" height="11" x="3" y="11" rx="2" ry="2"/>'
+                . '<path d="M7 11V7a5 5 0 0 1 9.9-1"/>',
             default => '<rect width="18" height="11" x="3" y="11" rx="2" ry="2"/>'
                 . '<path d="M7 11V7a5 5 0 0 1 10 0v4"/>',
         };

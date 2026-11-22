@@ -37,7 +37,6 @@ import { Textarea } from '../ui/textarea';
 import type { ForumEditorData, MediaItem, PageData } from '../../types';
 
 type ViewMode = 'write' | 'split' | 'preview';
-const EXCLUDED_COMPONENTS: Array<'login' | 'reply'> = ['login', 'reply'];
 
 function countWords(value: string): { chars: number; words: number; minutes: number } {
     const text = value.trim();
@@ -924,7 +923,6 @@ function TopicEditor({ editor }: { editor: ForumEditorData }) {
                 open={libraryOpen}
                 onOpenChange={setLibraryOpen}
                 onInsert={insertSnippet}
-                excluded={EXCLUDED_COMPONENTS}
             />
 
             <MediaLibrary

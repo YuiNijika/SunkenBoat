@@ -1,4 +1,5 @@
 import type { DownloadConfig, DownloadsClient, DownloadOffer } from './lib/downloads';
+import type { PaidClient } from './lib/paid';
 
 export type ThemeName = 'light' | 'dark';
 
@@ -1442,6 +1443,7 @@ export interface PageData {
     site: SiteInfo;
     theme: ThemeOptions;
     api?: ApiEndpoints;
+    paid?: PaidClient;
     blocks: Block[];
     widgets?: WidgetsData;
     allowComment?: boolean;

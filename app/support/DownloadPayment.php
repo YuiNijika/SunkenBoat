@@ -139,6 +139,36 @@ final class DownloadPayment
     }
 
     /**
+     * Public callback URL used by every gateway. Some hosts terminate TLS at a
+     * proxy while Typecho still stores an http:// site URL; upgrading the URL
+     * here prevents providers from POSTing to a 301 redirect and losing the
+     * notification body.
+     */
+    public static function notifyUrl(): string
+    {
+        $base = self::baseUrl();
+
+        return $base === '' ? '' : $base . '/ttdf/sunken/payment/notify';
+    }
+
+    /**
+     * Site entry URL with the current request's scheme applied.
+     */
+    public static function baseUrl(): string
+    {
+        $base = rtrim(Typecho::indexUrl() ?: Typecho::siteUrl(), '/');
+        if ($base === '') {
+            return '';
+        }
+
+        if (self::requestIsSecure() && stripos($base, 'http://') === 0) {
+            return 'https://' . substr($base, 7);
+        }
+
+        return $base;
+    }
+
+    /**
      * Flatten every configured channel into one entry per payment method.
      *
      * @return array<string, array{method: string, label: string, platform: string, gateway: string, endpoint: string, site_name: string, id: string, secret: string, public_key: string}>
@@ -239,14 +269,25 @@ final class DownloadPayment
             }
         }
 
-        $signature = (string) ($input['sign'] ?? '');
-        $number = (string) ($input['out_trade_no'] ?? '');
-        $trade = (string) ($input['trade_no'] ?? '');
-        $signType = strtoupper(trim((string) ($input['sign_type'] ?? 'MD5')));
+        $signature = self::field($input, ['sign']);
+        $number = self::field($input, [
+            'out_trade_no',
+            'order_no',
+            'order_id',
+            'orderid',
+            'trade_order_no',
+        ]);
+        $trade = self::field($input, [
+            'trade_no',
+            'pay_no',
+            'transaction_id',
+            'api_trade_no',
+        ]);
+        $signType = strtoupper(self::field($input, ['sign_type']) ?: 'MD5');
         if (
             $signature === ''
             || preg_match('/^SK[0-9]{14}[A-F0-9]{16}$/D', $number) !== 1
-            || preg_match('/^[A-Za-z0-9_-]{1,100}$/D', $trade) !== 1
+            || preg_match('/^[A-Za-z0-9._:-]{1,100}$/D', $trade) !== 1
         ) {
             return null;
         }
@@ -257,23 +298,36 @@ final class DownloadPayment
 
         if (
             $signType !== 'MD5'
-            || strtoupper(trim((string) ($input['trade_status'] ?? ''))) !== 'TRADE_SUCCESS'
+            || !self::paidStatus($input)
             || preg_match('/^[a-f0-9]{32}$/Di', $signature) !== 1
         ) {
             return null;
         }
 
-        $amount = Downloads::amountCents($input['money'] ?? null);
+        $amount = self::callbackAmount(self::field($input, [
+            'money',
+            'total_amount',
+            'price',
+            'amount',
+            'total_fee',
+        ]));
         if ($amount === null || $amount <= 0) {
             return null;
         }
 
-        $pid = (string) ($input['pid'] ?? '');
-        $type = self::normalizeType((string) ($input['type'] ?? ''));
+        $pid = self::field($input, ['pid', 'merchant_id', 'mch_id']);
+        $type = self::normalizeType(self::field($input, [
+            'type',
+            'pay_type',
+            'payment_type',
+        ]));
         $candidates = [];
         $preferred = null;
         foreach (self::gatewayChannels() as $channel) {
-            if ($channel['platform'] === 'official' || $pid !== $channel['id']) {
+            if ($channel['platform'] === 'official') {
+                continue;
+            }
+            if ($pid !== '' && $pid !== $channel['id']) {
                 continue;
             }
             if ($type === '' || $type === $channel['method']) {
@@ -285,6 +339,18 @@ final class DownloadPayment
         if ($preferred !== null) {
             array_unshift($candidates, $preferred);
         }
+
+        $unique = [];
+        $seen = [];
+        foreach ($candidates as $channel) {
+            $key = $channel['id'] . '|' . $channel['method'];
+            if (isset($seen[$key])) {
+                continue;
+            }
+            $seen[$key] = true;
+            $unique[] = $channel;
+        }
+        $candidates = $unique;
 
         foreach ($candidates as $channel) {
             if (!self::md5SignatureMatches($input, strtolower($signature), $channel['secret'])) {
@@ -616,16 +682,17 @@ final class DownloadPayment
      */
     private static function compatibleCheckout(array $channel, array $order): string
     {
-        $index = rtrim(Typecho::indexUrl() ?: Typecho::siteUrl(), '/');
-        if ($index === '') {
+        $notifyUrl = self::notifyUrl();
+        $returnUrl = Downloads::returnUrl($order);
+        if ($notifyUrl === '' || $returnUrl === '') {
             return '';
         }
         $params = [
             'pid' => $channel['id'],
             'type' => $channel['method'],
             'out_trade_no' => (string) ($order['number'] ?? ''),
-            'notify_url' => $index . '/ttdf/sunken/payment/notify',
-            'return_url' => $index . '/user/downloads?' . http_build_query(['order' => $order['number'] ?? '']),
+            'notify_url' => $notifyUrl,
+            'return_url' => $returnUrl,
             'name' => mb_substr((string) ($order['title'] ?? ''), 0, 64, 'UTF-8'),
             'money' => Downloads::formatAmount((int) ($order['amount_cents'] ?? 0)),
         ];
@@ -650,8 +717,9 @@ final class DownloadPayment
             return '';
         }
 
-        $index = rtrim(Typecho::indexUrl() ?: Typecho::siteUrl(), '/');
-        if ($index === '') {
+        $notifyUrl = self::notifyUrl();
+        $returnUrl = Downloads::returnUrl($order);
+        if ($notifyUrl === '' || $returnUrl === '') {
             return '';
         }
 
@@ -678,8 +746,8 @@ final class DownloadPayment
             'timestamp' => (new \DateTimeImmutable('now', new \DateTimeZone('Asia/Shanghai')))
                 ->format('Y-m-d H:i:s'),
             'version' => '1.0',
-            'notify_url' => $index . '/ttdf/sunken/payment/notify',
-            'return_url' => $index . '/user/downloads?' . http_build_query(['order' => $order['number'] ?? '']),
+            'notify_url' => $notifyUrl,
+            'return_url' => $returnUrl,
             'biz_content' => $bizContent,
         ];
         $signature = self::rsaSign($params, $channel['secret']);
@@ -699,20 +767,21 @@ final class DownloadPayment
      */
     private static function verifyOfficial(array $input, string $signature, string $number, string $trade): ?array
     {
-        $status = strtoupper(trim((string) ($input['trade_status'] ?? '')));
-        if (
-            $status !== 'TRADE_SUCCESS'
-            && $status !== 'TRADE_FINISHED'
-        ) {
+        if (!self::paidStatus($input)) {
             return null;
         }
 
-        $appId = trim((string) ($input['app_id'] ?? ''));
+        $appId = self::field($input, ['app_id', 'auth_app_id']);
         if ($appId === '') {
             return null;
         }
 
-        $amount = Downloads::amountCents($input['total_amount'] ?? $input['money'] ?? null);
+        $amount = self::callbackAmount(self::field($input, [
+            'total_amount',
+            'money',
+            'amount',
+            'total_fee',
+        ]));
         if ($amount === null || $amount <= 0) {
             return null;
         }
@@ -729,6 +798,85 @@ final class DownloadPayment
         }
 
         return null;
+    }
+
+    /**
+     * Providers label successful callbacks differently: EasyPay uses
+     * TRADE_SUCCESS, some 码支付-compatible services send status=1, and
+     * Alipay may send TRADE_FINISHED for already-settled orders.
+     *
+     * @param array<string, mixed> $input
+     */
+    private static function paidStatus(array $input): bool
+    {
+        $status = strtoupper(self::field($input, [
+            'trade_status',
+            'status',
+            'trade_state',
+            'pay_status',
+        ]));
+
+        return in_array($status, [
+            'TRADE_SUCCESS',
+            'TRADE_FINISHED',
+            'SUCCESS',
+            'SUCCEEDED',
+            'PAID',
+            'COMPLETED',
+            'FINISHED',
+            '1',
+        ], true);
+    }
+
+    /**
+     * Read the first non-empty scalar field from a callback alias list.
+     *
+     * @param array<string, mixed> $input
+     * @param list<string> $names
+     */
+    private static function field(array $input, array $names): string
+    {
+        foreach ($names as $name) {
+            if (!array_key_exists($name, $input)) {
+                continue;
+            }
+
+            $value = $input[$name];
+            if (!is_string($value) && !is_numeric($value)) {
+                continue;
+            }
+
+            $value = trim((string) $value);
+            if ($value !== '') {
+                return $value;
+            }
+        }
+
+        return '';
+    }
+
+    /**
+     * Accept cent amounts with the extra decimal places some gateways emit
+     * (e.g. 1.000000) and normalize them to an integer cent value.
+     */
+    private static function callbackAmount(string $value): ?int
+    {
+        $value = str_replace([',', '¥', '￥'], '', trim($value));
+        if (
+            $value === ''
+            || strlen($value) > 20
+            || preg_match('/^(0|[1-9][0-9]{0,8})(?:\.([0-9]{1,6}))?$/D', $value, $match) !== 1
+        ) {
+            return null;
+        }
+
+        $fraction = (string) ($match[2] ?? '');
+        $cents = ((int) $match[1]) * 100 + (int) substr(str_pad($fraction, 2, '0'), 0, 2);
+        if ($fraction !== '' && strlen($fraction) > 2 && (int) $fraction[2] >= 5) {
+            $cents++;
+        }
+
+        return $cents;
     }
 
     /**
@@ -918,6 +1066,18 @@ final class DownloadPayment
         }
 
         return $path;
+    }
+
+    private static function requestIsSecure(): bool
+    {
+        $https = strtolower(trim((string) ($_SERVER['HTTPS'] ?? '')));
+        if ($https !== '' && $https !== 'off' && $https !== '0') {
+            return true;
+        }
+
+        $forwarded = strtolower(trim((string) ($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '')));
+
+        return $forwarded === 'https';
     }
 
     private static function md5Sign(array $params, string $key): string

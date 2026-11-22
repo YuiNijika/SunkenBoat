@@ -3,9 +3,14 @@ import { ArrowDownToLine, ChevronLeft, ChevronRight, ClipboardList, LoaderCircle
 import { Badge } from '../ui/badge';
 import { Button } from '../ui/button';
 import { DownloadOrderActions } from './DownloadCard';
-import { downloadDate, DOWNLOAD_STATUS_LABELS, fetchDownloadHistory } from '../../lib/downloads';
+import {
+    checkDownloadOrder,
+    downloadDate,
+    DOWNLOAD_STATUS_LABELS,
+    fetchDownloadHistory,
+} from '../../lib/downloads';
 import type { DownloadHistoryPage, DownloadOrder, DownloadsClient } from '../../lib/downloads';
-import { notifyError } from '../../lib/notify';
+import { notifyError, notifySuccess } from '../../lib/notify';
 
 export default function DownloadHistory({ client }: { client: DownloadsClient }) {
     const [page, setPage] = useState(1);
@@ -36,6 +41,63 @@ export default function DownloadHistory({ client }: { client: DownloadsClient })
 
         return () => controller.abort();
     }, [client.endpoints.history, client.nonce, page, revision]);
+
+    useEffect(() => {
+        let orderNumber = '';
+        try {
+            orderNumber = new URLSearchParams(window.location.search).get('order') ?? '';
+        } catch {
+            return;
+        }
+        if (!/^SK[0-9]{14}[A-F0-9]{16}$/.test(orderNumber)) {
+            return;
+        }
+
+        let cancelled = false;
+        let attempts = 0;
+        let timer = 0;
+        const controller = new AbortController();
+
+        const check = async () => {
+            attempts++;
+            try {
+                const order = await checkDownloadOrder({
+                    client,
+                    orderNumber,
+                    signal: controller.signal,
+                });
+                if (cancelled) {
+                    return;
+                }
+                setResult((current) => current ? {
+                    ...current,
+                    items: current.items.map((item) => item.number === order.number ? order : item),
+                } : current);
+                if (order.status === 'paid') {
+                    notifySuccess('付款已确认，订单已更新。');
+                    return;
+                }
+                if (order.status === 'cancelled') {
+                    notifyError('订单已取消，请重新下单。');
+                    return;
+                }
+            } catch {
+                // Keep checking briefly; the provider callback may still be in flight.
+            }
+
+            if (!cancelled && attempts < 8) {
+                timer = window.setTimeout(check, 4000);
+            }
+        };
+
+        void check();
+
+        return () => {
+            cancelled = true;
+            controller.abort();
+            window.clearTimeout(timer);
+        };
+    }, [client, page, revision]);
 
     const updateOrder = (order: DownloadOrder) => {
         setResult((current) => current ? {

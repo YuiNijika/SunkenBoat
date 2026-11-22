@@ -78,10 +78,71 @@ function PaymentDialog({
     const [checking, setChecking] = useState(false);
     const [payingBalance, setPayingBalance] = useState(false);
     const [payingPoints, setPayingPoints] = useState(false);
+    const [gatewayStarted, setGatewayStarted] = useState(false);
     const controller = useRef<AbortController | null>(null);
     const paymentOptions = order.paymentOptions.filter((option) => safeDownloadUrl(option.url) !== '');
 
     useEffect(() => () => controller.current?.abort(), []);
+
+    useEffect(() => {
+        if (!open || !gatewayStarted) {
+            return;
+        }
+
+        let cancelled = false;
+        let timer = 0;
+        const deadline = Date.now() + 15 * 60 * 1000;
+        const request = new AbortController();
+
+        const detect = async () => {
+            if (cancelled || Date.now() > deadline) {
+                return;
+            }
+
+            try {
+                const next = await checkDownloadOrder({
+                    client,
+                    orderNumber: order.number,
+                    signal: request.signal,
+                });
+                if (cancelled) {
+                    return;
+                }
+                if (next.status === 'paid') {
+                    onOrderChange(next);
+                    onOpenChange(false);
+                    notifySuccess('付款已确认，现在可以下载了。');
+                    return;
+                }
+                if (next.status === 'cancelled') {
+                    onOpenChange(false);
+                    notifyError('订单已取消，请重新下单。');
+                    return;
+                }
+            } catch {
+                // Keep polling through transient network errors.
+            }
+
+            if (!cancelled) {
+                timer = window.setTimeout(detect, 4000);
+            }
+        };
+
+        const onFocus = () => {
+            window.clearTimeout(timer);
+            void detect();
+        };
+
+        timer = window.setTimeout(detect, 3500);
+        window.addEventListener('focus', onFocus);
+
+        return () => {
+            cancelled = true;
+            request.abort();
+            window.clearTimeout(timer);
+            window.removeEventListener('focus', onFocus);
+        };
+    }, [client, onOpenChange, onOrderChange, open, order.number, gatewayStarted]);
 
     const checkPayment = async () => {
         if (checking) {
@@ -213,7 +274,7 @@ function PaymentDialog({
             <DialogContent>
                 <DialogHeader>
                     <DialogTitle>购买下载</DialogTitle>
-                    <DialogDescription>完成付款后，返回这里确认付款结果并获取资源。</DialogDescription>
+                    <DialogDescription>完成付款后会自动确认；也可以点击“我已支付”手动查询结果。</DialogDescription>
                 </DialogHeader>
                 <div className="grid min-w-0 gap-3 rounded-lg border border-line p-4">
                     <p className="break-words text-sm font-medium text-ink">{order.title}</p>
@@ -285,7 +346,13 @@ function PaymentDialog({
                         ) : null}
                         {paymentOptions.map((option) => (
                             <Button asChild key={option.method + '\n' + option.url}>
-                                <a href={option.url} target="_blank" rel="noopener noreferrer" data-ttdf-reload>
+                                <a
+                                    href={option.url}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    data-ttdf-reload
+                                    onClick={() => setGatewayStarted(true)}
+                                >
                                     <CreditCard aria-hidden="true" />
                                     {option.method === 'default' ? option.label : `前往${option.label}付款`}
                                     <ExternalLink aria-hidden="true" />

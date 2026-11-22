@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
+    BadgeDollarSign,
     Code2,
     Image as ImageIcon,
     ImagePlus,
@@ -151,6 +152,53 @@ const COMPONENTS: ComponentDef[] = [
         icon: MessageSquareText,
         fields: [{ key: 'content', label: '隐藏内容', kind: 'textarea', placeholder: '评论后可见的正文' }],
         build: (values) => `[reply]\n${blockBody(values.content ?? '')}\n[/reply]`,
+    },
+    {
+        id: 'paid',
+        label: '付费可见',
+        family: 'access',
+        hint: '购买后解锁正文。支持余额、积分和站点已配置的第三方支付通道。',
+        icon: BadgeDollarSign,
+        fields: [
+            { key: 'title', label: '内容标题', kind: 'text', placeholder: '付费内容的标题' },
+            { key: 'text', label: '简介', kind: 'textarea', placeholder: '购买前展示的简短说明' },
+            { key: 'price', label: '售价（元）', kind: 'text', placeholder: '9.90' },
+            { key: 'badge', label: '徽章', kind: 'text', placeholder: '付费阅读' },
+            {
+                key: 'modes',
+                label: '支付方式',
+                kind: 'select',
+                options: [
+                    { value: 'all', label: '全部可用方式' },
+                    { value: 'balance', label: '仅余额' },
+                    { value: 'points', label: '仅积分' },
+                    { value: 'gateway', label: '仅第三方支付' },
+                    { value: 'balance,points', label: '余额或积分' },
+                    { value: 'balance,gateway', label: '余额或第三方支付' },
+                    { value: 'points,gateway', label: '积分或第三方支付' },
+                ],
+            },
+            {
+                key: 'style',
+                label: '展示样式',
+                kind: 'select',
+                options: [
+                    { value: 'hero', label: 'Hero 首屏式（默认）' },
+                    { value: 'card', label: '商品卡片式' },
+                ],
+            },
+            { key: 'image', label: '商品卡片封面', kind: 'media', placeholder: '可选' },
+            { key: 'content', label: '购买后可见内容', kind: 'textarea', placeholder: '支持 Markdown' },
+        ],
+        build: (values, media) => {
+            const picked = media.image?.[0];
+            const image = picked ? attr('image', picked.item.url) : '';
+
+            return `[paid${attr('price', values.price ?? '')}${attr('title', values.title ?? '')}`
+                + `${attr('text', values.text ?? '')}${attr('badge', values.badge ?? '')}`
+                + `${attr('modes', values.modes ?? 'all')}${attr('style', values.style ?? 'hero')}`
+                + `${image}]\n${blockBody(values.content ?? '')}\n[/paid]`;
+        },
     },
     {
         id: 'alert',
@@ -317,6 +365,15 @@ function defaultsOf(def: ComponentDef): Record<string, string> {
         }
         values[field.key] = field.kind === 'select' ? (field.options?.[0]?.value ?? '') : '';
     }
+
+    if (def.id === 'paid') {
+        values.title = values.title || '付费内容';
+        values.price = values.price || '9.90';
+        values.badge = values.badge || '付费阅读';
+        values.style = values.style || 'hero';
+        values.modes = values.modes || 'all';
+    }
+
     return values;
 }
 
@@ -328,6 +385,38 @@ function previewFor(def: ComponentDef, values: Record<string, string>, media: Me
     if (def.id === 'login' || def.id === 'reply') {
         const reply = def.id === 'reply';
         return `<section class="content-gate-hero"><div class="content-gate-hero-inner"><span class="content-gate-icon">${iconSvg(reply ? 'message' : 'lock')}</span><div class="content-gate-copy"><h2 class="content-gate-title">${reply ? '参与讨论后继续阅读' : '登录后继续阅读'}</h2><span class="content-gate-divider"></span><p class="content-gate-text">${reply ? '登录账号并参与评论后，即可查看被隐藏的完整内容。' : '这是一个仅对已登录成员开放的内容区域。登录后即可查看完整正文。'}</p></div><span class="content-gate-btn">${reply ? '前往评论区' : '立即登录'}</span></div></section>`;
+    }
+
+    if (def.id === 'paid') {
+        const paidTitle = escapeHtml((values.title ?? '').trim() || '付费内容');
+        const paidText = escapeHtml((values.text ?? '').trim() || '购买后即可查看这一区块的完整内容。');
+        const badge = escapeHtml((values.badge ?? '').trim() || '付费阅读');
+        const price = escapeHtml((values.price ?? '').trim() || '0.00');
+        const style = values.style === 'card' ? 'card' : 'hero';
+        const image = media.image?.[0];
+        const imageBlock = style === 'card' && image
+            ? `<div class="paid-gate-media"><img src="${escapeAttr(image.item.url)}" alt="" loading="lazy"></div>`
+            : '';
+        const labels = (values.modes ?? 'all')
+            .split(',')
+            .map((mode) => {
+                if (mode === 'balance') {
+                    return '余额';
+                }
+                if (mode === 'points') {
+                    return '积分';
+                }
+                if (mode === 'gateway') {
+                    return '第三方支付';
+                }
+                return '';
+            })
+            .filter((label) => label !== '');
+        const modes = labels.length > 0 && !(values.modes ?? '').includes('all')
+            ? `<div class="paid-gate-modes">${labels.map((label) => `<span class="paid-gate-mode">${label}</span>`).join('')}</div>`
+            : '';
+
+        return `<section class="content-gate-hero paid-gate paid-gate-${style}"><div class="paid-gate-inner">${imageBlock}<div class="paid-gate-body"><span class="paid-gate-badge">${badge}</span><h2 class="content-gate-title paid-gate-title">${paidTitle}</h2><p class="content-gate-text paid-gate-text">${paidText}</p><div class="paid-gate-price"><span class="paid-gate-price-main"><small>¥</small>${price}</span></div>${modes}<span class="content-gate-btn paid-gate-buy">立即购买</span><p class="paid-gate-hint">这里是编辑器预览；购买按钮在发布后才生效。</p></div></div></section>`;
     }
 
     if (def.id === 'alert') {

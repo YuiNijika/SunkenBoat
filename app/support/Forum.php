@@ -913,7 +913,11 @@ final class Forum
             'breadcrumbs' => self::topicBreadcrumbs($topic),
             'contentHtml' => ContentComponents::render(
                 ContentGate::renderForum(
-                    self::markdown((string) $topic['rawContent']),
+                    PaidContent::render(
+                        self::markdown((string) $topic['rawContent']),
+                        'topic',
+                        (int) $topic['id']
+                    ),
                     (int) $topic['id']
                 )
             ),

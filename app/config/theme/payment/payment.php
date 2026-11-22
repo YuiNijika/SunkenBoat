@@ -131,18 +131,37 @@ $officialChannel = [
 ];
 
 $notifyPath = '/ttdf/sunken/payment/notify';
+$notifyUrl = '';
+$notifyFallback = '';
+$pingUrl = '';
 try {
     $base = rtrim(\TTDF\Compat\Typecho::indexUrl() ?: \TTDF\Compat\Typecho::siteUrl(), '/');
     if ($base !== '') {
+        $secure = (
+            !empty($_SERVER['HTTPS'])
+            && strtolower((string) $_SERVER['HTTPS']) !== 'off'
+        ) || strtolower((string) ($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '')) === 'https';
+        if ($secure && str_starts_with($base, 'http://')) {
+            $base = 'https://' . substr($base, 7);
+        }
         $notifyPath = $base . $notifyPath;
+        $notifyUrl = $base . '/ttdf/sunken/payment/notify';
+        $pingUrl = $base . '/ttdf/sunken/payment/ping';
+    }
+    $site = rtrim(\TTDF\Compat\Typecho::siteUrl(), '/');
+    if ($site !== '') {
+        $notifyFallback = $site . '/index.php/ttdf/sunken/payment/notify';
     }
 } catch (\Throwable) {
     // Settings can also be loaded outside a booted Typecho request.
 }
+if ($notifyUrl !== '' && $notifyFallback === $notifyUrl) {
+    $notifyFallback = '';
+}
 
 return [
     'title' => '支付设置',
-    'description' => '下载开关、每日免费额度、最低支付金额与收款通道都在这里配置；付费下载记录在用户中心「下载记录」中查看。',
+    'description' => '下载开关、每日免费额度、最低支付金额与收款通道都在这里配置；付费下载记录在用户中心「下载记录」中查看。支付平台的异步通知必须能公网访问下方回调地址。',
     'fields' => [
         [
             'type' => 'Switch',
@@ -243,9 +262,18 @@ return [
         [
             'type' => 'Html',
             'show_when' => ['Downloads_Payment_Enabled' => true],
-            'content' => '<div class="ttdf-pay-notify">支付平台回调地址（异步通知）：<code>'
-                . \TTDF\Support\Escaper::html($notifyPath)
-                . '</code><br>易支付 / 码支付请填写商户后台的异步通知地址；支付宝官方直连会在每笔请求中自动携带该地址。同步跳转地址由每笔订单自动生成。</div>',
+            'content' => '<div class="ttdf-pay-notify">'
+                . '<p>支付平台回调地址（异步通知）：<code>'
+                . \TTDF\Support\Escaper::html($notifyUrl !== '' ? $notifyUrl : $notifyPath)
+                . '</code></p>'
+                . ($notifyFallback === '' ? '' : '<p>备用地址（未开启伪静态时）：<code>'
+                    . \TTDF\Support\Escaper::html($notifyFallback)
+                    . '</code></p>')
+                . ($pingUrl === '' ? '' : '<p><a href="'
+                    . \TTDF\Support\Escaper::html($pingUrl)
+                    . '" target="_blank" rel="noopener noreferrer">测试回调地址</a>，打开后应返回 JSON 且 reachable 为 true。</p>')
+                . '<p>该地址必须能被支付平台公网访问，支持 GET / POST 回调；易支付 / 码支付请在商户后台填写异步通知地址，支付宝官方直连会在每笔请求中自动携带该地址。同步跳转地址由每笔订单自动生成。</p>'
+                . '</div>',
         ],
     ],
 ];

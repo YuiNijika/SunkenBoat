@@ -75,7 +75,7 @@ final class ContentComponents
         );
 
         return (string) preg_replace(
-            '/\[\/?(?:alert|card|spoiler|login|reply|sunken_meme)\b[^\]]*\](?![(\[])/i',
+            '/\[\/?(?:alert|card|spoiler|login|reply|paid|sunken_meme)\b[^\]]*\](?![(\[])/i',
             ' ',
             $text
         );

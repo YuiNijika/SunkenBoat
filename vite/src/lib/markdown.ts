@@ -258,7 +258,7 @@ export function renderMarkdown(value: string): string {
 }
 
 const EDITOR_SHORTCODE =
-    /\[(login|reply|alert|card|spoiler)\b([^\]]*)\]([\s\S]*?)\[\/\1\]/gi;
+    /\[(login|reply|paid|alert|card|spoiler)\b([^\]]*)\]([\s\S]*?)\[\/\1\]/gi;
 
 function shortcodeAttributes(source: string): Record<string, string> {
     const attributes: Record<string, string> = {};
@@ -305,6 +305,54 @@ function editorShortcode(
             + '</header>'
             + `<div class="editor-shortcode-gate-body">${content === '' ? '<p class="editor-shortcode-gate-empty">尚未填写隐藏内容。</p>' : content}</div>`
             + '</section>'
+        );
+    }
+
+    if (name === 'paid') {
+        const title = (attributes.title ?? '').trim() || '付费内容';
+        const text = (attributes.text ?? '').trim() || '购买后即可查看这一区块的完整内容。';
+        const badge = (attributes.badge ?? '').trim() || '付费阅读';
+        const price = (attributes.price ?? '').trim() || '0.00';
+        const style = attributes.style === 'card' ? 'card' : 'hero';
+        const image = safeUrl(attributes.image ?? '');
+        const imageBlock = style === 'card' && image
+            ? `<div class="paid-gate-media"><img src="${escapeHtml(image)}" alt="" loading="lazy"></div>`
+            : '';
+        const labels = (attributes.modes ?? 'all')
+            .split(/[\s,|]+/)
+            .map((mode) => {
+                if (mode === 'balance') {
+                    return '余额';
+                }
+                if (mode === 'points') {
+                    return '积分';
+                }
+                if (mode === 'gateway') {
+                    return '第三方支付';
+                }
+                return '';
+            })
+            .filter((label) => label !== '');
+        const modes = labels.length > 0
+            ? `<div class="paid-gate-modes">${labels.map((label) => `<span class="paid-gate-mode">${label}</span>`).join('')}</div>`
+            : '';
+
+        return (
+            `<section class="content-gate-hero paid-gate paid-gate-${style}">`
+            + '<div class="paid-gate-inner">'
+            + imageBlock
+            + '<div class="paid-gate-body">'
+            + `<span class="paid-gate-badge">${escapeHtml(badge)}</span>`
+            + `<h2 class="content-gate-title paid-gate-title">${escapeHtml(title)}</h2>`
+            + `<p class="content-gate-text paid-gate-text">${escapeHtml(text)}</p>`
+            + `<div class="paid-gate-price"><span class="paid-gate-price-main"><small>¥</small>${escapeHtml(price)}</span></div>`
+            + modes
+            + '<span class="content-gate-btn paid-gate-buy">立即购买</span>'
+            + '<p class="paid-gate-hint">编辑器预览：购买按钮在发布后生效。</p>'
+            + '</div></div></section>'
+            + '<div class="editor-shortcode-paid-preview"><p class="editor-shortcode-paid-preview-label">购买后显示</p>'
+            + `<div class="editor-shortcode-gate-body">${content === '' ? '<p class="editor-shortcode-gate-empty">尚未填写购买后可见内容。</p>' : content}</div>`
+            + '</div>'
         );
     }
 

@@ -10,6 +10,7 @@ import ReadingProgress from './components/layout/ReadingProgress';
 import SiteFooter from './components/layout/SiteFooter';
 import SiteHeader from './components/layout/SiteHeader';
 import SiteSidebar from './components/layout/SiteSidebar';
+import PaidContentRuntime from './components/content/PaidContentRuntime';
 import { Toaster } from './components/ui/sonner';
 import { parseArticle } from './lib/article';
 import { restoreFlashNotify } from './lib/notify';
@@ -131,6 +132,9 @@ export default function App({ data }: Props) {
             ) : (
                 <SiteApp data={data} appStyle={appStyle} />
             )}
+            {data.kind !== 'editor' && data.paid ? (
+                <PaidContentRuntime config={data.paid} />
+            ) : null}
             <ToasterHost colorMode={data.theme.colorMode} />
         </>
     );

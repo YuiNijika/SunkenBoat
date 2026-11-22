@@ -98,9 +98,263 @@
     color: var(--accent-contrast);
 }
 
+.content-gate-open-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+    padding: 7px 12px;
+    border-bottom: 1px solid color-mix(in srgb, var(--accent) 16%, var(--line));
+    background: var(--accent-soft);
+}
+
+.content-gate-open-icon {
+    display: grid;
+    width: 18px;
+    height: 18px;
+    flex: none;
+    place-items: center;
+    color: var(--accent);
+}
+
+.content-gate-open-icon svg {
+    width: 15px;
+    height: 15px;
+}
+
+.content-gate-open-label {
+    color: var(--accent);
+    font-size: 11px;
+    font-weight: 600;
+    line-height: 1.4;
+}
+
+.content-gate-open-hint {
+    margin-left: auto;
+    color: var(--ink-faint);
+    font-size: 10px;
+    line-height: 1.4;
+}
+
+.content-gate-open-body {
+    padding: 12px 14px;
+}
+
+.content-gate-open-body > :first-child {
+    margin-top: 0;
+}
+
+.content-gate-open-body > :last-child {
+    margin-bottom: 0;
+}
+
+/* Paid visibility */
+.paid-gate {
+    background:
+        radial-gradient(circle at 14% 12%, var(--accent-soft), transparent 28%),
+        var(--surface-2);
+}
+
+.paid-gate-inner {
+    display: grid;
+    min-width: 0;
+    gap: 14px;
+    padding: 17px 18px;
+}
+
+.paid-gate-hero .paid-gate-inner {
+    justify-items: center;
+    text-align: center;
+}
+
+.paid-gate-body {
+    display: grid;
+    min-width: 0;
+    gap: 7px;
+}
+
+.paid-gate-hero .paid-gate-body {
+    width: 100%;
+    justify-items: center;
+}
+
+.paid-gate-card .paid-gate-inner {
+    grid-template-columns: 142px minmax(0, 1fr);
+    gap: 0;
+    padding: 0;
+}
+
+.paid-gate-card .paid-gate-body {
+    align-content: start;
+    padding: 15px 17px;
+}
+
+.paid-gate-media {
+    min-height: 100%;
+    overflow: hidden;
+    border-right: 1px solid var(--line);
+    background: var(--surface-3);
+}
+
+.paid-gate-media img {
+    display: block;
+    width: 100%;
+    height: 100%;
+    min-height: 142px;
+    object-fit: cover;
+}
+
+.paid-gate-badge {
+    display: inline-flex;
+    width: fit-content;
+    align-items: center;
+    min-height: 20px;
+    padding: 0 8px;
+    border: 1px solid color-mix(in srgb, var(--accent) 24%, var(--line));
+    border-radius: 999px;
+    background: var(--accent-soft);
+    color: var(--accent);
+    font-size: 10.5px;
+    font-weight: 600;
+    line-height: 18px;
+}
+
+.paid-gate-title {
+    margin-top: 1px;
+    font-size: 16px;
+}
+
+.paid-gate-text {
+    max-width: 44rem;
+    white-space: pre-line;
+}
+
+.paid-gate-price {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    justify-content: center;
+    gap: 4px 10px;
+    margin-top: 2px;
+    color: var(--ink);
+}
+
+.paid-gate-card .paid-gate-price {
+    justify-content: flex-start;
+}
+
+.paid-gate-price-main {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 1px;
+    color: var(--ink);
+    font-size: 24px;
+    font-weight: 650;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -0.03em;
+    line-height: 1.1;
+}
+
+.paid-gate-price-main small {
+    color: var(--ink-mute);
+    font-size: 12px;
+    font-weight: 500;
+    letter-spacing: 0;
+}
+
+.paid-gate-price-points {
+    color: var(--ink-mute);
+    font-size: 11px;
+}
+
+.paid-gate-modes {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 5px;
+}
+
+.paid-gate-card .paid-gate-modes {
+    justify-content: flex-start;
+}
+
+.paid-gate-mode {
+    padding: 1px 7px;
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    background: var(--surface);
+    color: var(--ink-faint);
+    font-size: 9.5px;
+    line-height: 1.7;
+}
+
+.paid-gate-buy,
+.prose .paid-gate-buy,
+.forum-prose .paid-gate-buy,
+.ttdf-seo .paid-gate-buy {
+    display: inline-flex;
+    gap: 5px;
+    min-height: 32px;
+    margin-top: 3px;
+    padding: 0 14px;
+    border: 0;
+    font-family: inherit;
+    font-size: 12px;
+    cursor: pointer;
+}
+
+.paid-gate-buy svg {
+    width: 14px;
+    height: 14px;
+}
+
+.paid-gate-buy:disabled {
+    cursor: wait;
+    opacity: 0.62;
+}
+
+.paid-gate-hint {
+    margin: 0;
+    color: var(--ink-faint);
+    font-size: 10.5px;
+    line-height: 1.55;
+}
+
+.editor-shortcode-paid-preview {
+    margin-top: 9px;
+    padding: 10px 12px;
+    border: 1px dashed var(--line);
+    border-radius: 8px;
+    background: var(--surface-2);
+}
+
+.editor-shortcode-paid-preview-label {
+    margin: 0 0 5px;
+    color: var(--ink-faint);
+    font-size: 10px;
+}
+
 @media (max-width: 720px) {
     .content-gate-hero-inner {
         padding: 13px 14px;
+    }
+
+    .content-gate-open-body {
+        padding: 10px 12px;
+    }
+
+    .paid-gate-card .paid-gate-inner {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .paid-gate-media {
+        border-right: 0;
+        border-bottom: 1px solid var(--line);
+    }
+
+    .paid-gate-media img {
+        max-height: 180px;
+        min-height: 120px;
     }
 }
 

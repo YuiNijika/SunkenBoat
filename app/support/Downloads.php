@@ -60,7 +60,11 @@ final class Downloads
     {
         unset($scope);
 
-        if (self::$settingsWrite && $status < 400 && self::enabled()) {
+        if (
+            self::$settingsWrite
+            && $status < 400
+            && (self::enabled() || DownloadPayment::configured())
+        ) {
             DownloadStore::install();
         }
         if (self::$formDataRead && $status < 400) {
@@ -219,6 +223,26 @@ final class Downloads
     public static function formatAmount(int $cents): string
     {
         return intdiv($cents, 100) . '.' . str_pad((string) ($cents % 100), 2, '0', STR_PAD_LEFT);
+    }
+
+    /**
+     * @param array<string, mixed> $order
+     */
+    public static function returnUrl(array $order): string
+    {
+        $index = DownloadPayment::baseUrl();
+        $returnUrl = PaidContent::orderReturnUrl($order);
+        if ($returnUrl !== '') {
+            return $returnUrl;
+        }
+
+        if ($index === '') {
+            return '';
+        }
+
+        return $index . '/user/downloads?' . http_build_query([
+            'order' => $order['number'] ?? '',
+        ]);
     }
 
     public static function offer(string $contentType, int $contentId, string $title): ?array
@@ -580,18 +604,17 @@ final class Downloads
 
     public static function paymentNotify(): never
     {
-        $input = strtoupper((string) ($_SERVER['REQUEST_METHOD'] ?? 'GET')) === 'POST'
-            ? $_POST
-            : $_GET;
+        $input = self::notificationInput();
 
         try {
             $result = DownloadPayment::verify($input);
             if ($result === null) {
-                $claimed = (string) ($input['out_trade_no'] ?? '');
+                $claimed = self::notificationNumber($input);
                 if (preg_match('/^SK[0-9]{14}[A-F0-9]{16}$/D', $claimed) === 1) {
                     error_log(
                         'SunkenBoat payment notification rejected: signature or payload check failed for '
                         . $claimed
+                        . '; fields=' . self::notificationFields($input)
                     );
                 }
                 $order = null;
@@ -619,13 +642,18 @@ final class Downloads
             error_log(
                 'SunkenBoat payment notification could not settle order '
                 . $result['number']
-                . ' (amount or trade mismatch)'
+                . ' (amount or trade mismatch); fields='
+                . self::notificationFields($input)
             );
         }
 
         if ($order === null) {
             if (!headers_sent()) {
-                http_response_code(400);
+                if (class_exists('Typecho\\Response')) {
+                    \Typecho\Response::getInstance()->setStatus(400);
+                } else {
+                    http_response_code(400);
+                }
                 header('Content-Type: text/plain; charset=UTF-8');
                 header('Cache-Control: no-store');
             }
@@ -639,6 +667,83 @@ final class Downloads
         }
         echo 'success';
         exit;
+    }
+
+    /**
+     * Read callbacks that use URL-encoded forms, query strings or JSON bodies.
+     * PHP only populates $_POST for form/multipart payloads, so a JSON callback
+     * would otherwise look empty and be rejected.
+     *
+     * @return array<string, mixed>
+     */
+    private static function notificationInput(): array
+    {
+        $method = strtoupper((string) ($_SERVER['REQUEST_METHOD'] ?? 'GET'));
+        $input = $method === 'POST' ? $_POST : $_GET;
+        if ($input !== [] || $method !== 'POST') {
+            return is_array($input) ? $input : [];
+        }
+
+        $declared = (int) ($_SERVER['CONTENT_LENGTH'] ?? 0);
+        if ($declared > Request::MAX_BODY_BYTES) {
+            return [];
+        }
+
+        $raw = file_get_contents('php://input');
+        if (!is_string($raw) || $raw === '' || strlen($raw) > Request::MAX_BODY_BYTES) {
+            return [];
+        }
+
+        $contentType = strtolower((string) ($_SERVER['CONTENT_TYPE'] ?? ''));
+        if (str_contains($contentType, 'json')) {
+            $decoded = json_decode($raw, true);
+
+            return is_array($decoded) ? $decoded : [];
+        }
+
+        parse_str($raw, $parsed);
+
+        return is_array($parsed) ? $parsed : [];
+    }
+
+    /**
+     * Safe callback key summary for diagnostics. Never include signatures,
+     * keys, tokens or raw provider values.
+     *
+     * @param array<string, mixed> $input
+     */
+    private static function notificationFields(array $input): string
+    {
+        $safe = [];
+        foreach (['pid', 'merchant_id', 'mch_id', 'type', 'pay_type', 'trade_status', 'status', 'sign_type'] as $name) {
+            if (!array_key_exists($name, $input) || !is_scalar($input[$name])) {
+                continue;
+            }
+            $value = trim((string) $input[$name]);
+            if ($value !== '') {
+                $safe[] = $name . '=' . (strlen($value) > 64 ? substr($value, 0, 64) : $value);
+            }
+        }
+
+        return implode(',', $safe);
+    }
+
+    /**
+     * @param array<string, mixed> $input
+     */
+    private static function notificationNumber(array $input): string
+    {
+        foreach (['out_trade_no', 'order_no', 'order_id', 'orderid', 'trade_order_no'] as $name) {
+            if (!array_key_exists($name, $input) || !is_scalar($input[$name])) {
+                continue;
+            }
+            $value = trim((string) $input[$name]);
+            if ($value !== '') {
+                return $value;
+            }
+        }
+
+        return '';
     }
 
     /**

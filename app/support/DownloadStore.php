@@ -138,6 +138,11 @@ final class DownloadStore
         try {
             $db->query($db->update('table.users')->expression('uid', 'uid')->where('uid = ?', $uid));
             $result = $operation();
+            if (is_array($result) && isset($result['error']) && (string) $result['error'] !== '') {
+                $db->query('ROLLBACK', Db::WRITE, '');
+
+                return $result;
+            }
             $db->query('COMMIT', Db::WRITE, '');
 
             return $result;
@@ -182,6 +187,39 @@ final class DownloadStore
     }
 
     /**
+     * Paid content blocks share the download order table. A single article or
+     * topic can contain several blocks, so callers need every order for the
+     * resource instead of only the newest row.
+     *
+     * @return list<array<string, mixed>>
+     */
+    public static function blockOrders(
+        int $uid,
+        string $contentType,
+        int $contentId,
+        ?string $status = null
+    ): array {
+        $select = Db::get()->select('*')
+            ->from('table.sunken_download_orders')
+            ->where('user_id = ?', $uid)
+            ->where('content_type = ?', $contentType)
+            ->where('content_id = ?', $contentId);
+        if ($status !== null) {
+            $select->where('status = ?', $status);
+        }
+
+        $rows = Db::get()->fetchAll($select->order('id', Db::SORT_ASC));
+        $orders = [];
+        foreach ($rows as $row) {
+            if (is_array($row)) {
+                $orders[] = $row;
+            }
+        }
+
+        return $orders;
+    }
+
+    /**
      * @param array<string, mixed> $order
      */
     public static function createOrder(array $order): int
@@ -194,7 +232,12 @@ final class DownloadStore
     /**
      * @return array<string, mixed>|null
      */
-    public static function markPaid(string $number, string $trade, int $amount): ?array
+    public static function markPaid(
+        string $number,
+        string $trade,
+        int $amount,
+        bool $allowReplay = true
+    ): ?array
     {
         $db = Db::get();
         $order = self::orderByNumber($number);
@@ -203,7 +246,10 @@ final class DownloadStore
         }
 
         if ((string) ($order['status'] ?? '') === 'paid') {
-            return hash_equals((string) ($order['gateway_trade'] ?? ''), $trade) ? $order : null;
+            // Gateway retries may arrive seconds apart, and some providers
+            // reissue a different trade id on retry. The order is already
+            // settled, so acknowledge it instead of triggering endless retries.
+            return $allowReplay ? $order : null;
         }
 
         if ((string) ($order['status'] ?? '') !== 'pending') {
@@ -220,20 +266,40 @@ final class DownloadStore
             return null;
         }
 
-        $db->query(
+        $paidAt = time();
+        $affected = (int) $db->query(
             $db->update('table.sunken_download_orders')
                 ->rows([
                     'status' => 'paid',
                     'gateway_trade' => $trade,
-                    'paid_at' => time(),
+                    'paid_at' => $paidAt,
                 ])
                 ->where('number = ?', $number)
                 ->where('status = ?', 'pending')
         );
+        if ($affected <= 0) {
+            $current = self::orderByNumber($number);
 
-        $updated = self::orderByNumber($number);
+            if (
+                $allowReplay
+                && $current !== null
+                && (string) ($current['status'] ?? '') === 'paid'
+                && (int) ($current['amount_cents'] ?? 0) === $amount
+            ) {
+                return $current;
+            }
 
-        return $updated !== null && (string) ($updated['status'] ?? '') === 'paid' ? $updated : null;
+            return null;
+        }
+
+        // Reads use Typecho's READ connection, which cannot see the uncommitted
+        // UPDATE of this transaction. Return the row we just wrote instead of
+        // re-selecting inside the transaction.
+        return array_replace($order, [
+            'status' => 'paid',
+            'gateway_trade' => $trade,
+            'paid_at' => $paidAt,
+        ]);
     }
 
     public static function freeUsedToday(int $uid): int
@@ -284,11 +350,13 @@ final class DownloadStore
             $db->select('COUNT(*) AS total')
                 ->from('table.sunken_download_orders')
                 ->where('user_id = ?', $uid)
+                ->where('content_type <> ?', 'paid')
         );
         $rows = $db->fetchAll(
             $db->select('*')
                 ->from('table.sunken_download_orders')
                 ->where('user_id = ?', $uid)
+                ->where('content_type <> ?', 'paid')
                 ->order('id', Db::SORT_DESC)
                 ->offset($offset)
                 ->limit($pageSize)
