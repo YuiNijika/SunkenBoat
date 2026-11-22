@@ -1035,62 +1035,50 @@ export default function AccountPanel({ api, section = 'profile' }: Props) {
                                 <h2 className="account-profile-name">
                                     {profile.screenName || profile.name}
                                 </h2>
+                                {economy?.enabled ? (
+                                    <span className="account-profile-level" title={economy.level.title}>
+                                        <LevelBadge
+                                            level={economy.level}
+                                            iconClassName="h-4.5 w-auto"
+                                        />
+                                    </span>
+                                ) : null}
                                 <span className="account-profile-role">
                                     {GROUP_LABELS[profile.group] ?? profile.group}
                                 </span>
-                            </div>
-                            <div className="account-profile-meta">
-                                <span>@{profile.name}</span>
-                                <span>UID {profile.uid}</span>
-                                {createdText ? <span>{createdText} 加入</span> : null}
-                                {details.location ? (
-                                    <span>
-                                        <MapPin className="size-3" strokeWidth={1.8} aria-hidden="true" />
-                                        {details.location}
-                                    </span>
-                                ) : null}
-                                {details.gender !== 'secret' ? (
-                                    <span>{GENDER_LABELS[details.gender] ?? details.gender}</span>
-                                ) : null}
-                                {profile.url ? (
-                                    <a
-                                        href={profile.url}
-                                        target="_blank"
-                                        rel="noreferrer noopener"
+                                {certificationApproved ? (
+                                    <button
+                                        type="button"
+                                        className="account-profile-certification"
+                                        title="查看认证详情"
+                                        onClick={() => setCertDetailsOpen(true)}
                                     >
-                                        <ExternalLink
-                                            className="size-3"
-                                            strokeWidth={1.8}
+                                        <BadgeCheck
+                                            className="size-3.5"
+                                            strokeWidth={2}
                                             aria-hidden="true"
                                         />
-                                        个人主页
-                                    </a>
+                                        {certification?.name || '站点认证'}
+                                    </button>
                                 ) : null}
                             </div>
-                            {certificationApproved ? (
-                                <button
-                                    type="button"
-                                    className="account-profile-certification"
-                                    title="查看认证详情"
-                                    onClick={() => setCertDetailsOpen(true)}
-                                >
-                                    <BadgeCheck
-                                        className="size-3.5"
-                                        strokeWidth={2}
-                                        aria-hidden="true"
-                                    />
-                                    认证 · {certification?.name || '站点认证'}
-                                </button>
-                            ) : null}
-                            {details.signature ? (
-                                <p className="account-profile-signature">
-                                    {details.signature}
-                                </p>
-                            ) : null}
+                            <p className="account-profile-handle">
+                                @{profile.name}
+                                <span aria-hidden="true">·</span>
+                                UID {profile.uid}
+                            </p>
+                            <p
+                                className={
+                                    'account-profile-signature'
+                                    + (details.signature ? '' : ' is-empty')
+                                }
+                            >
+                                {details.signature || '这个人很神秘，还没有填写个性签名。'}
+                            </p>
                         </div>
                     </div>
 
-                    <aside className="account-profile-side">
+                    <div className="account-profile-details">
                         <div className="account-profile-stats">
                             <div>
                                 <strong>{profile.posts ?? 0}</strong>
@@ -1108,6 +1096,55 @@ export default function AccountPanel({ api, section = 'profile' }: Props) {
                                     <small>{forumLabel}</small>
                                 </div>
                             ) : null}
+                        </div>
+                        <div className="account-profile-meta">
+                            {createdText ? (
+                                <span>
+                                    <CalendarCheck
+                                        className="size-3.5"
+                                        strokeWidth={1.8}
+                                        aria-hidden="true"
+                                    />
+                                    {createdText} 加入
+                                </span>
+                            ) : null}
+                            {details.location ? (
+                                <span>
+                                    <MapPin
+                                        className="size-3.5"
+                                        strokeWidth={1.8}
+                                        aria-hidden="true"
+                                    />
+                                    {details.location}
+                                </span>
+                            ) : null}
+                            {details.gender !== 'secret' ? (
+                                <span>
+                                    <UserRound
+                                        className="size-3.5"
+                                        strokeWidth={1.8}
+                                        aria-hidden="true"
+                                    />
+                                    {GENDER_LABELS[details.gender] ?? details.gender}
+                                </span>
+                            ) : null}
+                            {profile.url ? (
+                                <a
+                                    href={profile.url}
+                                    target="_blank"
+                                    rel="noreferrer noopener"
+                                >
+                                    <ExternalLink
+                                        className="size-3.5"
+                                        strokeWidth={1.8}
+                                        aria-hidden="true"
+                                    />
+                                    个人主页
+                                </a>
+                            ) : null}
+                            <span className="account-profile-privacy">
+                                {PRIVACY_LABELS[details.privacy] ?? '公开资料'}
+                            </span>
                         </div>
                         <div className="account-profile-actions">
                             {api.operations?.enabled ? (
@@ -1140,7 +1177,7 @@ export default function AccountPanel({ api, section = 'profile' }: Props) {
                                 )}
                             </Button>
                         </div>
-                    </aside>
+                    </div>
                 </div>
                 <div className="px-4 pb-4">
                     {loadError ? (

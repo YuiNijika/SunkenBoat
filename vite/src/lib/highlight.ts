@@ -66,19 +66,21 @@ export function highlightCode(root: HTMLElement): void {
         }
 
         for (const className of Array.from(code.classList)) {
-            if (!className.startsWith('language-')) {
+            const languagePrefix = className.startsWith('language-')
+                ? 'language-'
+                : className.startsWith('lang-')
+                  ? 'lang-'
+                  : '';
+            if (languagePrefix === '') {
                 continue;
             }
 
-            const raw = className.slice('language-'.length).toLowerCase();
+            const raw = className.slice(languagePrefix.length).toLowerCase();
             const language = ALIASES[raw] ?? raw;
-            if (language !== '' && hljs.getLanguage(language)) {
-                code.classList.remove(className);
-                code.classList.add(`language-${language}`);
-                continue;
-            }
-
             code.classList.remove(className);
+            if (language !== '' && hljs.getLanguage(language)) {
+                code.classList.add(`language-${language}`);
+            }
         }
 
         try {

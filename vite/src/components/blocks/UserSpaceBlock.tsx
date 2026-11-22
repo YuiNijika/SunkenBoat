@@ -254,6 +254,14 @@ export default function UserSpaceBlock({
                         ) : null}
                     </div>
 
+                    {profile.signature ? (
+                        <p className="user-space-signature">{profile.signature}</p>
+                    ) : (
+                        <p className="user-space-signature is-empty">
+                            这个人很神秘，还没有填写个性签名。
+                        </p>
+                    )}
+
                     <div className="user-space-meta">
                         {joinText ? (
                             <span>
@@ -304,14 +312,6 @@ export default function UserSpaceBlock({
                             {profile.detailsVisible ? '公开资料' : '部分资料已隐藏'}
                         </span>
                     </div>
-
-                    {profile.signature ? (
-                        <p className="user-space-signature">{profile.signature}</p>
-                    ) : (
-                        <p className="user-space-signature is-empty">
-                            这个人很神秘，还没有填写个性签名。
-                        </p>
-                    )}
                 </div>
             </div>
 

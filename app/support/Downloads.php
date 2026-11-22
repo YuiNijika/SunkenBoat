@@ -20,6 +20,7 @@ if (!defined('__TYPECHO_ROOT_DIR__')) {
 final class Downloads
 {
     private static bool $settingsWrite = false;
+    private static bool $formDataRead = false;
 
     public static function register(): void
     {
@@ -52,6 +53,7 @@ final class Downloads
 
         self::$settingsWrite = in_array(strtoupper($method), ['POST', 'PUT', 'PATCH'], true)
             && ($path === 'admin/options' || str_starts_with($path, 'admin/options/'));
+        self::$formDataRead = strtoupper($method) === 'GET' && $path === 'admin/form-data';
     }
 
     public static function settingsResponse(mixed $payload, int $status, string $scope): array
@@ -61,8 +63,15 @@ final class Downloads
         if (self::$settingsWrite && $status < 400 && self::enabled()) {
             DownloadStore::install();
         }
+        if (self::$formDataRead && $status < 400) {
+            DownloadPayment::migrateLegacyChannels();
+            if (is_array($payload) && array_key_exists('data', $payload)) {
+                $payload['data'] = Settings::values();
+            }
+        }
 
         self::$settingsWrite = false;
+        self::$formDataRead = false;
 
         return is_array($payload) ? $payload : [];
     }

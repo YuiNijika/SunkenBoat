@@ -109,6 +109,111 @@
     background: transparent;
 }
 
+.prose .code-block {
+    margin: 1.7em 0;
+    overflow: hidden;
+    border: 1px solid var(--code-border);
+    border-radius: 8px;
+    background: var(--code-bg);
+    box-shadow: 0 2px 12px rgba(0, 0, 0, 0.12);
+}
+
+.code-block-head {
+    display: flex;
+    min-height: 42px;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 0 12px 0 14px;
+    border-bottom: 1px solid var(--code-border);
+    background: var(--code-head);
+}
+
+.code-block-language {
+    display: inline-flex;
+    min-width: 0;
+    align-items: center;
+    gap: 8px;
+    color: var(--code-muted);
+    font-family: var(--font-sans-stack);
+    font-size: 11px;
+    font-weight: 500;
+    letter-spacing: 0.06em;
+    line-height: 1;
+    text-transform: uppercase;
+}
+
+.code-block-language svg {
+    width: 15px;
+    height: 15px;
+    flex: none;
+    opacity: 0.9;
+}
+
+.prose .code-block pre {
+    margin: 0;
+    padding: 18px 20px;
+    border: 0;
+    border-radius: 0;
+    background: var(--code-bg);
+}
+
+.code-copy {
+    position: relative;
+    display: grid;
+    width: 30px;
+    height: 30px;
+    flex: none;
+    place-items: center;
+    border: 0;
+    border-radius: 4px;
+    background: transparent;
+    color: var(--code-muted);
+    cursor: pointer;
+    transition:
+        background-color 150ms ease,
+        color 150ms ease;
+}
+
+.code-copy:hover,
+.code-copy:focus-visible {
+    background: rgba(255, 255, 255, 0.08);
+    color: #ffffff;
+}
+
+.code-copy svg {
+    grid-area: 1 / 1;
+    width: 16px;
+    height: 16px;
+    transition: opacity 120ms ease;
+}
+
+.code-copy-check,
+.code-copy-error {
+    opacity: 0;
+}
+
+.code-copy[data-state="success"] {
+    color: #9fd67a;
+}
+
+.code-copy[data-state="success"] .code-copy-icon,
+.code-copy[data-state="error"] .code-copy-icon {
+    opacity: 0;
+}
+
+.code-copy[data-state="success"] .code-copy-check {
+    opacity: 1;
+}
+
+.code-copy[data-state="error"] {
+    color: #f07178;
+}
+
+.code-copy[data-state="error"] .code-copy-error {
+    opacity: 1;
+}
+
 .prose .hljs-comment,
 .prose .hljs-quote {
     color: var(--code-comment);

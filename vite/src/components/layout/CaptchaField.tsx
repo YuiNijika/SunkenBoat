@@ -82,11 +82,11 @@ export default function CaptchaField({ config, scene, onChange }: Props) {
     const enabled = Boolean(config?.enabled && config.scenes.includes(scene));
     const provider = config?.provider ?? 'math';
     const builtin = provider === 'math' || provider === 'slider';
+    const [started, setStarted] = useState(false);
     const [challenge, setChallenge] = useState<Challenge | null>(null);
     const [answer, setAnswer] = useState('');
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState('');
-    const [cloudReady, setCloudReady] = useState(false);
     const [cloudBusy, setCloudBusy] = useState(false);
     const geetest = useRef<{
         showCaptcha: () => void;
@@ -124,48 +124,13 @@ export default function CaptchaField({ config, scene, onChange }: Props) {
     }, [builtin, config?.challenge, enabled]);
 
     useEffect(() => {
-        if (enabled && builtin) {
-            void refresh();
-        } else {
-            setChallenge(null);
-        }
-    }, [enabled, builtin, refresh]);
-
-    useEffect(() => {
-        if (!enabled || builtin) {
-            return;
-        }
-        let cancelled = false;
-        setLoading(true);
+        setStarted(false);
+        setChallenge(null);
+        setAnswer('');
+        setCloudBusy(false);
         setError('');
-        const loaded = provider === 'geetest'
-            ? loadScript('ttdf-geetest4', 'https://static.geetest.com/v4/gt4.js')
-            : provider === 'tencent'
-              ? loadScript('ttdf-tencent-captcha', 'https://turing.captcha.qcloud.com/TCaptcha.js')
-              : provider === 'aliyun'
-                ? loadScript('ttdf-aliyun-awsc', 'https://g.alicdn.com/AWSC/AWSC/awsc.js')
-                : Promise.reject(new Error('未知验证码服务'));
-        void loaded
-            .then(() => {
-                if (!cancelled) {
-                    setCloudReady(true);
-                }
-            })
-            .catch((reason: unknown) => {
-                if (!cancelled) {
-                    setError(reason instanceof Error ? reason.message : '验证码组件加载失败');
-                }
-            })
-            .finally(() => {
-                if (!cancelled) {
-                    setLoading(false);
-                }
-            });
-
-        return () => {
-            cancelled = true;
-        };
-    }, [builtin, enabled, provider]);
+        onChangeRef.current(null);
+    }, [enabled, provider, scene]);
 
     const submitBuiltin = (nextAnswer: string) => {
         setAnswer(nextAnswer);
@@ -180,7 +145,7 @@ export default function CaptchaField({ config, scene, onChange }: Props) {
     };
 
     const openCloud = () => {
-        if (!cloudReady || cloudBusy) {
+        if (cloudBusy) {
             return;
         }
         setError('');
@@ -197,7 +162,6 @@ export default function CaptchaField({ config, scene, onChange }: Props) {
                             const payload = instance.getValidate();
                             onChangeRef.current({ ticket: payload });
                             setCloudBusy(false);
-                            setCloudReady(true);
                         });
                         instance.showCaptcha();
                     }
@@ -260,6 +224,44 @@ export default function CaptchaField({ config, scene, onChange }: Props) {
         setError('验证码服务配置不完整');
     };
 
+    const start = () => {
+        if (!enabled || loading || cloudBusy) {
+            return;
+        }
+
+        setError('');
+        setAnswer('');
+        setChallenge(null);
+        onChangeRef.current(null);
+        setStarted(true);
+
+        if (builtin) {
+            void refresh();
+            return;
+        }
+
+        setLoading(true);
+        const loaded = provider === 'geetest'
+            ? loadScript('ttdf-geetest4', 'https://static.geetest.com/v4/gt4.js')
+            : provider === 'tencent'
+              ? loadScript('ttdf-tencent-captcha', 'https://turing.captcha.qcloud.com/TCaptcha.js')
+              : provider === 'aliyun'
+                ? loadScript('ttdf-aliyun-awsc', 'https://g.alicdn.com/AWSC/AWSC/awsc.js')
+                : Promise.reject(new Error('未知验证码服务'));
+
+        void loaded
+            .then(() => {
+                setLoading(false);
+                window.requestAnimationFrame(openCloud);
+            })
+            .catch((reason: unknown) => {
+                setError(reason instanceof Error ? reason.message : '验证码组件加载失败');
+            })
+            .finally(() => {
+                setLoading(false);
+            });
+    };
+
     if (!enabled) {
         return null;
     }
@@ -271,7 +273,7 @@ export default function CaptchaField({ config, scene, onChange }: Props) {
                     <ShieldCheck className="size-4" aria-hidden="true" />
                     人机验证
                 </Label>
-                {builtin ? (
+                {started && builtin ? (
                     <Button
                         type="button"
                         size="icon"
@@ -282,14 +284,25 @@ export default function CaptchaField({ config, scene, onChange }: Props) {
                     >
                         <RefreshCw className={loading ? 'animate-spin' : ''} aria-hidden="true" />
                     </Button>
-                ) : (
-                    <Button type="button" size="sm" variant="outline" onClick={openCloud} disabled={!cloudReady || cloudBusy}>
-                        {cloudBusy ? '验证中…' : '开始验证'}
-                    </Button>
-                )}
+                ) : null}
             </div>
 
-            {builtin && challenge ? (
+            {!started ? (
+                <div className="flex flex-wrap items-center gap-2.5">
+                    <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        onClick={start}
+                        disabled={loading}
+                    >
+                        {loading ? '加载中…' : '开始验证'}
+                    </Button>
+                    <span className="text-xs text-ink-faint">
+                        点击后加载验证码，避免页面打开时自动请求。
+                    </span>
+                </div>
+            ) : builtin && challenge ? (
                 challenge.provider === 'slider' ? (
                     <div className="grid gap-2">
                         <input
@@ -324,9 +337,14 @@ export default function CaptchaField({ config, scene, onChange }: Props) {
                 <p className="text-xs text-ink-faint">{loading ? '正在加载验证码…' : '验证码暂不可用'}</p>
             ) : (
                 <div id="ttdf-aliyun-captcha" className="min-h-9 text-xs text-ink-faint">
-                    {error === '' ? '点击“开始验证”完成服务商人机校验。' : error}
+                    {loading ? '正在加载验证服务…' : '请完成服务商人机校验。'}
                 </div>
             )}
+            {started && (error !== '' || (!challenge && !loading && !cloudBusy)) ? (
+                <Button type="button" size="sm" variant="outline" onClick={start}>
+                    重新验证
+                </Button>
+            ) : null}
             {error !== '' ? (
                 <p className="text-xs text-danger" role="alert">{error}</p>
             ) : null}

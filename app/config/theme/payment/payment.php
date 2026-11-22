@@ -7,32 +7,34 @@ if (!defined('__TYPECHO_ROOT_DIR__')) {
 }
 
 /**
- * Every gateway channel shares the same epay-compatible submit protocol.
- * 易支付/彩虹易支付 and 码支付 both accept pid, type, out_trade_no, name,
- * money, notify_url, return_url and an MD5 sign; the endpoint path is exposed
- * so other compatible platforms can be connected without another adapter.
+ * 易支付 / 彩虹易支付 / 码支付共用同一套提交协议：pid、type、out_trade_no、
+ * name、money、notify_url、return_url 与 MD5 签名。每个通道可以单独设置
+ * 接口地址、商户号、密钥与支持的支付方式，因此同一个站点可以同时接入多套
+ * 易支付或码支付账号。
  */
-$gatewayChannel = static function (string $label, string $description): array {
+$compatibleChannel = static function (string $label, string $description): array {
     return [
         'label' => $label,
         'description' => $description,
         'fields' => [
             [
-                'type' => 'Switch',
-                'name' => 'enabled',
-                'value' => false,
-                'label' => '启用' . $label,
+                'type' => 'Text',
+                'name' => 'label',
+                'value' => '',
+                'label' => '通道名称',
+                'description' => '用于在后台和结算页区分不同通道，留空则显示平台名称。',
+                'placeholder' => '例如：易支付 A',
             ],
             [
-                'type' => 'Select',
-                'name' => 'platform',
-                'value' => 'epay',
-                'label' => '接入平台',
-                'description' => '易支付与码支付使用同一套兼容协议；其他平台可选择自定义接口路径。',
+                'type' => 'Checkbox',
+                'name' => 'methods',
+                'value' => ['alipay', 'wxpay'],
+                'label' => '支持的支付方式',
+                'description' => '该通道实际开通的方式；结算页只会列出勾选的付款入口。',
                 'options' => [
-                    'epay' => '易支付 / 彩虹易支付',
-                    'mapay' => '码支付',
-                    'custom' => '其他易支付兼容平台',
+                    'alipay' => '支付宝',
+                    'wxpay' => '微信支付',
+                    'qqpay' => 'QQ 钱包',
                 ],
             ],
             [
@@ -40,7 +42,7 @@ $gatewayChannel = static function (string $label, string $description): array {
                 'name' => 'gateway',
                 'value' => '',
                 'label' => '平台地址',
-                'description' => '填写平台根地址，不需要带 submit.php。',
+                'description' => '填写平台根地址，需以 https:// 开头，不需要带 submit.php。',
                 'placeholder' => 'https://pay.example.com',
             ],
             [
@@ -60,20 +62,13 @@ $gatewayChannel = static function (string $label, string $description): array {
                 'label' => '商户 ID',
             ],
             [
-                'type' => 'Text',
-                'name' => 'key_env',
-                'value' => 'SUNKEN_PAY_KEY',
-                'inline' => true,
-                'inline_group' => 'merchant',
-                'label' => '密钥环境变量',
-                'description' => '优先读取该环境变量。',
-            ],
-            [
                 'type' => 'Password',
                 'name' => 'key',
                 'value' => '',
-                'label' => '商户密钥（可选）',
-                'description' => '环境变量未配置时使用；密钥会保存在主题设置中，仅管理员可见。',
+                'inline' => true,
+                'inline_group' => 'merchant',
+                'label' => '商户密钥',
+                'description' => '直接填写平台给出的商户密钥，保存在主题设置中。',
             ],
             [
                 'type' => 'Text',
@@ -85,6 +80,55 @@ $gatewayChannel = static function (string $label, string $description): array {
         ],
     ];
 };
+
+$officialChannel = [
+    'label' => '支付宝官方直连',
+    'description' => '通过支付宝开放平台的电脑网站支付直接收款，不经过第三方聚合平台；需要 PHP OpenSSL 扩展。',
+    'fields' => [
+        [
+            'type' => 'Text',
+            'name' => 'label',
+            'value' => '',
+            'label' => '通道名称',
+            'description' => '用于在后台和结算页区分不同通道，留空则显示「支付宝官方」。',
+            'placeholder' => '例如：支付宝官方',
+        ],
+        [
+            'type' => 'Text',
+            'name' => 'app_id',
+            'value' => '',
+            'inline' => true,
+            'inline_group' => 'official-app',
+            'label' => '应用 AppID',
+            'placeholder' => '2021xxxxxxxxxxxx',
+        ],
+        [
+            'type' => 'Text',
+            'name' => 'gateway',
+            'value' => 'https://openapi.alipay.com/gateway.do',
+            'inline' => true,
+            'inline_group' => 'official-app',
+            'label' => '网关地址',
+            'description' => '支付宝开放平台网关，通常保持默认即可。',
+        ],
+        [
+            'type' => 'Textarea',
+            'name' => 'private_key',
+            'value' => '',
+            'rows' => 6,
+            'label' => '应用私钥（RSA2）',
+            'description' => '支付宝开放平台「应用私钥」。支持粘贴完整 PEM，或只粘贴 Base64 内容；也支持 PKCS8 / PKCS1 两种格式，换行不会丢失。',
+        ],
+        [
+            'type' => 'Textarea',
+            'name' => 'public_key',
+            'value' => '',
+            'rows' => 6,
+            'label' => '支付宝公钥（RSA2）',
+            'description' => '支付宝开放平台「支付宝公钥」，用于校验异步通知签名。请勿填写应用公钥。',
+        ],
+    ],
+];
 
 $notifyPath = '/ttdf/sunken/payment/notify';
 try {
@@ -98,7 +142,7 @@ try {
 
 return [
     'title' => '支付设置',
-    'description' => '下载开关、每日免费额度、最低支付金额与收款渠道都在这里配置；付费下载记录在用户中心「下载记录」中查看。',
+    'description' => '下载开关、每日免费额度、最低支付金额与收款通道都在这里配置；付费下载记录在用户中心「下载记录」中查看。',
     'fields' => [
         [
             'type' => 'Switch',
@@ -107,7 +151,7 @@ return [
             'inline' => true,
             'inline_group' => 'payment-base',
             'label' => '启用支付服务',
-            'description' => '开启后，付费下载可以使用支付网关或账户余额结算。',
+            'description' => '开启后，付费下载可以使用支付通道或站内余额结算。',
         ],
         [
             'type' => 'Number',
@@ -145,66 +189,63 @@ return [
             'step' => 1,
         ],
         [
-            'type' => 'Accordion',
-            'name' => 'Downloads_Payment_Channels',
+            'type' => 'Blocks',
+            'name' => 'Downloads_Payment_Gateways',
             'value' => [],
             'show_when' => ['Downloads_Payment_Enabled' => true],
             'label' => '付款方式',
-            'description' => '点击展开需要的方式后分别填写；可同时启用多种方式，结算页会按渠道展示付款入口。',
+            'item_label' => '通道',
+            'description' => '按「通道」配置收款：可以同时添加多套官方直连、易支付或码支付，每套通道单独填写商户号与密钥，并勾选它支持的支付方式。官方直连当前支持支付宝电脑网站支付；微信 / QQ 请使用易支付或码支付通道。结算页会按这些通道分别列出付款入口。',
+            'reorder' => ['drag', 'buttons'],
             'options' => [
-                'alipay' => $gatewayChannel(
-                    '支付宝',
-                    '通过易支付、码支付或兼容平台收取支付宝付款。'
+                'official' => $officialChannel,
+                'epay' => $compatibleChannel(
+                    '易支付 / 彩虹易支付',
+                    '适用于易支付、彩虹易支付及同协议的聚合支付平台。'
                 ),
-                'wxpay' => $gatewayChannel(
-                    '微信支付',
-                    '通过易支付、码支付或兼容平台收取微信付款。'
+                'mapay' => $compatibleChannel(
+                    '码支付',
+                    '适用于码支付及同协议的聚合支付平台。'
                 ),
-                'qqpay' => $gatewayChannel(
-                    'QQ 钱包',
-                    '通过易支付、码支付或兼容平台收取 QQ 钱包付款。'
-                ),
-                'balance' => [
-                    'label' => '账户余额',
-                    'description' => '使用账户余额直接结算，需要先启用用户经济系统。',
-                    'fields' => [
-                        [
-                            'type' => 'Switch',
-                            'name' => 'enabled',
-                            'value' => false,
-                            'label' => '启用余额支付',
-                        ],
-                    ],
-                ],
-                'points' => [
-                    'label' => '积分支付',
-                    'description' => '使用用户积分抵扣付费下载，需要先启用用户经济系统。',
-                    'fields' => [
-                        [
-                            'type' => 'Switch',
-                            'name' => 'enabled',
-                            'value' => false,
-                            'label' => '启用积分支付',
-                        ],
-                        [
-                            'type' => 'Number',
-                            'name' => 'rate',
-                            'value' => 100,
-                            'label' => '积分兑换比例',
-                            'description' => '每 1 元需要多少积分，例如 100 表示 1 元 = 100 积分。',
-                            'min' => 1,
-                            'max' => 100000,
-                            'step' => 1,
-                        ],
-                    ],
-                ],
             ],
         ],
         [
+            'type' => 'Switch',
+            'name' => 'Downloads_Balance_Enabled',
+            'value' => false,
+            'inline' => true,
+            'inline_group' => 'local-pay',
+            'show_when' => ['Downloads_Payment_Enabled' => true],
+            'label' => '启用账户余额支付',
+            'description' => '使用用户余额直接结算，需要先启用用户经济系统。',
+        ],
+        [
+            'type' => 'Switch',
+            'name' => 'Downloads_Points_Enabled',
+            'value' => false,
+            'inline' => true,
+            'inline_group' => 'local-pay',
+            'show_when' => ['Downloads_Payment_Enabled' => true],
+            'label' => '启用积分支付',
+            'description' => '使用用户积分抵扣付费下载，需要先启用用户经济系统。',
+        ],
+        [
+            'type' => 'Number',
+            'name' => 'Downloads_Points_Rate',
+            'value' => 100,
+            'show_when' => ['Downloads_Payment_Enabled' => true, 'Downloads_Points_Enabled' => true],
+            'label' => '积分兑换比例',
+            'description' => '每 1 元需要多少积分，例如 100 表示 1 元 = 100 积分。',
+            'min' => 1,
+            'max' => 100000,
+            'step' => 1,
+        ],
+        [
             'type' => 'Html',
+            'show_when' => ['Downloads_Payment_Enabled' => true],
             'content' => '<div class="ttdf-pay-notify">支付平台回调地址（异步通知）：<code>'
                 . \TTDF\Support\Escaper::html($notifyPath)
-                . '</code><br>请把该地址原样填入支付平台的异步通知 / notify_url；同步跳转地址由每笔订单自动生成。</div>',
+                . '</code><br>易支付 / 码支付请填写商户后台的异步通知地址；支付宝官方直连会在每笔请求中自动携带该地址。同步跳转地址由每笔订单自动生成。</div>',
         ],
     ],
 ];

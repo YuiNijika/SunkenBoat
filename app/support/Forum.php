@@ -906,7 +906,12 @@ final class Forum
             'topic' => $topic,
             'circle' => $topicCircle,
             'breadcrumbs' => self::topicBreadcrumbs($topic),
-            'contentHtml' => self::markdown((string) $topic['rawContent']),
+            'contentHtml' => ContentComponents::render(
+                ContentGate::renderForum(
+                    self::markdown((string) $topic['rawContent']),
+                    (int) $topic['id']
+                )
+            ),
             'download' => Downloads::offer('topic', (int) $topic['id'], (string) $topic['title']),
             'replies' => $replies,
             'replyCount' => (int) ($topic['comments'] ?? 0),

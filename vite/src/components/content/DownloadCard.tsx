@@ -88,6 +88,7 @@ function PaymentDialog({
             return;
         }
 
+        const popup = openDownloadWindow();
         controller.current?.abort();
         const request = new AbortController();
         controller.current = request;
@@ -100,14 +101,25 @@ function PaymentDialog({
             });
             onOrderChange(next);
             if (next.status === 'paid') {
-                notifySuccess('支付成功，可以下载资源了。');
-                onOpenChange(false);
+                await completeDownload({
+                    client,
+                    order: next,
+                    popup,
+                    signal: request.signal,
+                    onOrderChange,
+                    onReady: () => {
+                        onOpenChange(false);
+                    },
+                });
             } else if (next.status === 'cancelled') {
+                popup?.close();
                 notifyError('订单已取消，请返回资源页重新下单。');
             } else {
+                popup?.close();
                 notifyInfo('暂未收到付款结果，请完成付款后再试。');
             }
         } catch (reason) {
+            popup?.close();
             if (!request.signal.aborted) {
                 notifyError(reason instanceof Error ? reason.message : '查询付款状态失败');
             }
@@ -122,6 +134,7 @@ function PaymentDialog({
         if (payingBalance) {
             return;
         }
+        const popup = openDownloadWindow();
         setPayingBalance(true);
         controller.current?.abort();
         const request = new AbortController();
@@ -133,9 +146,18 @@ function PaymentDialog({
                 signal: request.signal,
             });
             onOrderChange(next);
-            notifySuccess('余额支付成功，可以下载资源了。');
-            onOpenChange(false);
+            await completeDownload({
+                client,
+                order: next,
+                popup,
+                signal: request.signal,
+                onOrderChange,
+                onReady: () => {
+                    onOpenChange(false);
+                },
+            });
         } catch (reason) {
+            popup?.close();
             if (!request.signal.aborted) {
                 notifyError(reason instanceof Error ? reason.message : '余额支付失败');
             }
@@ -150,6 +172,7 @@ function PaymentDialog({
         if (payingPoints) {
             return;
         }
+        const popup = openDownloadWindow();
         setPayingPoints(true);
         controller.current?.abort();
         const request = new AbortController();
@@ -161,9 +184,18 @@ function PaymentDialog({
                 signal: request.signal,
             });
             onOrderChange(next);
-            notifySuccess(`${client.pointsLabel}支付成功，可以下载资源了。`);
-            onOpenChange(false);
+            await completeDownload({
+                client,
+                order: next,
+                popup,
+                signal: request.signal,
+                onOrderChange,
+                onReady: () => {
+                    onOpenChange(false);
+                },
+            });
         } catch (reason) {
+            popup?.close();
             if (!request.signal.aborted) {
                 notifyError(
                     reason instanceof Error ? reason.message : `${client.pointsLabel}支付失败`

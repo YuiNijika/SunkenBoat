@@ -169,14 +169,38 @@ final class ContentGate
         return self::renderFor($html, $cid, self::uid(), self::isAdmin());
     }
 
-    private static function renderFor(string $html, int $cid, int $uid, bool $admin): string
+    /**
+     * Forum topics keep replies in their own table, so `[reply]` must use a
+     * forum-specific check instead of Typecho's article comment table.
+     */
+    public static function renderForum(string $html, int $topicId): string
+    {
+        $uid = self::uid();
+        $admin = self::isAdmin();
+
+        return self::renderFor(
+            $html,
+            0,
+            $uid,
+            $admin,
+            $admin || ($uid > 0 && self::hasForumReply($topicId, $uid))
+        );
+    }
+
+    private static function renderFor(
+        string $html,
+        int $cid,
+        int $uid,
+        bool $admin,
+        ?bool $replyAllowed = null
+    ): string
     {
         if ($html === '' || !str_contains($html, '[')) {
             return $html;
         }
 
         $canLogin = $admin || $uid > 0;
-        $canReply = $admin || ($uid > 0 && self::hasCommented($cid, $uid));
+        $canReply = $replyAllowed ?? ($admin || ($uid > 0 && self::hasCommented($cid, $uid)));
 
         $html = self::rewriteBlocks(
             $html,
@@ -379,6 +403,29 @@ final class ContentGate
         }
 
         return is_array($row) && (int) ($row['coid'] ?? 0) > 0;
+    }
+
+    private static function hasForumReply(int $topicId, int $uid): bool
+    {
+        if ($topicId <= 0 || $uid <= 0 || !class_exists('Typecho\\Db')) {
+            return false;
+        }
+
+        try {
+            $db = Db::get();
+            $row = $db->fetchRow(
+                $db->select('id')
+                    ->from('table.sunken_forum_replies')
+                    ->where('topic_id = ?', $topicId)
+                    ->where('author_id = ?', $uid)
+                    ->where('status = ?', 'approved')
+                    ->limit(1)
+            );
+        } catch (\Throwable) {
+            return false;
+        }
+
+        return is_array($row) && (int) ($row['id'] ?? 0) > 0;
     }
 
     /**
