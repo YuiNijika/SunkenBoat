@@ -22,7 +22,6 @@ import {
     Sparkles,
     Star,
     Trash2,
-    Trophy,
     UserRound,
     Users,
     X,
@@ -85,6 +84,7 @@ import type {
     UserEconomyStatus,
     UserProfile,
 } from '../../types';
+import LevelBadge from '../content/LevelBadge';
 
 type Tab = 'overview' | 'moderation' | 'articles' | 'certification' | 'users';
 type TopicFilter = 'all' | 'waiting' | 'rejected' | 'deleted' | 'pinned' | 'featured';
@@ -2408,14 +2408,17 @@ export default function OperationsCenter({ api, enabled }: Props) {
                                         </td>
                                         <td className="px-2 py-2.5">
                                             <span className="inline-flex items-center gap-1.5">
-                                                <Trophy
-                                                    className="size-3.5"
-                                                    style={{
-                                                        color: user.level?.color ?? '#64748b',
-                                                    }}
-                                                    aria-hidden="true"
-                                                />
-                                                {user.experience} · {user.level?.title ?? '—'}
+                                                {user.level ? (
+                                                    <LevelBadge
+                                                        level={user.level}
+                                                        iconClassName="h-4 w-auto"
+                                                    />
+                                                ) : (
+                                                    '—'
+                                                )}
+                                                <span className="tabular-nums text-ink-faint">
+                                                    {user.experience}
+                                                </span>
                                             </span>
                                         </td>
                                         <td className="px-2 py-2.5">

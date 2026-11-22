@@ -849,21 +849,32 @@ $forumRightOptions = [
     ],
 ];
 
+$economyLevelIcons = [
+    'LV0.svg' => 'LV0',
+    'LV1.svg' => 'LV1',
+    'LV2.svg' => 'LV2',
+    'LV3.svg' => 'LV3',
+    'LV4.svg' => 'LV4',
+    'LV5.svg' => 'LV5',
+    'LV6.svg' => 'LV6',
+    'LV6_Lightning.svg' => 'LV6 闪电',
+];
 $economyLevelDefaults = [
-    1 => ['min' => 0, 'title' => '新手', 'color' => '#94a3b8'],
-    2 => ['min' => 100, 'title' => '入门', 'color' => '#38bdf8'],
-    3 => ['min' => 300, 'title' => '活跃', 'color' => '#34d399'],
-    4 => ['min' => 800, 'title' => '资深', 'color' => '#fbbf24'],
-    5 => ['min' => 1500, 'title' => '核心', 'color' => '#f472b6'],
-    6 => ['min' => 3000, 'title' => '传奇', 'color' => '#a78bfa'],
+    1 => ['min' => 0, 'title' => 'LV0', 'color' => '#c0c0c0', 'icon' => 'LV0.svg'],
+    2 => ['min' => 200, 'title' => 'LV1', 'color' => '#c0c0c0', 'icon' => 'LV1.svg'],
+    3 => ['min' => 1500, 'title' => 'LV2', 'color' => '#8bd29b', 'icon' => 'LV2.svg'],
+    4 => ['min' => 4500, 'title' => 'LV3', 'color' => '#7bcdef', 'icon' => 'LV3.svg'],
+    5 => ['min' => 10800, 'title' => 'LV4', 'color' => '#febb8b', 'icon' => 'LV4.svg'],
+    6 => ['min' => 28800, 'title' => 'LV5', 'color' => '#ee672a', 'icon' => 'LV5.svg'],
+    7 => ['min' => 86400, 'title' => 'LV6', 'color' => '#ff0000', 'icon' => 'LV6.svg'],
+    8 => ['min' => 288000, 'title' => 'LV6 闪电', 'color' => '#ff0000', 'icon' => 'LV6_Lightning.svg'],
 ];
 $economyLevelOptions = [];
 $economyLevels = [];
-for ($level = 1; $level <= 15; $level++) {
-    $default = $economyLevelDefaults[$level]
-        ?? ['min' => ($level - 1) * 2000, 'title' => '等级 ' . $level, 'color' => '#64748b'];
+for ($level = 1; $level <= count($economyLevelDefaults); $level++) {
+    $default = $economyLevelDefaults[$level];
     $economyLevelOptions['level-' . $level] = [
-        'label' => '等级 ' . $level,
+        'label' => $default['title'] . ($level === 1 ? ' · 注册成功' : ' · ' . number_format($default['min']) . ' 经验'),
         'fields' => [
             [
                 'type' => 'Number',
@@ -882,11 +893,18 @@ for ($level = 1; $level <= 15; $level++) {
                 'placeholder' => '例如：核心成员',
             ],
             [
-                'type' => 'Text',
+                'type' => 'Select',
+                'name' => 'icon',
+                'label' => '等级图标',
+                'value' => $default['icon'],
+                'options' => $economyLevelIcons,
+            ],
+            [
+                'type' => 'ColorPicker',
                 'name' => 'color',
                 'label' => '徽章颜色',
                 'value' => $default['color'],
-                'placeholder' => '#64748b',
+                'predefine' => ['#c0c0c0', '#8bd29b', '#7bcdef', '#febb8b', '#ee672a', '#ff0000'],
             ],
         ],
     ];
@@ -897,6 +915,7 @@ foreach ($economyLevelDefaults as $level => $default) {
         'data' => [
             'min_experience' => $default['min'],
             'title' => $default['title'],
+            'icon' => $default['icon'],
             'color' => $default['color'],
         ],
     ];

@@ -41,7 +41,7 @@ return [
                         'value' => $economyLevels,
                         'show_when' => ['Economy_Enabled' => true],
                         'label' => '等级配置',
-                        'description' => '按所需经验从低到高排序。用户经验达到门槛时自动匹配最高的已配置等级；删除某一等级后该等级用户会在下次读取时回退到更低等级。',
+                        'description' => '预设对齐 B 站 LV0-LV6 与 LV6 闪电：LV0 表示注册成功，LV1-LV6 及闪电等级按经验门槛逐级解锁。可调整名称、图标、徽章颜色与所需经验；用户经验达到门槛时自动匹配最高等级。',
                         'reorder' => ['drag', 'buttons'],
                         'options' => $economyLevelOptions,
                     ],

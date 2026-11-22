@@ -18,7 +18,6 @@ import {
     Newspaper,
     ShieldCheck,
     Sparkles,
-    Trophy,
     Unlink,
     UserCheck,
     UserRound,
@@ -57,6 +56,7 @@ import ContentManager from './ContentManager';
 import AuthDialog from './AuthDialog';
 import UserAvatar from './UserAvatar';
 import DownloadHistory from '../content/DownloadHistory';
+import LevelBadge from '../content/LevelBadge';
 import MediaLibrary from '../content/MediaLibrary';
 import CaptchaField from './CaptchaField';
 import type { CaptchaValue } from './CaptchaField';
@@ -1172,10 +1172,7 @@ export default function AccountPanel({ api, section = 'profile' }: Props) {
                             <p className="section-label">Account wallet</p>
                             <h3 className="mt-1.5 flex items-center gap-2 text-[18px] font-medium">
                                 {economy.enabled ? (
-                                    <>
-                                        <Trophy className="size-4" style={{ color: economy.level.color }} aria-hidden="true" />
-                                        {economy.level.title}
-                                    </>
+                                    <LevelBadge level={economy.level} iconClassName="h-5 w-auto" />
                                 ) : (
                                     '账号状态'
                                 )}
@@ -1264,7 +1261,11 @@ export default function AccountPanel({ api, section = 'profile' }: Props) {
                                 </div>
                                 <div className="rounded-lg border border-line bg-surface-mute p-3">
                                     <p className="flex items-center gap-1.5 text-[11px] text-ink-faint">
-                                        <Trophy className="size-3.5" aria-hidden="true" />
+                                        <LevelBadge
+                                            level={economy.level}
+                                            iconClassName="h-3.5 w-auto"
+                                            showTitle={false}
+                                        />
                                         等级进度
                                     </p>
                                     <div

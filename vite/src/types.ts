@@ -110,6 +110,7 @@ export interface UserEconomyLevel {
     level: number;
     title: string;
     color: string;
+    icon: string;
     minExperience: number;
     nextTitle: string;
     nextExperience: number;

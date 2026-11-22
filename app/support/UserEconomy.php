@@ -8,6 +8,7 @@ use TTDF\Ajax\Endpoint;
 use TTDF\Compat\Typecho;
 use TTDF\Hooks\Hooks;
 use TTDF\Http\Response;
+use TTDF\Theme\Assets;
 use TTDF\Theme\Settings;
 use Typecho\Db;
 
@@ -28,6 +29,17 @@ final class UserEconomy
     public const STATUS_BANNED = 'banned';
 
     private const TABLE = 'table.sunken_user_meta';
+
+    private const LEVEL_ICONS = [
+        'LV0.svg',
+        'LV1.svg',
+        'LV2.svg',
+        'LV3.svg',
+        'LV4.svg',
+        'LV5.svg',
+        'LV6.svg',
+        'LV6_Lightning.svg',
+    ];
 
     private static bool $installed = false;
 
@@ -915,24 +927,29 @@ final class UserEconomy
                 $min = max(0, (int) ($data['min_experience'] ?? 0));
                 $title = trim((string) ($data['title'] ?? ''));
                 $color = self::color((string) ($data['color'] ?? ''));
+                $icon = trim((string) ($data['icon'] ?? ''));
                 if ($title === '') {
                     continue;
                 }
-                $levels[] = ['min' => $min, 'title' => $title, 'color' => $color];
+                $levels[] = ['min' => $min, 'title' => $title, 'color' => $color, 'icon' => $icon];
             }
         }
         if ($levels === []) {
-            $levels = [['min' => 0, 'title' => '新手', 'color' => '#94a3b8']];
+            $levels = self::fallbackLevels();
         }
         usort($levels, static fn (array $a, array $b): int => $a['min'] <=> $b['min']);
+        foreach ($levels as $position => &$level) {
+            $level['icon'] = self::levelIcon((string) ($level['icon'] ?? ''), $position);
+        }
+        unset($level);
 
         $current = $levels[0];
         $next = null;
-        $index = 1;
+        $index = 0;
         foreach ($levels as $position => $level) {
             if ($experience >= $level['min']) {
                 $current = $level;
-                $index = $position + 1;
+                $index = $position;
             } elseif ($next === null) {
                 $next = $level;
             }
@@ -942,6 +959,7 @@ final class UserEconomy
             'level' => $index,
             'title' => $current['title'],
             'color' => $current['color'],
+            'icon' => Assets::url('img/' . $current['icon']),
             'minExperience' => $current['min'],
             'nextTitle' => $next['title'] ?? '',
             'nextExperience' => $next['min'] ?? 0,
@@ -1146,6 +1164,35 @@ final class UserEconomy
     private static function color(string $value): string
     {
         return preg_match('/^#[0-9a-fA-F]{6}$/D', $value) === 1 ? $value : '#64748b';
+    }
+
+    /**
+     * @return list<array{min: int, title: string, color: string, icon: string}>
+     */
+    private static function fallbackLevels(): array
+    {
+        return [
+            ['min' => 0, 'title' => 'LV0', 'color' => '#c0c0c0', 'icon' => 'LV0.svg'],
+            ['min' => 200, 'title' => 'LV1', 'color' => '#c0c0c0', 'icon' => 'LV1.svg'],
+            ['min' => 1500, 'title' => 'LV2', 'color' => '#8bd29b', 'icon' => 'LV2.svg'],
+            ['min' => 4500, 'title' => 'LV3', 'color' => '#7bcdef', 'icon' => 'LV3.svg'],
+            ['min' => 10800, 'title' => 'LV4', 'color' => '#febb8b', 'icon' => 'LV4.svg'],
+            ['min' => 28800, 'title' => 'LV5', 'color' => '#ee672a', 'icon' => 'LV5.svg'],
+            ['min' => 86400, 'title' => 'LV6', 'color' => '#ff0000', 'icon' => 'LV6.svg'],
+            ['min' => 288000, 'title' => 'LV6 闪电', 'color' => '#ff0000', 'icon' => 'LV6_Lightning.svg'],
+        ];
+    }
+
+    private static function levelIcon(string $value, int $position): string
+    {
+        $icon = basename(trim($value));
+        if (in_array($icon, self::LEVEL_ICONS, true)) {
+            return $icon;
+        }
+
+        $index = max(0, min($position, count(self::LEVEL_ICONS) - 1));
+
+        return self::LEVEL_ICONS[$index];
     }
 
     private static function label(string $key, string $fallback): string
