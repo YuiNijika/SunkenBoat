@@ -328,7 +328,8 @@ a.comment-author:hover {
     border-radius: 4px;
 }
 
-.comment-body img[src*="/ttdf/sunken/meme"] {
+.comment-body img[src*=".hdslb.com/bfs/garb/"],
+.comment-body img[src*=".hdslb.com/bfs/emote/"] {
     display: inline-block;
     width: auto;
     max-width: min(100%, 50px);

@@ -313,9 +313,6 @@ final class CommentMarkup
             $value = trim($element->getAttribute($name));
 
             if ($lower === 'href' || $lower === 'src') {
-                if ($lower === 'src' && Meme::isProxyable($value)) {
-                    $value = Meme::proxyUrl($value);
-                }
                 if (!self::safeUrl($value, $lower === 'src')) {
                     $element->removeAttribute($name);
                     continue;
@@ -345,6 +342,10 @@ final class CommentMarkup
         }
 
         if ($tag === 'img') {
+            $src = trim($element->getAttribute('src'));
+            if (Meme::isBilibiliGarb($src)) {
+                $element->setAttribute('referrerpolicy', 'no-referrer');
+            }
             $element->setAttribute('loading', 'lazy');
             $element->setAttribute('decoding', 'async');
         }

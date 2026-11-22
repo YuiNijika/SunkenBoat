@@ -226,7 +226,8 @@
     background: var(--surface-2);
 }
 
-.forum-prose img[src*="/ttdf/sunken/meme"] {
+.forum-prose img[src*=".hdslb.com/bfs/garb/"],
+.forum-prose img[src*=".hdslb.com/bfs/emote/"] {
     display: inline-block;
     width: auto;
     max-width: min(100%, 50px);

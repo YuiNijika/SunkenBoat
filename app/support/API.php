@@ -73,10 +73,6 @@ final class API
             Response::error('Method not allowed', 405);
         }
 
-        if ($endpoint === 'meme') {
-            Meme::serve();
-        }
-
         try {
             $data = match ($endpoint) {
                 'sidebar' => PageData::sidebarData(),

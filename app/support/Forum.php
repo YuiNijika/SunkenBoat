@@ -4171,7 +4171,7 @@ final class Forum
             $html
         );
 
-        return Meme::rewriteHtml(Meme::expandShortcodes($html));
+        return Meme::markClientImages(Meme::expandShortcodes($html));
     }
 
     /**

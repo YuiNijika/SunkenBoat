@@ -61,16 +61,6 @@ export function memeShortcode(item: MemeItem): string {
     return `[sunken_meme]${item.group}_${item.name}[/sunken_meme]`;
 }
 
-function proxiedUrl(proxy: string, url: string): string {
-    try {
-        const target = new URL(proxy, window.location.href);
-        target.searchParams.set('src', url);
-        return target.toString();
-    } catch {
-        return url;
-    }
-}
-
 export default function MemePicker({ config, onPick, disabled = false }: Props) {
     const [open, setOpen] = useState(false);
     const [groups, setGroups] = useState<Record<string, MemeItem[]>>({});
@@ -232,10 +222,11 @@ export default function MemePicker({ config, onPick, disabled = false }: Props) 
                                     }}
                                 >
                                     <img
-                                        src={proxiedUrl(config.proxy, item.url)}
+                                        src={item.url}
                                         alt={item.name}
                                         loading="lazy"
                                         decoding="async"
+                                        referrerPolicy="no-referrer"
                                     />
                                 </button>
                             ))}
@@ -271,10 +262,11 @@ export default function MemePicker({ config, onPick, disabled = false }: Props) 
                                     >
                                         {preview ? (
                                             <img
-                                                src={proxiedUrl(config.proxy, preview.url)}
+                                                src={preview.url}
                                                 alt=""
                                                 loading="lazy"
                                                 decoding="async"
+                                                referrerPolicy="no-referrer"
                                             />
                                         ) : (
                                             <SmilePlus

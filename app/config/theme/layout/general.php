@@ -153,7 +153,7 @@ return [
                 'value' => true,
                 'inline' => true,
                 'label' => '启用评论区表情',
-                'description' => '读取 assets/meme.json，并通过站点代理加载 B 站表情，避免第三方图片防盗链导致裂图。',
+                'description' => '读取 assets/meme.json，表情图片由访客浏览器直连 B 站 CDN 加载，不占用站点服务器出站带宽。',
             ],
             [
                 'type' => 'Select',

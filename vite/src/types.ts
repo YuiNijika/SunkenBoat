@@ -424,7 +424,6 @@ export interface CommentsData {
 
 export interface MemeConfig {
     manifest: string;
-    proxy: string;
 }
 
 interface BlockBase {
