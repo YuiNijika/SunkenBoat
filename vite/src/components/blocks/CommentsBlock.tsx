@@ -21,7 +21,7 @@ import { refreshApp } from '../../lib/appNavigation';
 import { Input } from '../ui/input';
 import { Label } from '../ui/label';
 import { Textarea } from '../ui/textarea';
-import CaptchaField from '../layout/CaptchaField';
+import CaptchaDialog from '../layout/CaptchaDialog';
 import type { CaptchaValue } from '../layout/CaptchaField';
 
 interface ApiComment {
@@ -340,6 +340,7 @@ export default function CommentsBlock({ data }: Props) {
     const [mail, setMail] = useState(data.remember.mail);
     const [url, setUrl] = useState(data.remember.url);
     const [captcha, setCaptcha] = useState<CaptchaValue | null>(null);
+    const [captchaOpen, setCaptchaOpen] = useState(false);
     const [expanded, setExpanded] = useState(!data.collapsed);
     const [sortOrder, setSortOrder] = useState<CommentSortOrder>('latest');
     const [authMode, setAuthMode] = useState<'login' | 'register' | null>(null);
@@ -458,9 +459,12 @@ export default function CommentsBlock({ data }: Props) {
         textareaRef.current?.focus();
     };
 
-    const submit = async (event: FormEvent<HTMLFormElement>) => {
-        event.preventDefault();
-        if (!data.apiEnabled) {
+    const captchaRequired = Boolean(
+        data.captcha?.enabled && data.captcha.scenes.includes('comment')
+    );
+
+    const publish = async (captchaValue: CaptchaValue | null) => {
+        if (!data.apiEnabled || submitting) {
             return;
         }
 
@@ -480,7 +484,7 @@ export default function CommentsBlock({ data }: Props) {
                     author,
                     mail,
                     url,
-                    ...(captcha ? { captcha } : {}),
+                    ...(captchaValue ? { captcha: captchaValue } : {}),
                 }),
             });
             const payload = await response.json().catch(() => null);
@@ -492,6 +496,7 @@ export default function CommentsBlock({ data }: Props) {
             setParent(0);
             setParentTarget('');
             setCaptcha(null);
+            setCaptchaOpen(false);
             const status = String(payload.data?.status ?? '');
             notifySuccess(
                 status === 'waiting'
@@ -500,10 +505,23 @@ export default function CommentsBlock({ data }: Props) {
             );
             await loadComments();
         } catch (error) {
+            setCaptcha(null);
             notifyError(error instanceof Error ? error.message : '评论提交失败');
         } finally {
             setSubmitting(false);
         }
+    };
+
+    const submit = (event: FormEvent<HTMLFormElement>) => {
+        event.preventDefault();
+        if (!data.apiEnabled || submitting) {
+            return;
+        }
+        if (captchaRequired && !captcha) {
+            setCaptchaOpen(true);
+            return;
+        }
+        void publish(captcha);
     };
 
     if (!data.allow) {
@@ -654,13 +672,6 @@ export default function CommentsBlock({ data }: Props) {
                                 </div>
                             )
                         }
-                        verification={
-                            <CaptchaField
-                                config={data.captcha}
-                                scene="comment"
-                                onChange={setCaptcha}
-                            />
-                        }
                     />
                     )}
                     <MediaLibrary
@@ -671,6 +682,18 @@ export default function CommentsBlock({ data }: Props) {
                         onSelect={(item) => {
                             insertMediaMarkdown(textareaRef.current, setText, item.title, item.url);
                             setMediaOpen(false);
+                        }}
+                    />
+                    <CaptchaDialog
+                        open={captchaOpen}
+                        onOpenChange={setCaptchaOpen}
+                        config={data.captcha}
+                        scene="comment"
+                        title="完成验证后提交评论"
+                        description="拖动拼图块完成人机验证，验证通过后会自动提交你的评论。"
+                        onVerified={(value) => {
+                            setCaptcha(value);
+                            void publish(value);
                         }}
                     />
                     {data.auth ? (

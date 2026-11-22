@@ -27,6 +27,9 @@ interface Props {
     config?: UserCaptchaConfig;
     scene: 'login' | 'register' | 'comment' | 'checkin';
     onChange: (value: CaptchaValue | null) => void;
+    onComplete?: (value: CaptchaValue) => void;
+    autoStart?: boolean;
+    compact?: boolean;
 }
 
 declare global {
@@ -81,7 +84,14 @@ function loadScript(id: string, src: string): Promise<void> {
     });
 }
 
-export default function CaptchaField({ config, scene, onChange }: Props) {
+export default function CaptchaField({
+    config,
+    scene,
+    onChange,
+    onComplete,
+    autoStart = false,
+    compact = false,
+}: Props) {
     const enabled = Boolean(config?.enabled && config.scenes.includes(scene));
     const provider = config?.provider ?? 'math';
     const builtin = provider === 'math' || provider === 'slider';
@@ -99,14 +109,19 @@ export default function CaptchaField({ config, scene, onChange }: Props) {
         startX: number;
         startAnswer: number;
         width: number;
+        moved: boolean;
     } | null>(null);
+    const valueRef = useRef<CaptchaValue | null>(null);
+    const autoStartRef = useRef('');
     const geetest = useRef<{
         showCaptcha: () => void;
         onSuccess: (callback: () => void) => void;
         getValidate: () => Record<string, unknown>;
     } | null>(null);
     const onChangeRef = useRef(onChange);
+    const onCompleteRef = useRef(onComplete);
     onChangeRef.current = onChange;
+    onCompleteRef.current = onComplete;
 
     const pieceWidth = challenge?.pieceWidth ?? 17.5;
     const maxAnswer = Math.max(1, 100 - pieceWidth);
@@ -121,6 +136,7 @@ export default function CaptchaField({ config, scene, onChange }: Props) {
         setSlide(0);
         setDragging(false);
         dragRef.current = null;
+        valueRef.current = null;
         onChangeRef.current(null);
         try {
             const response = await fetch(config.challenge, {
@@ -148,22 +164,28 @@ export default function CaptchaField({ config, scene, onChange }: Props) {
         setSlide(0);
         setDragging(false);
         dragRef.current = null;
+        valueRef.current = null;
+        autoStartRef.current = '';
         setCloudBusy(false);
         setError('');
         onChangeRef.current(null);
     }, [enabled, provider, scene]);
 
     const updateSlide = useCallback(
-        (value: number) => {
+        (value: number): CaptchaValue | null => {
             const clamped = Math.max(0, Math.min(maxAnswer, value));
             const formatted = clamped.toFixed(2);
-            setSlide(clamped);
-            setAnswer(formatted);
-            onChangeRef.current(
+            const nextValue =
                 challenge && clamped > 0.05
                     ? { id: challenge.id, answer: formatted }
-                    : null
-            );
+                    : null;
+
+            setSlide(clamped);
+            setAnswer(formatted);
+            valueRef.current = nextValue;
+            onChangeRef.current(nextValue);
+
+            return nextValue;
         },
         [challenge, maxAnswer]
     );
@@ -181,14 +203,21 @@ export default function CaptchaField({ config, scene, onChange }: Props) {
 
             event.preventDefault();
             const delta = ((event.clientX - drag.startX) / drag.width) * 100;
+            if (Math.abs(event.clientX - drag.startX) > 2) {
+                drag.moved = true;
+            }
             updateSlide(drag.startAnswer + delta);
         };
         const end = (event: PointerEvent) => {
             if (!dragRef.current || event.pointerId !== dragRef.current.pointerId) {
                 return;
             }
+            const moved = dragRef.current.moved;
             dragRef.current = null;
             setDragging(false);
+            if (moved && valueRef.current) {
+                onCompleteRef.current?.(valueRef.current);
+            }
         };
 
         window.addEventListener('pointermove', move, { passive: false });
@@ -217,6 +246,7 @@ export default function CaptchaField({ config, scene, onChange }: Props) {
             startX: event.clientX,
             startAnswer: slide,
             width: Math.max(1, stageRef.current.clientWidth),
+            moved: false,
         };
         setDragging(true);
     };
@@ -241,16 +271,27 @@ export default function CaptchaField({ config, scene, onChange }: Props) {
         updateSlide(next);
     };
 
-    const submitBuiltin = (nextAnswer: string) => {
+    const submitBuiltin = (nextAnswer: string, complete = false) => {
         setAnswer(nextAnswer);
         if (!challenge) {
             onChangeRef.current(null);
             return;
         }
-        onChangeRef.current({
+        const value = {
             id: challenge.id,
             answer: nextAnswer,
-        });
+        };
+        valueRef.current = value;
+        onChangeRef.current(value);
+        if (complete) {
+            onCompleteRef.current?.(value);
+        }
+    };
+
+    const finishCloud = (value: CaptchaValue) => {
+        valueRef.current = value;
+        onChangeRef.current(value);
+        onCompleteRef.current?.(value);
     };
 
     const openCloud = () => {
@@ -269,7 +310,7 @@ export default function CaptchaField({ config, scene, onChange }: Props) {
                         geetest.current = instance;
                         instance.onSuccess(() => {
                             const payload = instance.getValidate();
-                            onChangeRef.current({ ticket: payload });
+                            finishCloud({ ticket: payload });
                             setCloudBusy(false);
                         });
                         instance.showCaptcha();
@@ -284,7 +325,7 @@ export default function CaptchaField({ config, scene, onChange }: Props) {
         if (provider === 'tencent' && window.TencentCaptcha && config?.tencentAppId) {
             const instance = new window.TencentCaptcha(config.tencentAppId, (result) => {
                 if (Number(result.ret) === 0) {
-                    onChangeRef.current({
+                    finishCloud({
                         ticket: {
                             ticket: result.ticket,
                             randstr: result.randstr,
@@ -312,7 +353,7 @@ export default function CaptchaField({ config, scene, onChange }: Props) {
                     scene: config.aliyunScene || 'nc',
                     render: '#ttdf-aliyun-captcha',
                     success: (data: Record<string, unknown>) => {
-                        onChangeRef.current({
+                        finishCloud({
                             ticket: {
                                 sessionId: data.sessionId ?? data.csessionid ?? '',
                                 sig: data.sig ?? '',
@@ -348,6 +389,7 @@ export default function CaptchaField({ config, scene, onChange }: Props) {
             setSlide(0);
             setDragging(false);
             dragRef.current = null;
+            valueRef.current = null;
             void refresh();
             return;
         }
@@ -374,17 +416,44 @@ export default function CaptchaField({ config, scene, onChange }: Props) {
             });
     };
 
+    useEffect(() => {
+        if (!autoStart || !enabled) {
+            return;
+        }
+
+        const key = `${provider}:${scene}`;
+        if (autoStartRef.current === key) {
+            return;
+        }
+        autoStartRef.current = key;
+        start();
+    }, [autoStart, enabled, provider, scene]);
+
     if (!enabled) {
         return null;
     }
 
     return (
-        <div className="grid gap-2 rounded-lg border border-line bg-surface-mute p-3">
-            <div className="flex items-center justify-between gap-2">
-                <Label className="inline-flex items-center gap-1.5">
-                    <ShieldCheck className="size-4" aria-hidden="true" />
-                    人机验证
-                </Label>
+        <div
+            className={
+                compact
+                    ? 'grid gap-2'
+                    : 'grid gap-2 rounded-lg border border-line bg-surface-mute p-3'
+            }
+        >
+            <div
+                className={
+                    compact
+                        ? 'flex items-center justify-end gap-2'
+                        : 'flex items-center justify-between gap-2'
+                }
+            >
+                {compact ? null : (
+                    <Label className="inline-flex items-center gap-1.5">
+                        <ShieldCheck className="size-4" aria-hidden="true" />
+                        人机验证
+                    </Label>
+                )}
                 {started && builtin ? (
                     <Button
                         type="button"
@@ -502,6 +571,12 @@ export default function CaptchaField({ config, scene, onChange }: Props) {
                             placeholder="输入结果"
                             className="w-28"
                             onChange={(event) => submitBuiltin(event.target.value.replace(/\D/g, '').slice(0, 3))}
+                            onKeyDown={(event) => {
+                                if (event.key === 'Enter' && answer.trim() !== '') {
+                                    event.preventDefault();
+                                    submitBuiltin(answer, true);
+                                }
+                            }}
                         />
                     </div>
                 )

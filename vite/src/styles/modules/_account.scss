@@ -1,5 +1,93 @@
 /* account */
 
+@mixin account-profile-compact {
+    .account-cover {
+        height: 176px;
+    }
+
+    .account-cover-actions {
+        inset: 10px 10px auto auto;
+    }
+
+    .account-profile-shell {
+        --account-avatar-size: 84px;
+        --account-avatar-gap: 13px;
+        padding: 0 14px 14px;
+    }
+
+    .account-profile-main {
+        min-height: 42px;
+    }
+
+    .account-profile-avatar {
+        top: -42px;
+        border-width: 3px;
+    }
+
+    .account-profile-copy {
+        gap: 5px;
+        padding-top: 10px;
+    }
+
+    .account-profile-name {
+        font-size: 21px;
+    }
+
+    .account-profile-handle {
+        font-size: 11px;
+    }
+
+    .account-profile-certification {
+        font-size: 10.5px;
+    }
+
+    .account-profile-signature {
+        font-size: 12px;
+    }
+
+    .account-profile-details {
+        grid-template-columns: minmax(0, 1fr);
+        gap: 12px;
+        margin-top: 14px;
+    }
+
+    .account-profile-stats {
+        width: 100%;
+        grid-auto-columns: minmax(0, 1fr);
+        justify-items: stretch;
+        padding-bottom: 10px;
+        border-bottom: 1px solid var(--line);
+    }
+
+    .account-profile-stats > div {
+        min-width: 0;
+        justify-items: start;
+        padding: 0 12px;
+    }
+
+    .account-profile-stats > div:first-child {
+        padding-left: 0;
+    }
+
+    .account-profile-stats > div:last-child {
+        padding-right: 0;
+    }
+
+    .account-profile-meta {
+        gap: 5px 12px;
+        font-size: 11px;
+    }
+
+    .account-profile-actions {
+        width: 100%;
+        justify-content: flex-start;
+    }
+}
+
+.account-profile-card {
+    container-type: inline-size;
+}
+
 .account-cover {
     position: relative;
     height: clamp(190px, 25vw, 248px);
@@ -267,87 +355,11 @@
 }
 
 @media (max-width: 760px) {
-    .account-cover {
-        height: 176px;
-    }
+    @include account-profile-compact;
+}
 
-    .account-cover-actions {
-        inset: 10px 10px auto auto;
-    }
-
-    .account-profile-shell {
-        --account-avatar-size: 84px;
-        --account-avatar-gap: 13px;
-        padding: 0 14px 14px;
-    }
-
-    .account-profile-main {
-        min-height: 42px;
-    }
-
-    .account-profile-avatar {
-        top: -42px;
-        border-width: 3px;
-    }
-
-    .account-profile-copy {
-        gap: 5px;
-        padding-top: 10px;
-    }
-
-    .account-profile-name {
-        font-size: 21px;
-    }
-
-    .account-profile-handle {
-        font-size: 11px;
-    }
-
-    .account-profile-certification {
-        font-size: 10.5px;
-    }
-
-    .account-profile-signature {
-        font-size: 12px;
-    }
-
-    .account-profile-details {
-        grid-template-columns: minmax(0, 1fr);
-        gap: 12px;
-        margin-top: 14px;
-    }
-
-    .account-profile-stats {
-        width: 100%;
-        grid-auto-columns: minmax(0, 1fr);
-        justify-items: stretch;
-        padding-bottom: 10px;
-        border-bottom: 1px solid var(--line);
-    }
-
-    .account-profile-stats > div {
-        min-width: 0;
-        justify-items: start;
-        padding: 0 12px;
-    }
-
-    .account-profile-stats > div:first-child {
-        padding-left: 0;
-    }
-
-    .account-profile-stats > div:last-child {
-        padding-right: 0;
-    }
-
-    .account-profile-meta {
-        gap: 5px 12px;
-        font-size: 11px;
-    }
-
-    .account-profile-actions {
-        width: 100%;
-        justify-content: flex-start;
-    }
+@container (max-width: 760px) {
+    @include account-profile-compact;
 }
 
 .account-cover-thumb {

@@ -58,7 +58,7 @@ import UserAvatar from './UserAvatar';
 import DownloadHistory from '../content/DownloadHistory';
 import LevelBadge from '../content/LevelBadge';
 import MediaLibrary from '../content/MediaLibrary';
-import CaptchaField from './CaptchaField';
+import CaptchaDialog from './CaptchaDialog';
 import type { CaptchaValue } from './CaptchaField';
 
 const GROUP_LABELS: Record<string, string> = {
@@ -201,6 +201,7 @@ export default function AccountPanel({ api, section = 'profile' }: Props) {
     const [oauthBusy, setOauthBusy] = useState('');
     const [avatarMediaOpen, setAvatarMediaOpen] = useState(false);
     const [backgroundMediaOpen, setBackgroundMediaOpen] = useState(false);
+    const [backgroundBusy, setBackgroundBusy] = useState(false);
     const [certification, setCertification] = useState<UserCertification | null>(null);
     const [certType, setCertType] = useState<'personal' | 'organization'>('personal');
     const [certName, setCertName] = useState('');
@@ -209,6 +210,7 @@ export default function AccountPanel({ api, section = 'profile' }: Props) {
     const [certDetailsOpen, setCertDetailsOpen] = useState(false);
     const [economy, setEconomy] = useState<UserEconomySummary | null>(null);
     const [checkinCaptcha, setCheckinCaptcha] = useState<CaptchaValue | null>(null);
+    const [checkinCaptchaOpen, setCheckinCaptchaOpen] = useState(false);
     const [checkinBusy, setCheckinBusy] = useState(false);
 
     const sessionEndpoint = api?.session;
@@ -425,7 +427,9 @@ export default function AccountPanel({ api, section = 'profile' }: Props) {
         }
     };
 
-    const saveDetails = async (): Promise<UserProfile | null> => {
+    const saveDetails = async (
+        nextDetails: ProfileDetails = details
+    ): Promise<UserProfile | null> => {
         if (!api?.profile || !api.profileNonce) {
             throw new Error('增强资料接口不可用');
         }
@@ -438,7 +442,7 @@ export default function AccountPanel({ api, section = 'profile' }: Props) {
                 'Content-Type': 'application/json',
                 'X-Typecho-Token': api.profileNonce,
             },
-            body: JSON.stringify(details),
+            body: JSON.stringify(nextDetails),
         });
         const payload = await readPayload(response);
         if (!response.ok) {
@@ -535,6 +539,34 @@ export default function AccountPanel({ api, section = 'profile' }: Props) {
             );
         } finally {
             setProfileBusy(false);
+        }
+    };
+
+    const saveBackground = async (nextDetails: ProfileDetails) => {
+        if (!detailsReady) {
+            notifyError('更多资料尚未加载完成，请稍后再试');
+            return;
+        }
+        if (!api?.profile || !api.profileNonce || backgroundBusy) {
+            return;
+        }
+
+        const previous = details;
+        setBackgroundBusy(true);
+        try {
+            const updated = await saveDetails(nextDetails);
+            if (!updated) {
+                throw new Error('接口未返回更新后的资料');
+            }
+            syncProfile(updated);
+            notifySuccess('个人主页背景已更新。');
+        } catch (reason) {
+            setDetails(previous);
+            notifyError(
+                reason instanceof Error ? reason.message : '背景图保存失败'
+            );
+        } finally {
+            setBackgroundBusy(false);
         }
     };
 
@@ -908,7 +940,7 @@ export default function AccountPanel({ api, section = 'profile' }: Props) {
     const spaceUrl = `${pageUrls.space.replace(/\/+$/, '')}/${profile.uid}`;
     const forumLabel = api.forum?.label || '圈子';
 
-    const checkin = async () => {
+    const runCheckin = async (captchaValue: CaptchaValue | null) => {
         if (checkinBusy || !api.economy?.checkin) {
             return;
         }
@@ -922,7 +954,7 @@ export default function AccountPanel({ api, section = 'profile' }: Props) {
                     'Content-Type': 'application/json',
                     'X-Typecho-Token': api.economy.nonce,
                 },
-                body: JSON.stringify(checkinCaptcha ? { captcha: checkinCaptcha } : {}),
+                body: JSON.stringify(captchaValue ? { captcha: captchaValue } : {}),
             });
             const payload = await readPayload(response);
             if (!response.ok) {
@@ -934,12 +966,29 @@ export default function AccountPanel({ api, section = 'profile' }: Props) {
                 setEconomy(next);
             }
             setCheckinCaptcha(null);
+            setCheckinCaptchaOpen(false);
             notifySuccess('签到成功，奖励已到账。');
         } catch (reason) {
+            setCheckinCaptcha(null);
             notifyError(reason instanceof Error ? reason.message : '签到失败');
         } finally {
             setCheckinBusy(false);
         }
+    };
+
+    const checkinCaptchaRequired = Boolean(
+        api.captcha?.enabled && api.captcha.scenes.includes('checkin')
+    );
+
+    const checkin = () => {
+        if (checkinBusy || !api.economy?.checkin) {
+            return;
+        }
+        if (checkinCaptchaRequired && !checkinCaptcha) {
+            setCheckinCaptchaOpen(true);
+            return;
+        }
+        void runCheckin(checkinCaptcha);
     };
 
     const navItems: { id: AccountSection; href: string; label: string; icon: ReactNode }[] = [
@@ -1010,7 +1059,7 @@ export default function AccountPanel({ api, section = 'profile' }: Props) {
 
     return (
         <div className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-[15px]">
-            <section className="surface-card overflow-hidden">
+            <section className="account-profile-card surface-card overflow-hidden">
                 <div className="account-cover" style={coverStyle} aria-label="个人主页背景">
                     {api.enhanced ? (
                         <div className="account-cover-actions">
@@ -1019,10 +1068,11 @@ export default function AccountPanel({ api, section = 'profile' }: Props) {
                                 size="sm"
                                 variant="secondary"
                                 className="account-cover-button"
+                                disabled={backgroundBusy || !detailsReady}
                                 onClick={() => setBackgroundMediaOpen(true)}
                             >
                                 <Camera aria-hidden="true" />
-                                更换背景
+                                {backgroundBusy ? '保存中…' : '更换背景'}
                             </Button>
                         </div>
                     ) : null}
@@ -1326,8 +1376,8 @@ export default function AccountPanel({ api, section = 'profile' }: Props) {
                                 </div>
                             </div>
                             {economy.checkin.enabled && !economy.checkin.checkedIn ? (
-                                <div className="mt-4 grid gap-2">
-                                    <p className="text-[12px] text-ink-mute">
+                                <div className="mt-4 grid gap-1.5">
+                                    <p className="text-[12px] leading-5 text-ink-mute">
                                         今日签到可获经验 {economy.checkin.rewards.experience}、
                                         {economy.labels.points} {economy.checkin.rewards.points}
                                         {economy.checkin.rewards.balanceCents > 0
@@ -1335,11 +1385,11 @@ export default function AccountPanel({ api, section = 'profile' }: Props) {
                                             : ''}
                                         。
                                     </p>
-                                    <CaptchaField
-                                        config={api.captcha}
-                                        scene="checkin"
-                                        onChange={setCheckinCaptcha}
-                                    />
+                                    {checkinCaptchaRequired ? (
+                                        <p className="text-[11px] leading-5 text-ink-faint">
+                                            点击签到后会弹出人机验证，完成拼图即可领取奖励。
+                                        </p>
+                                    ) : null}
                                 </div>
                             ) : null}
                         </>
@@ -1458,11 +1508,15 @@ export default function AccountPanel({ api, section = 'profile' }: Props) {
                                                     type="button"
                                                     variant="outline"
                                                     size="sm"
-                                                    disabled={!api.avatarMediaEnabled}
+                                                    disabled={
+                                                        !api.avatarMediaEnabled
+                                                        || !detailsReady
+                                                        || backgroundBusy
+                                                    }
                                                     onClick={() => setBackgroundMediaOpen(true)}
                                                 >
                                                     <Camera aria-hidden="true" />
-                                                    从媒体库选择
+                                                    {backgroundBusy ? '保存中…' : '从媒体库选择'}
                                                 </Button>
                                             </div>
                                             {!api.avatarMediaEnabled ? (
@@ -2057,6 +2111,19 @@ export default function AccountPanel({ api, section = 'profile' }: Props) {
                 </DialogContent>
             </Dialog>
 
+            <CaptchaDialog
+                open={checkinCaptchaOpen}
+                onOpenChange={setCheckinCaptchaOpen}
+                config={api.captcha}
+                scene="checkin"
+                title="完成验证后签到"
+                description="拖动拼图块完成人机验证，验证通过后会自动签到并领取奖励。"
+                onVerified={(value) => {
+                    setCheckinCaptcha(value);
+                    void runCheckin(value);
+                }}
+            />
+
             <MediaLibrary
                 open={avatarMediaOpen}
                 onOpenChange={setAvatarMediaOpen}
@@ -2079,8 +2146,10 @@ export default function AccountPanel({ api, section = 'profile' }: Props) {
                 title="选择个人主页背景"
                 description="从媒体库选择或上传背景图片"
                 onSelect={(item) => {
-                    setDetails((current) => ({ ...current, background: item.url }));
+                    const nextDetails = { ...details, background: item.url };
+                    setDetails(nextDetails);
                     setBackgroundMediaOpen(false);
+                    void saveBackground(nextDetails);
                 }}
             />
         </div>

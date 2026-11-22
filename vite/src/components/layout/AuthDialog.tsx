@@ -11,7 +11,7 @@ import {
 } from '../ui/dialog';
 import { Input } from '../ui/input';
 import { notifyError, notifySuccess } from '../../lib/notify';
-import CaptchaField from './CaptchaField';
+import CaptchaDialog from './CaptchaDialog';
 import type { CaptchaValue } from './CaptchaField';
 import {
     errorMessage,
@@ -56,6 +56,7 @@ export default function AuthDialog({
     const [sendingSms, setSendingSms] = useState(false);
     const [smsCooldown, setSmsCooldown] = useState(0);
     const [captcha, setCaptcha] = useState<CaptchaValue | null>(null);
+    const [captchaOpen, setCaptchaOpen] = useState(false);
 
     useEffect(() => {
         if (!open) {
@@ -74,6 +75,7 @@ export default function AuthDialog({
         setCooldown(0);
         setSmsCooldown(0);
         setCaptcha(null);
+        setCaptchaOpen(false);
     }, [initialMode, open]);
 
     useEffect(() => {
@@ -115,6 +117,7 @@ export default function AuthDialog({
         setCode('');
         setPhoneCode('');
         setCaptcha(null);
+        setCaptchaOpen(false);
         setMode((current) => (current === 'login' ? 'register' : 'login'));
     };
 
@@ -124,6 +127,7 @@ export default function AuthDialog({
         setCode('');
         setPhoneCode('');
         setCaptcha(null);
+        setCaptchaOpen(false);
         setMode('reset');
     };
 
@@ -132,6 +136,7 @@ export default function AuthDialog({
         setConfirm('');
         setCode('');
         setCaptcha(null);
+        setCaptchaOpen(false);
         setPhoneCode('');
         setMode('login');
     };
@@ -195,8 +200,7 @@ export default function AuthDialog({
         }
     };
 
-    const submit = async (event: FormEvent<HTMLFormElement>) => {
-        event.preventDefault();
+    const performSubmit = async (captchaValue: CaptchaValue | null) => {
         if (submitting || checking) {
             return;
         }
@@ -233,7 +237,7 @@ export default function AuthDialog({
                         ...(api.smsVerify
                             ? { phone: phone.trim(), phoneCode: phoneCode.trim() }
                             : {}),
-                        ...(captcha ? { captcha } : {}),
+                        ...(captchaValue ? { captcha: captchaValue } : {}),
                     }),
                 });
                 const payload = await readPayload(response);
@@ -295,7 +299,7 @@ export default function AuthDialog({
                     name: name.trim(),
                     password,
                     remember,
-                    ...(captcha ? { captcha } : {}),
+                    ...(captchaValue ? { captcha: captchaValue } : {}),
                 }),
             });
             const payload = await readPayload(response);
@@ -312,6 +316,9 @@ export default function AuthDialog({
             onOpenChange(false);
             notifySuccess('登录成功。');
         } catch (reason) {
+            if (captchaValue) {
+                setCaptcha(null);
+            }
             notifyError(
                 reason instanceof Error
                     ? reason.message
@@ -326,6 +333,23 @@ export default function AuthDialog({
         }
     };
 
+    const captchaScene = mode === 'register' ? 'register' : 'login';
+    const captchaRequired =
+        mode !== 'reset'
+        && Boolean(api.captcha?.enabled && api.captcha.scenes.includes(captchaScene));
+
+    const submit = (event: FormEvent<HTMLFormElement>) => {
+        event.preventDefault();
+        if (submitting || checking) {
+            return;
+        }
+        if (captchaRequired && !captcha) {
+            setCaptchaOpen(true);
+            return;
+        }
+        void performSubmit(captcha);
+    };
+
     const title = mode === 'login' ? '登录' : mode === 'register' ? '注册' : '找回密码';
     const submittingLabel =
         mode === 'login' ? '登录中…' : mode === 'register' ? '注册中…' : '重置中…';
@@ -333,6 +357,7 @@ export default function AuthDialog({
         mode === 'login' ? '登录' : mode === 'register' ? '注册并登录' : '重置密码';
 
     return (
+        <>
         <Dialog open={open} onOpenChange={onOpenChange}>
             <DialogContent className="w-[calc(100%-2rem)] max-w-[390px] gap-0 rounded-[10px] border-line bg-surface p-0 shadow-pop sm:max-w-[390px]">
                 <div className="p-6">
@@ -552,14 +577,6 @@ export default function AuthDialog({
                                 </label>
                             ) : null}
 
-                            {mode !== 'reset' ? (
-                                <CaptchaField
-                                    config={api.captcha}
-                                    scene={mode === 'login' ? 'login' : 'register'}
-                                    onChange={setCaptcha}
-                                />
-                            ) : null}
-
                             {mode === 'login' ? (
                                 <div className="flex items-center justify-between gap-3">
                                     <label className="flex cursor-pointer items-center gap-2 text-[12px] text-ink-mute">
@@ -615,5 +632,18 @@ export default function AuthDialog({
                 </div>
             </DialogContent>
         </Dialog>
+        <CaptchaDialog
+            open={captchaOpen}
+            onOpenChange={setCaptchaOpen}
+            config={api.captcha}
+            scene={captchaScene}
+            title={mode === 'register' ? '完成验证后注册' : '完成验证后登录'}
+            description="拖动拼图块完成人机验证，验证通过后会自动继续。"
+            onVerified={(value) => {
+                setCaptcha(value);
+                void performSubmit(value);
+            }}
+        />
+        </>
     );
 }
