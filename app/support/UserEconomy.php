@@ -9,6 +9,7 @@ use TTDF\Compat\Typecho;
 use TTDF\Hooks\Hooks;
 use TTDF\Http\Response;
 use TTDF\Theme\Assets;
+use TTDF\Theme\Media;
 use TTDF\Theme\Settings;
 use Typecho\Db;
 
@@ -959,7 +960,7 @@ final class UserEconomy
             'level' => $index,
             'title' => $current['title'],
             'color' => $current['color'],
-            'icon' => Assets::url('img/' . $current['icon']),
+            'icon' => $current['icon'],
             'minExperience' => $current['min'],
             'nextTitle' => $next['title'] ?? '',
             'nextExperience' => $next['min'] ?? 0,
@@ -1185,14 +1186,22 @@ final class UserEconomy
 
     private static function levelIcon(string $value, int $position): string
     {
-        $icon = basename(trim($value));
-        if (in_array($icon, self::LEVEL_ICONS, true)) {
-            return $icon;
+        $value = trim($value);
+        if (
+            preg_match('/^[A-Za-z0-9._-]+\.svg$/D', $value) === 1
+            && in_array($value, self::LEVEL_ICONS, true)
+        ) {
+            return Assets::url('img/' . $value);
+        }
+
+        $url = Media::normalizeUrl($value);
+        if ($url !== '') {
+            return $url;
         }
 
         $index = max(0, min($position, count(self::LEVEL_ICONS) - 1));
 
-        return self::LEVEL_ICONS[$index];
+        return Assets::url('img/' . self::LEVEL_ICONS[$index]);
     }
 
     private static function label(string $key, string $fallback): string

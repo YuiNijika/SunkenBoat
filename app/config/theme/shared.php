@@ -849,25 +849,15 @@ $forumRightOptions = [
     ],
 ];
 
-$economyLevelIcons = [
-    'LV0.svg' => 'LV0',
-    'LV1.svg' => 'LV1',
-    'LV2.svg' => 'LV2',
-    'LV3.svg' => 'LV3',
-    'LV4.svg' => 'LV4',
-    'LV5.svg' => 'LV5',
-    'LV6.svg' => 'LV6',
-    'LV6_Lightning.svg' => 'LV6 闪电',
-];
 $economyLevelDefaults = [
-    1 => ['min' => 0, 'title' => 'LV0', 'color' => '#c0c0c0', 'icon' => 'LV0.svg'],
-    2 => ['min' => 200, 'title' => 'LV1', 'color' => '#c0c0c0', 'icon' => 'LV1.svg'],
-    3 => ['min' => 1500, 'title' => 'LV2', 'color' => '#8bd29b', 'icon' => 'LV2.svg'],
-    4 => ['min' => 4500, 'title' => 'LV3', 'color' => '#7bcdef', 'icon' => 'LV3.svg'],
-    5 => ['min' => 10800, 'title' => 'LV4', 'color' => '#febb8b', 'icon' => 'LV4.svg'],
-    6 => ['min' => 28800, 'title' => 'LV5', 'color' => '#ee672a', 'icon' => 'LV5.svg'],
-    7 => ['min' => 86400, 'title' => 'LV6', 'color' => '#ff0000', 'icon' => 'LV6.svg'],
-    8 => ['min' => 288000, 'title' => 'LV6 闪电', 'color' => '#ff0000', 'icon' => 'LV6_Lightning.svg'],
+    1 => ['min' => 0, 'title' => 'LV0', 'color' => '#c0c0c0', 'icon' => Assets::url('img/LV0.svg')],
+    2 => ['min' => 200, 'title' => 'LV1', 'color' => '#c0c0c0', 'icon' => Assets::url('img/LV1.svg')],
+    3 => ['min' => 1500, 'title' => 'LV2', 'color' => '#8bd29b', 'icon' => Assets::url('img/LV2.svg')],
+    4 => ['min' => 4500, 'title' => 'LV3', 'color' => '#7bcdef', 'icon' => Assets::url('img/LV3.svg')],
+    5 => ['min' => 10800, 'title' => 'LV4', 'color' => '#febb8b', 'icon' => Assets::url('img/LV4.svg')],
+    6 => ['min' => 28800, 'title' => 'LV5', 'color' => '#ee672a', 'icon' => Assets::url('img/LV5.svg')],
+    7 => ['min' => 86400, 'title' => 'LV6', 'color' => '#ff0000', 'icon' => Assets::url('img/LV6.svg')],
+    8 => ['min' => 288000, 'title' => 'LV6 闪电', 'color' => '#ff0000', 'icon' => Assets::url('img/LV6_Lightning.svg')],
 ];
 $economyLevelOptions = [];
 $economyLevels = [];
@@ -893,11 +883,12 @@ for ($level = 1; $level <= count($economyLevelDefaults); $level++) {
                 'placeholder' => '例如：核心成员',
             ],
             [
-                'type' => 'Select',
+                'type' => 'Text',
                 'name' => 'icon',
                 'label' => '等级图标',
                 'value' => $default['icon'],
-                'options' => $economyLevelIcons,
+                'media' => true,
+                'description' => '图片链接，可从媒体库选择；留空时按等级顺序使用主题内置 B 站图标。',
             ],
             [
                 'type' => 'ColorPicker',
