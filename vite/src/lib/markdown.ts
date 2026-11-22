@@ -256,3 +256,119 @@ export function renderMarkdown(value: string): string {
 
     return output.join('\n');
 }
+
+const EDITOR_SHORTCODE =
+    /\[(login|reply|alert|card|spoiler)\b([^\]]*)\]([\s\S]*?)\[\/\1\]/gi;
+
+function shortcodeAttributes(source: string): Record<string, string> {
+    const attributes: Record<string, string> = {};
+    const pattern = /([a-zA-Z][a-zA-Z0-9_-]*)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s]+))/g;
+    let match: RegExpExecArray | null;
+
+    while ((match = pattern.exec(source)) !== null) {
+        const name = (match[1] ?? '').toLowerCase();
+        if (name === '') {
+            continue;
+        }
+
+        attributes[name] = match[2] ?? match[3] ?? match[4] ?? '';
+    }
+
+    return attributes;
+}
+
+function insideCodeFence(source: string, index: number): boolean {
+    let fence = false;
+    for (const line of source.slice(0, index).split('\n')) {
+        if (/^\s*```/.test(line)) {
+            fence = !fence;
+        }
+    }
+
+    return fence;
+}
+
+function editorShortcode(
+    name: string,
+    attributes: Record<string, string>,
+    body: string
+): string {
+    const content = renderEditorPreview(body);
+
+    if (name === 'login' || name === 'reply') {
+        const reply = name === 'reply';
+        return (
+            `<section class="editor-shortcode-gate is-${name}" data-gate="${name}">`
+            + '<header class="editor-shortcode-gate-head">'
+            + `<span class="editor-shortcode-gate-badge">${reply ? '回复可见' : '登录可见'}</span>`
+            + `<span class="editor-shortcode-gate-note">${reply ? '发布后需在本篇评论后才能查看' : '发布后仅登录用户可查看'}</span>`
+            + '</header>'
+            + `<div class="editor-shortcode-gate-body">${content === '' ? '<p class="editor-shortcode-gate-empty">尚未填写隐藏内容。</p>' : content}</div>`
+            + '</section>'
+        );
+    }
+
+    if (name === 'alert') {
+        const requested = (attributes.type ?? 'info').toLowerCase();
+        const tone = ['info', 'success', 'warning', 'danger'].includes(requested)
+            ? requested
+            : 'info';
+        const title = (attributes.title ?? '').trim();
+        return (
+            `<div class="article-alert is-${tone}" role="note">`
+            + (title === '' ? '' : `<p class="article-alert-title">${escapeHtml(title)}</p>`)
+            + `<div class="article-alert-body">${content}</div>`
+            + '</div>'
+        );
+    }
+
+    if (name === 'card') {
+        const title = (attributes.title ?? '').trim();
+        return (
+            '<div class="article-card">'
+            + (title === '' ? '' : `<h3>${escapeHtml(title)}</h3>`)
+            + `<div class="article-card-body">${content}</div>`
+            + '</div>'
+        );
+    }
+
+    if (name === 'spoiler') {
+        const label = (attributes.label ?? '').trim() || '点击展开';
+        return (
+            '<details class="article-spoiler" open>'
+            + `<summary>${escapeHtml(label)}</summary>`
+            + `<div class="article-spoiler-body">${content}</div>`
+            + '</details>'
+        );
+    }
+
+    return body;
+}
+
+/**
+ * Editor preview renderer: Markdown plus the theme-owned shortcode set.
+ *
+ * The production renderer lives in PHP; this mirror exists so the writing
+ * area can show access gates, alerts, cards and spoilers before publishing.
+ */
+export function renderEditorPreview(value: string): string {
+    const pattern = new RegExp(EDITOR_SHORTCODE.source, EDITOR_SHORTCODE.flags);
+    const output: string[] = [];
+    let cursor = 0;
+    let match: RegExpExecArray | null;
+
+    while ((match = pattern.exec(value)) !== null) {
+        if (insideCodeFence(value, match.index)) {
+            continue;
+        }
+
+        const name = (match[1] ?? '').toLowerCase();
+        output.push(renderMarkdown(value.slice(cursor, match.index)));
+        output.push(editorShortcode(name, shortcodeAttributes(match[2] ?? ''), match[3] ?? ''));
+        cursor = match.index + match[0].length;
+    }
+
+    output.push(renderMarkdown(value.slice(cursor)));
+
+    return output.join('\n');
+}

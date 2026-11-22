@@ -15,7 +15,14 @@ import {
     UserRound,
 } from 'lucide-react';
 import { cssUrl } from '../../lib/css';
-import type { ForumCircle, PostSummary, UserSpaceComment, UserSpaceProfile } from '../../types';
+import LevelBadge from '../content/LevelBadge';
+import type {
+    ForumCircle,
+    ForumTopic,
+    PostSummary,
+    UserSpaceComment,
+    UserSpaceProfile,
+} from '../../types';
 
 const GROUP_LABELS: Record<string, string> = {
     administrator: '管理员',
@@ -32,7 +39,7 @@ const GENDER_LABELS: Record<string, string> = {
     other: '其他',
 };
 
-type SpaceTab = 'posts' | 'comments' | 'circles';
+type SpaceTab = 'posts' | 'topics' | 'comments' | 'circles';
 
 function joined(value: string): string {
     if (value === '') {
@@ -120,6 +127,42 @@ function SpaceCommentItem({ comment }: { comment: UserSpaceComment }) {
     );
 }
 
+function SpaceTopicItem({ topic }: { topic: ForumTopic }) {
+    return (
+        <article className="user-space-topic">
+            <a className="user-space-topic-link" href={topic.url}>
+                <span className="user-space-topic-top">
+                    {topic.kindLabel ? (
+                        <span className="user-space-topic-kind">{topic.kindLabel}</span>
+                    ) : null}
+                    {topic.circle ? (
+                        <span className="user-space-topic-circle">{topic.circle.name}</span>
+                    ) : null}
+                    {topic.pinned ? <span className="user-space-topic-pin">置顶</span> : null}
+                </span>
+                <strong className="user-space-topic-title">{topic.title}</strong>
+                {topic.excerpt ? (
+                    <span className="user-space-topic-excerpt">{topic.excerpt}</span>
+                ) : null}
+                <span className="user-space-topic-meta">
+                    <span>
+                        <MessageSquare aria-hidden="true" />
+                        {topic.comments}
+                    </span>
+                    <span>
+                        <Eye aria-hidden="true" />
+                        {topic.views}
+                    </span>
+                    <span>
+                        <Clock3 aria-hidden="true" />
+                        {topic.lastReplyText || topic.createdText}
+                    </span>
+                </span>
+            </a>
+        </article>
+    );
+}
+
 function SpaceCircleItem({ circle }: { circle: ForumCircle }) {
     return (
         <a className="user-space-circle" href={circle.url}>
@@ -164,11 +207,15 @@ function SpaceCircleGroup({ title, circles }: { title: string; circles: ForumCir
 export default function UserSpaceBlock({
     profile,
     posts,
+    topics,
+    topicCount,
     comments,
     circles,
 }: {
     profile: UserSpaceProfile;
     posts: PostSummary[];
+    topics: ForumTopic[];
+    topicCount: number;
     comments: UserSpaceComment[];
     circles: { joined: ForumCircle[]; created: ForumCircle[] };
 }) {
@@ -188,6 +235,7 @@ export default function UserSpaceBlock({
           }
         : undefined;
     const certified = profile.certification?.status === 'approved';
+    const forumEnabled = profile.circles !== undefined;
 
     return (
         <section className="user-space" aria-labelledby="user-space-title">
@@ -216,6 +264,15 @@ export default function UserSpaceBlock({
                                 <h1 id="user-space-title" className="user-space-name">
                                     {name}
                                 </h1>
+                                {profile.level ? (
+                                    <span className="user-space-level">
+                                        <LevelBadge
+                                            level={profile.level}
+                                            iconClassName="h-8 w-auto"
+                                            showTitle={false}
+                                        />
+                                    </span>
+                                ) : null}
                                 <span className="chip">
                                     <ShieldCheck
                                         className="size-3.5"
@@ -227,16 +284,17 @@ export default function UserSpaceBlock({
                                 {certified && profile.certification ? (
                                     <span
                                         className="chip border-[rgba(77,163,255,0.35)] bg-[rgba(77,163,255,0.1)] text-[#2d7dd2]"
-                                        title="已通过站点认证"
+                                        title={profile.certification.note || '已通过站点认证'}
                                     >
                                         <BadgeCheck
                                             className="size-3.5"
                                             strokeWidth={2}
                                             aria-hidden="true"
                                         />
-                                        {profile.certification.type === 'organization'
-                                            ? '组织认证'
-                                            : '个人认证'}
+                                        {profile.certification.name
+                                            || (profile.certification.type === 'organization'
+                                                ? '组织认证'
+                                                : '个人认证')}
                                     </span>
                                 ) : null}
                             </div>
@@ -328,6 +386,19 @@ export default function UserSpaceBlock({
                         文章
                         <span>{profile.posts}</span>
                     </button>
+                    {forumEnabled ? (
+                        <button
+                            type="button"
+                            role="tab"
+                            aria-selected={tab === 'topics'}
+                            aria-controls="user-space-panel"
+                            className={tab === 'topics' ? 'is-active' : ''}
+                            onClick={() => setTab('topics')}
+                        >
+                            帖子
+                            <span>{topicCount}</span>
+                        </button>
+                    ) : null}
                     <button
                         type="button"
                         role="tab"
@@ -355,6 +426,8 @@ export default function UserSpaceBlock({
                     <span className="user-space-tabs-note">
                         {tab === 'posts'
                             ? '最近发布的文章'
+                            : tab === 'topics'
+                              ? '最近发布的帖子'
                             : tab === 'comments'
                               ? '最近参与的讨论'
                               : '加入与创建的圈子'}
@@ -373,6 +446,19 @@ export default function UserSpaceBlock({
                             <div className="user-space-empty">
                                 <FileText aria-hidden="true" />
                                 <p>这个用户还没有发布文章。</p>
+                            </div>
+                        )
+                    ) : tab === 'topics' ? (
+                        topics.length > 0 ? (
+                            <div className="user-space-topic-grid">
+                                {topics.map((topic) => (
+                                    <SpaceTopicItem key={topic.id} topic={topic} />
+                                ))}
+                            </div>
+                        ) : (
+                            <div className="user-space-empty">
+                                <MessageSquare aria-hidden="true" />
+                                <p>这个用户还没有发布帖子。</p>
                             </div>
                         )
                     ) : tab === 'comments' ? (

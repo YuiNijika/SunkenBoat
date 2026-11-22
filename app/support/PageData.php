@@ -293,6 +293,7 @@ final class PageData
         $posts = self::spacePosts((int) ($profile['uid'] ?? 0), 12);
         $comments = self::spaceComments((int) ($profile['uid'] ?? 0), 12);
         $circles = Forum::userCircles((int) ($profile['uid'] ?? 0), 12);
+        $topics = Forum::userTopics((int) ($profile['uid'] ?? 0), 12);
 
         return [
             'kind' => 'user-space',
@@ -304,6 +305,8 @@ final class PageData
                     'type' => 'user-space',
                     'profile' => $profile,
                     'posts' => $posts,
+                    'topics' => $topics['items'],
+                    'topicCount' => $topics['total'],
                     'comments' => $comments,
                     'circles' => $circles,
                 ],

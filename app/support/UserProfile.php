@@ -479,6 +479,11 @@ final class UserProfile
             'location' => $detailsVisible ? (string) ($extra['location'] ?? '') : '',
         ];
 
+        $level = UserEconomy::levelSummary($uid);
+        if ($level !== null) {
+            $profile['level'] = $level;
+        }
+
         $circles = Forum::userCircleCounts($uid);
         if ($circles['enabled']) {
             $profile['circles'] = $circles['joined'] + $circles['created'];

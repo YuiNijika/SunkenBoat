@@ -932,6 +932,7 @@ export interface UserSpaceProfile {
     signature: string;
     gender: string;
     location: string;
+    level?: UserEconomyLevel | null;
     certificationEnabled?: boolean;
     certification?: UserCertification | null;
     editUrl?: string;
@@ -951,6 +952,8 @@ export interface UserSpaceBlock extends BlockBase {
     type: 'user-space';
     profile: UserSpaceProfile;
     posts: PostSummary[];
+    topics: ForumTopic[];
+    topicCount: number;
     comments: UserSpaceComment[];
     circles: {
         joined: ForumCircle[];

@@ -283,6 +283,28 @@ final class UserEconomy
     }
 
     /**
+     * Public level badge for profile surfaces. Balance, points and account
+     * status stay out of this payload.
+     *
+     * @return array<string, mixed>|null
+     */
+    public static function levelSummary(int $uid): ?array
+    {
+        $values = Settings::values();
+        if (
+            $uid <= 0
+            || ($values['Economy_Enabled'] ?? false) !== true
+            || !self::available()
+        ) {
+            return null;
+        }
+
+        $row = self::row($uid);
+
+        return self::levelFor((int) ($row['experience'] ?? 0), $values);
+    }
+
+    /**
      * @return array<string, mixed>
      */
     public static function handleSummary(array $data): array

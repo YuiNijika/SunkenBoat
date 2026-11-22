@@ -2,13 +2,13 @@
 
 /* Article gates */
 .content-gate {
-    margin: 20px 0;
+    margin: 12px 0;
     border-radius: 10px;
 }
 
 .content-gate-hero {
     overflow: hidden;
-    margin: 22px 0;
+    margin: 14px 0;
     border: 1px solid var(--line);
     border-radius: 8px;
     background: var(--surface-2);
@@ -18,8 +18,8 @@
 .content-gate-hero-inner {
     display: grid;
     justify-items: center;
-    gap: 10px;
-    padding: 26px 22px;
+    gap: 6px;
+    padding: 15px 18px;
     text-align: center;
 }
 
@@ -31,8 +31,8 @@
 
 .content-gate-icon {
     display: grid;
-    width: 44px;
-    height: 44px;
+    width: 34px;
+    height: 34px;
     flex: none;
     place-items: center;
     border: 1px solid var(--line);
@@ -42,14 +42,14 @@
 }
 
 .content-gate-icon svg {
-    width: 19px;
-    height: 19px;
+    width: 16px;
+    height: 16px;
 }
 
 .content-gate-title {
     margin: 0;
     color: var(--ink);
-    font-size: 15px;
+    font-size: 14px;
     font-weight: 600;
     line-height: 1.45;
 }
@@ -58,7 +58,7 @@
     display: block;
     width: min(440px, 100%);
     height: 1px;
-    margin: 10px 0;
+    margin: 6px 0;
     background: var(--line);
 }
 
@@ -66,18 +66,21 @@
     margin: 0;
     max-width: 38rem;
     color: var(--ink-mute);
-    font-size: 12.5px;
-    line-height: 1.75;
+    font-size: 12px;
+    line-height: 1.65;
 }
 
-.content-gate-btn {
+.content-gate-btn,
+.prose .content-gate-btn,
+.forum-prose .content-gate-btn,
+.ttdf-seo .content-gate-btn {
     display: inline-flex;
     flex: none;
     align-items: center;
     justify-content: center;
-    min-height: 32px;
-    margin-top: 4px;
-    padding: 0 14px;
+    min-height: 28px;
+    margin-top: 2px;
+    padding: 0 12px;
     border-radius: 6px;
     background: var(--accent);
     color: var(--accent-contrast);
@@ -87,14 +90,17 @@
     transition: background-color 160ms ease;
 }
 
-.content-gate-btn:hover {
+.content-gate-btn:hover,
+.prose .content-gate-btn:hover,
+.forum-prose .content-gate-btn:hover,
+.ttdf-seo .content-gate-btn:hover {
     background: var(--accent-strong);
     color: var(--accent-contrast);
 }
 
 @media (max-width: 720px) {
     .content-gate-hero-inner {
-        padding: 20px 18px;
+        padding: 13px 14px;
     }
 }
 
@@ -774,10 +780,22 @@ a.feature-card:hover {
 }
 
 .article-alert-title {
-    margin: 0 0 5px;
+    margin: 0 0 4px;
     color: var(--article-alert-ink);
     font-size: 13px;
     font-weight: 600;
+}
+
+.article-alert-body {
+    margin: 0;
+}
+
+.article-alert-body p {
+    margin-block: 0;
+}
+
+.article-alert-body > :empty {
+    display: none;
 }
 
 .article-alert-body > :first-child {
@@ -786,6 +804,10 @@ a.feature-card:hover {
 
 .article-alert-body > :last-child {
     margin-bottom: 0;
+}
+
+.article-alert-body > * + * {
+    margin-top: 0.55em;
 }
 
 .article-card {
@@ -810,6 +832,18 @@ a.feature-card:hover {
 
 .article-card-body > :last-child {
     margin-bottom: 0;
+}
+
+.article-card-body > :empty {
+    display: none;
+}
+
+.article-card-body p {
+    margin-block: 0;
+}
+
+.article-card-body p + p {
+    margin-top: 0.6em;
 }
 
 .article-spoiler {

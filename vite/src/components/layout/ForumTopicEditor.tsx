@@ -20,7 +20,7 @@ import {
     UserRound,
     X,
 } from 'lucide-react';
-import { renderMarkdown } from '../../lib/markdown';
+import { renderEditorPreview } from '../../lib/markdown';
 import { flashNotify, notifyError, notifySuccess } from '../../lib/notify';
 import { navigateApp } from '../../lib/appNavigation';
 import type { DownloadConfig } from '../../lib/downloads';
@@ -156,7 +156,7 @@ function TopicEditor({ editor }: { editor: ForumEditorData }) {
     const [dragging, setDragging] = useState(false);
     const textareaRef = useRef<HTMLTextAreaElement>(null);
     const stats = useMemo(() => countWords(content), [content]);
-    const previewHtml = useMemo(() => renderMarkdown(content), [content]);
+    const previewHtml = useMemo(() => renderEditorPreview(content), [content]);
     const circle = editor.circles.find((item) => item.id === selectedCircle) ?? editor.circle;
     const snapshot = JSON.stringify({
         circle: selectedCircle,

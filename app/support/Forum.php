@@ -3055,6 +3055,32 @@ final class Forum
     }
 
     /**
+     * Published topics written by one user, used by the public user space.
+     *
+     * @return array{items: list<array<string, mixed>>, total: int}
+     */
+    public static function userTopics(int $uid, int $limit = 12): array
+    {
+        $empty = ['items' => [], 'total' => 0];
+        if ($uid <= 0 || !self::enabled()) {
+            return $empty;
+        }
+
+        $result = self::topics([
+            'author' => $uid,
+            'page' => 1,
+            'perPage' => max(1, min(30, $limit)),
+            'viewer' => UserProfile::viewerUid(),
+            'sort' => 'latest',
+        ]);
+
+        return [
+            'items' => is_array($result['items'] ?? null) ? $result['items'] : [],
+            'total' => (int) ($result['pager']['total'] ?? 0),
+        ];
+    }
+
+    /**
      * @param array<string, mixed> $row
      * @param array<int, bool> $joined
      * @return array<string, mixed>

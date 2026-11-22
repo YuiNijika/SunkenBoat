@@ -39,7 +39,7 @@ import {
     resolveAttachmentPreview,
     stripMarkdownMarker,
 } from '../../lib/attachments';
-import { renderMarkdown } from '../../lib/markdown';
+import { renderEditorPreview } from '../../lib/markdown';
 import { notifyError, notifySuccess } from '../../lib/notify';
 import { errorMessage, readPayload } from '../../lib/user';
 import { termsFrom } from '../../lib/content';
@@ -381,7 +381,7 @@ export default function ContentEditor({
         [attachments, text]
     );
     const previewHtml = useMemo(
-        () => renderMarkdown(resolveAttachmentPreview(text, attachments)),
+        () => renderEditorPreview(resolveAttachmentPreview(text, attachments)),
         [attachments, text]
     );
 

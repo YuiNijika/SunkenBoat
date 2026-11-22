@@ -1,29 +1,32 @@
 import { useEffect, useState } from 'react';
 import {
+    CalendarCheck,
     CircleDot,
+    Coins,
     ExternalLink,
     FileText,
     LogOut,
     MessageSquare,
+    PenLine,
     Shield,
     ShieldCheck,
     UserRound,
+    Wallet,
 } from 'lucide-react';
 import { Button } from '../ui/button';
 import {
     DropdownMenu,
     DropdownMenuContent,
     DropdownMenuItem,
-    DropdownMenuLabel,
-    DropdownMenuSeparator,
     DropdownMenuTrigger,
 } from '../ui/dropdown-menu';
 import AuthDialog from './AuthDialog';
+import LevelBadge from '../content/LevelBadge';
 import UserAvatar from './UserAvatar';
 import { refreshApp } from '../../lib/appNavigation';
 import { notifyError, notifySuccess } from '../../lib/notify';
 import { errorMessage, profileFrom, readPayload } from '../../lib/user';
-import type { SiteInfo, UserApiEndpoints, UserProfile } from '../../types';
+import type { SiteInfo, UserApiEndpoints, UserEconomySummary, UserProfile } from '../../types';
 
 const GROUP_LABELS: Record<string, string> = {
     administrator: '管理员',
@@ -51,6 +54,7 @@ export default function UserCenter({ api, show, site }: Props) {
     const [checking, setChecking] = useState(true);
     const [submitting, setSubmitting] = useState(false);
     const [refreshKey, setRefreshKey] = useState(0);
+    const [economy, setEconomy] = useState<UserEconomySummary | null>(null);
 
     useEffect(() => {
         if (!show || !api?.enabled) {
@@ -163,6 +167,45 @@ export default function UserCenter({ api, show, site }: Props) {
         }
     }, [user, authOpen]);
 
+    useEffect(() => {
+        if (!user || !api?.economy?.enabled || !api.economy.summary) {
+            setEconomy(null);
+            return;
+        }
+
+        const controller = new AbortController();
+        let active = true;
+
+        void fetch(api.economy.summary, {
+            credentials: 'same-origin',
+            headers: {
+                Accept: 'application/json',
+                'X-Typecho-Token': api.economy.nonce,
+            },
+            signal: controller.signal,
+        })
+            .then((response) => readPayload(response))
+            .then((payload) => {
+                const summary = (payload?.data as { economy?: UserEconomySummary } | undefined)
+                    ?.economy;
+                if (active && summary) {
+                    setEconomy(summary);
+                }
+            })
+            .catch(() => undefined);
+
+        return () => {
+            active = false;
+            controller.abort();
+        };
+    }, [
+        user?.uid,
+        api?.economy?.enabled,
+        api?.economy?.summary,
+        api?.economy?.nonce,
+        refreshKey,
+    ]);
+
     if (!show || !api?.enabled) {
         return null;
     }
@@ -261,115 +304,202 @@ export default function UserCenter({ api, show, site }: Props) {
                         <DropdownMenuTrigger asChild>{trigger}</DropdownMenuTrigger>
                         <DropdownMenuContent
                             align="end"
-                            sideOffset={8}
-                            className="user-menu-content w-[min(320px,calc(100vw-24px))] border-line bg-surface p-2"
+                            sideOffset={10}
+                            className="user-menu-content w-[min(320px,calc(100vw-24px))] border-line bg-surface p-0"
                         >
-                            <DropdownMenuLabel className="p-0 font-normal">
-                                <div className="user-menu-profile">
-                                    <UserAvatar
-                                        name={user.screenName || user.name}
-                                        avatar={user.avatar}
-                                        className="user-menu-profile-avatar"
-                                    />
-                                    <div className="user-menu-profile-copy">
-                                        <div className="user-menu-profile-title">
-                                            <strong>{user.screenName || user.name}</strong>
-                                            <span className="user-menu-role">
-                                                {GROUP_LABELS[user.group] ?? user.group}
+                            <div className="user-menu-profile">
+                                <UserAvatar
+                                    name={user.screenName || user.name}
+                                    avatar={user.avatar}
+                                    className="user-menu-profile-avatar"
+                                />
+                                <div className="user-menu-profile-copy">
+                                    <div className="user-menu-profile-title">
+                                        <strong>{user.screenName || user.name}</strong>
+                                        {economy?.enabled ? (
+                                            <span className="user-menu-level">
+                                                <LevelBadge
+                                                    level={economy.level}
+                                                    iconClassName="h-5 w-auto"
+                                                    showTitle={false}
+                                                />
                                             </span>
-                                        </div>
-                                        <span className="user-menu-handle">@{user.name}</span>
+                                        ) : null}
+                                        <span className="user-menu-role">
+                                            {GROUP_LABELS[user.group] ?? user.group}
+                                        </span>
+                                    </div>
+                                    <span className="user-menu-handle">@{user.name}</span>
+                                    {user.signature ? (
+                                        <p className="user-menu-signature">{user.signature}</p>
+                                    ) : null}
+                                </div>
+                            </div>
+
+                            {economy?.enabled ? (
+                                <div className="user-menu-wallet">
+                                    <div className="user-menu-wallet-item">
+                                        <span>
+                                            <Wallet aria-hidden="true" />
+                                            {economy.labels.balance}
+                                        </span>
+                                        <strong>¥{economy.balance}</strong>
+                                    </div>
+                                    <div className="user-menu-wallet-item">
+                                        <span>
+                                            <Coins aria-hidden="true" />
+                                            {economy.labels.points}
+                                        </span>
+                                        <strong>{economy.points}</strong>
+                                    </div>
+                                    <div className="user-menu-wallet-item is-level">
+                                        <span>
+                                            <LevelBadge
+                                                level={economy.level}
+                                                iconClassName="h-3.5 w-auto"
+                                                showTitle={false}
+                                            />
+                                            等级
+                                        </span>
+                                        <strong>{economy.level.title}</strong>
                                     </div>
                                 </div>
-                                <div className="user-menu-stats">
-                                    <DropdownMenuItem asChild className="user-menu-stat">
-                                        <a
-                                            href={contentUrl}
-                                            title={`共 ${user.posts ?? 0} 篇文章`}
-                                        >
-                                            <span>
-                                                <FileText aria-hidden="true" />
-                                                文章
-                                            </span>
-                                            <strong>{user.posts ?? 0}</strong>
-                                        </a>
-                                    </DropdownMenuItem>
-                                    <DropdownMenuItem asChild className="user-menu-stat">
-                                        <a
-                                            href={contentUrl}
-                                            title={`共 ${user.comments ?? 0} 条评论`}
-                                        >
-                                            <span>
-                                                <MessageSquare aria-hidden="true" />
-                                                评论
-                                            </span>
-                                            <strong>{user.comments ?? 0}</strong>
-                                        </a>
-                                    </DropdownMenuItem>
-                                    <DropdownMenuItem asChild className="user-menu-stat">
-                                        <a
-                                            href={sitePath(site, 'circles')}
-                                            title={`加入 ${user.joinedCircles ?? 0} · 创建 ${user.createdCircles ?? 0}`}
-                                        >
-                                            <span>
-                                                <CircleDot aria-hidden="true" />
-                                                {forumLabel}
-                                            </span>
-                                            <strong>{user.circles ?? 0}</strong>
-                                        </a>
-                                    </DropdownMenuItem>
+                            ) : null}
+
+                            {economy?.enabled && economy.checkin.enabled ? (
+                                <a
+                                    href={profileUrl}
+                                    className={
+                                        'user-menu-checkin'
+                                        + (economy.checkin.checkedIn ? ' is-done' : '')
+                                    }
+                                >
+                                    <span className="user-menu-checkin-icon">
+                                        <CalendarCheck aria-hidden="true" />
+                                    </span>
+                                    <span className="user-menu-checkin-copy">
+                                        <strong>
+                                            {economy.checkin.checkedIn
+                                                ? '今日已签到'
+                                                : '今日尚未签到'}
+                                        </strong>
+                                        <span>
+                                            {economy.checkin.checkedIn
+                                                ? `连续 ${economy.checkin.streak} 天 · 累计 ${economy.checkin.total} 天`
+                                                : `可获经验 ${economy.checkin.rewards.experience} · ${economy.labels.points} ${economy.checkin.rewards.points}`}
+                                        </span>
+                                    </span>
+                                    <span className="user-menu-checkin-action">
+                                        {economy.checkin.checkedIn ? '已签到' : '去签到'}
+                                    </span>
+                                </a>
+                            ) : null}
+
+                            <div className="user-menu-stats">
+                                <DropdownMenuItem asChild className="user-menu-stat">
+                                    <a
+                                        href={contentUrl}
+                                        title={`共 ${user.posts ?? 0} 篇文章`}
+                                    >
+                                        <FileText aria-hidden="true" />
+                                        <strong>{user.posts ?? 0}</strong>
+                                        <span>文章</span>
+                                    </a>
+                                </DropdownMenuItem>
+                                <DropdownMenuItem asChild className="user-menu-stat">
+                                    <a
+                                        href={contentUrl}
+                                        title={`共 ${user.comments ?? 0} 条评论`}
+                                    >
+                                        <MessageSquare aria-hidden="true" />
+                                        <strong>{user.comments ?? 0}</strong>
+                                        <span>评论</span>
+                                    </a>
+                                </DropdownMenuItem>
+                                <DropdownMenuItem asChild className="user-menu-stat">
+                                    <a
+                                        href={sitePath(site, 'circles')}
+                                        title={`加入 ${user.joinedCircles ?? 0} · 创建 ${user.createdCircles ?? 0}`}
+                                    >
+                                        <CircleDot aria-hidden="true" />
+                                        <strong>{user.circles ?? 0}</strong>
+                                        <span>{forumLabel}</span>
+                                    </a>
+                                </DropdownMenuItem>
+                            </div>
+
+                            {api.operations?.enabled || user.group === 'administrator' ? (
+                                <div className="user-menu-secondary">
+                                    {api.operations?.enabled ? (
+                                        <DropdownMenuItem asChild className="user-menu-secondary-link">
+                                            <a href={api.operations.home}>
+                                                <ShieldCheck strokeWidth={1.8} aria-hidden="true" />
+                                                <span>运营中心</span>
+                                            </a>
+                                        </DropdownMenuItem>
+                                    ) : null}
+                                    {user.group === 'administrator' ? (
+                                        <DropdownMenuItem asChild className="user-menu-secondary-link">
+                                            <a href={adminUrl}>
+                                                <Shield strokeWidth={1.8} aria-hidden="true" />
+                                                <span>进入后台</span>
+                                            </a>
+                                        </DropdownMenuItem>
+                                    ) : null}
                                 </div>
-                            </DropdownMenuLabel>
-                            <DropdownMenuSeparator className="bg-line" />
-                            <DropdownMenuItem asChild className="user-menu-link">
-                                <a href={profileUrl}>
-                                    <UserRound strokeWidth={1.8} />
-                                    <span>用户中心</span>
-                                </a>
-                            </DropdownMenuItem>
-                            <DropdownMenuItem asChild className="user-menu-link">
-                                <a href={spaceUrl}>
-                                    <ExternalLink strokeWidth={1.8} />
-                                    <span>我的空间</span>
-                                </a>
-                            </DropdownMenuItem>
-                            {canOpenContent ? (
-                                <DropdownMenuItem asChild className="user-menu-link">
-                                    <a href={contentUrl}>
-                                        <FileText strokeWidth={1.8} />
-                                        <span>内容管理</span>
+                            ) : null}
+
+                            <div className="user-menu-actions">
+                                <DropdownMenuItem asChild className="user-menu-action">
+                                    <a href={profileUrl}>
+                                        <span className="user-menu-action-icon">
+                                            <UserRound strokeWidth={1.8} aria-hidden="true" />
+                                        </span>
+                                        <span>用户中心</span>
                                     </a>
                                 </DropdownMenuItem>
-                            ) : null}
-                            {api.operations?.enabled ? (
-                                <DropdownMenuItem asChild className="user-menu-link">
-                                    <a href={api.operations.home}>
-                                        <ShieldCheck strokeWidth={1.8} />
-                                        <span>运营中心</span>
+                                <DropdownMenuItem asChild className="user-menu-action">
+                                    <a href={spaceUrl}>
+                                        <span className="user-menu-action-icon">
+                                            <ExternalLink strokeWidth={1.8} aria-hidden="true" />
+                                        </span>
+                                        <span>我的空间</span>
                                     </a>
                                 </DropdownMenuItem>
-                            ) : null}
-                            {user.group === 'administrator' ? (
-                                <DropdownMenuItem asChild className="user-menu-link">
-                                    <a href={adminUrl}>
-                                        <Shield strokeWidth={1.8} />
-                                        <span>进入后台</span>
-                                    </a>
+                                {canOpenContent ? (
+                                    <DropdownMenuItem asChild className="user-menu-action">
+                                        <a href={contentUrl}>
+                                            <span className="user-menu-action-icon">
+                                                <PenLine strokeWidth={1.8} aria-hidden="true" />
+                                            </span>
+                                            <span>发布内容</span>
+                                        </a>
+                                    </DropdownMenuItem>
+                                ) : (
+                                    <DropdownMenuItem asChild className="user-menu-action">
+                                        <a href={sitePath(site, 'circles')}>
+                                            <span className="user-menu-action-icon">
+                                                <CircleDot strokeWidth={1.8} aria-hidden="true" />
+                                            </span>
+                                            <span>{forumLabel}</span>
+                                        </a>
+                                    </DropdownMenuItem>
+                                )}
+                                <DropdownMenuItem
+                                    className="user-menu-action user-menu-action-logout"
+                                    disabled={submitting}
+                                    onSelect={(event) => {
+                                        event.preventDefault();
+                                        void logout();
+                                    }}
+                                >
+                                    <span className="user-menu-action-icon">
+                                        <LogOut strokeWidth={1.8} aria-hidden="true" />
+                                    </span>
+                                    <span>{submitting ? '退出中…' : '退出登录'}</span>
                                 </DropdownMenuItem>
-                            ) : null}
-                            <DropdownMenuSeparator className="bg-line" />
-                            <DropdownMenuItem
-                                variant="destructive"
-                                className="user-menu-link user-menu-logout"
-                                disabled={submitting}
-                                onSelect={(event) => {
-                                    event.preventDefault();
-                                    void logout();
-                                }}
-                            >
-                                <LogOut strokeWidth={1.8} />
-                                {submitting ? '退出中…' : '退出登录'}
-                            </DropdownMenuItem>
+                            </div>
+
                         </DropdownMenuContent>
                     </DropdownMenu>
                 ) : (

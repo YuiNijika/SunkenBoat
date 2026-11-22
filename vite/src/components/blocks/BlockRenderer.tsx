@@ -437,6 +437,8 @@ export default function BlockRenderer({ block }: Props) {
                 <UserSpaceBlock
                     profile={block.profile}
                     posts={block.posts}
+                    topics={block.topics ?? []}
+                    topicCount={block.topicCount ?? 0}
                     comments={block.comments}
                     circles={block.circles}
                 />
