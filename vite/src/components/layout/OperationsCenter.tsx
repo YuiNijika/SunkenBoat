@@ -2412,6 +2412,7 @@ export default function OperationsCenter({ api, enabled }: Props) {
                                                     <LevelBadge
                                                         level={user.level}
                                                         iconClassName="h-4 w-auto"
+                                                        showTitle={false}
                                                     />
                                                 ) : (
                                                     '—'

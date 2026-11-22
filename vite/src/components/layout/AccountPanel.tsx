@@ -1086,10 +1086,11 @@ export default function AccountPanel({ api, section = 'profile' }: Props) {
                                     {profile.screenName || profile.name}
                                 </h2>
                                 {economy?.enabled ? (
-                                    <span className="account-profile-level" title={economy.level.title}>
+                                    <span className="account-profile-level">
                                         <LevelBadge
                                             level={economy.level}
                                             iconClassName="h-4.5 w-auto"
+                                            showTitle={false}
                                         />
                                     </span>
                                 ) : null}
@@ -1259,7 +1260,11 @@ export default function AccountPanel({ api, section = 'profile' }: Props) {
                             <p className="section-label">Account wallet</p>
                             <h3 className="mt-1.5 flex items-center gap-2 text-[18px] font-medium">
                                 {economy.enabled ? (
-                                    <LevelBadge level={economy.level} iconClassName="h-5 w-auto" />
+                                    <LevelBadge
+                                        level={economy.level}
+                                        iconClassName="h-5 w-auto"
+                                        showTitle={false}
+                                    />
                                 ) : (
                                     '账号状态'
                                 )}
