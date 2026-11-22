@@ -38,6 +38,7 @@ import {
     CommentEntry,
     CommentSection,
 } from '../content/CommentSection';
+import type { CommentSortOrder } from '../content/CommentSection';
 import MediaLibrary from '../content/MediaLibrary';
 import DownloadCard from '../content/DownloadCard';
 import ShareSheet from '../content/ShareSheet';
@@ -1523,7 +1524,6 @@ function ForumReplyEntry({
             contentHtml={reply.contentHtml}
             createdText={reply.createdText}
             depth={depth}
-            childCount={reply.children.length}
             onReply={onReply ? () => onReply(reply) : undefined}
         >
             {reply.children.map((child) => (
@@ -1748,6 +1748,7 @@ export function ForumTopicBlock({
     const [shareOpen, setShareOpen] = useState(false);
     const [comment, setComment] = useState('');
     const [replyTo, setReplyTo] = useState<ForumReply | null>(null);
+    const [replySort, setReplySort] = useState<CommentSortOrder>('latest');
     const [busy, setBusy] = useState(false);
     const [manageBusy, setManageBusy] = useState('');
     const [deleteOpen, setDeleteOpen] = useState(false);
@@ -1768,6 +1769,23 @@ export function ForumTopicBlock({
     });
     const contentRef = useRef<HTMLDivElement | null>(null);
     const textarea = useRef<HTMLTextAreaElement | null>(null);
+
+    const sortedReplies = useMemo(() => {
+        const list = [...replies];
+        list.sort((left, right) => {
+            if (left.created !== right.created) {
+                return replySort === 'latest'
+                    ? right.created - left.created
+                    : left.created - right.created;
+            }
+
+            return replySort === 'latest'
+                ? right.id - left.id
+                : left.id - right.id;
+        });
+
+        return list;
+    }, [replies, replySort]);
 
     useEffect(() => {
         if (contentRef.current === null) {
@@ -2440,6 +2458,8 @@ export function ForumTopicBlock({
                         count={replyCount}
                         hint="友善交流，支持 Markdown"
                         className="mt-[15px]"
+                        sortOrder={replySort}
+                        onSortChange={setReplySort}
                     >
                         {viewer.loggedIn && forum.permissions.reply ? (
                             <CommentComposer
@@ -2520,9 +2540,9 @@ export function ForumTopicBlock({
                             }}
                         />
 
-                        {replies.length > 0 ? (
-                            <ul className="border-t border-line">
-                                {replies.map((reply) => (
+                        {sortedReplies.length > 0 ? (
+                            <ul className="comment-list">
+                                {sortedReplies.map((reply) => (
                                     <ForumReplyEntry
                                         key={reply.id}
                                         reply={reply}

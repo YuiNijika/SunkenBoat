@@ -237,6 +237,18 @@
     background: transparent;
 }
 
+.comment-content img[src*=".hdslb.com/bfs/garb/"],
+.comment-content img[src*=".hdslb.com/bfs/emote/"] {
+    display: inline-block;
+    width: auto;
+    max-width: 50px;
+    max-height: 50px;
+    margin: 0.1em 0.12em;
+    border-radius: 0;
+    vertical-align: middle;
+    background: transparent;
+}
+
 .forum-prose blockquote {
     padding: 0.55em 0.9em;
     border-left: 3px solid var(--accent);

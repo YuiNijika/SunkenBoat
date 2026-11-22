@@ -9,6 +9,7 @@ import {
     CommentEntry,
     CommentSection,
 } from '../content/CommentSection';
+import type { CommentSortOrder } from '../content/CommentSection';
 import { memeShortcode } from '../content/MemePicker';
 import type { MemeItem } from '../content/MemePicker';
 import MarkdownToolbar from '../content/MarkdownToolbar';
@@ -61,14 +62,33 @@ function formatCommentTime(value: string): string {
         return value;
     }
 
-    return new Intl.DateTimeFormat('zh-CN', {
-        year: 'numeric',
-        month: '2-digit',
-        day: '2-digit',
-        hour: '2-digit',
-        minute: '2-digit',
-        hour12: false,
-    }).format(date);
+    const now = new Date();
+    const diff = Math.max(0, now.getTime() - date.getTime());
+    const minute = 60_000;
+    const hour = 3_600_000;
+    const day = 86_400_000;
+    const dateStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const targetStart = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+    const dayDiff = Math.round((dateStart.getTime() - targetStart.getTime()) / day);
+    const pad = (part: number): string => String(part).padStart(2, '0');
+
+    if (diff < minute) {
+        return '刚刚';
+    }
+    if (diff < hour) {
+        return `${Math.floor(diff / minute)} 分钟前`;
+    }
+    if (dayDiff === 0) {
+        return `${Math.floor(diff / hour)} 小时前`;
+    }
+    if (dayDiff === 1) {
+        return '昨天';
+    }
+    if (date.getFullYear() === now.getFullYear()) {
+        return `${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+    }
+
+    return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
 }
 
 function insertMediaMarkdown(
@@ -321,6 +341,7 @@ export default function CommentsBlock({ data }: Props) {
     const [url, setUrl] = useState(data.remember.url);
     const [captcha, setCaptcha] = useState<CaptchaValue | null>(null);
     const [expanded, setExpanded] = useState(!data.collapsed);
+    const [sortOrder, setSortOrder] = useState<CommentSortOrder>('latest');
     const [authMode, setAuthMode] = useState<'login' | 'register' | null>(null);
     const formRef = useRef<HTMLFormElement>(null);
     const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -400,7 +421,16 @@ export default function CommentsBlock({ data }: Props) {
             replies.set(root.coid, list);
         }
 
-        roots.sort((left, right) => left.created.localeCompare(right.created));
+        roots.sort((left, right) => {
+            const comparison = left.created.localeCompare(right.created);
+            if (comparison !== 0) {
+                return sortOrder === 'latest' ? -comparison : comparison;
+            }
+
+            return sortOrder === 'latest'
+                ? right.coid - left.coid
+                : left.coid - right.coid;
+        });
         for (const list of replies.values()) {
             list.sort((left, right) => left.created.localeCompare(right.created));
         }
@@ -410,7 +440,7 @@ export default function CommentsBlock({ data }: Props) {
             replies,
             authors: new Map(comments.map((comment) => [comment.coid, comment.author || '匿名'])),
         };
-    }, [comments]);
+    }, [comments, sortOrder]);
 
     const handleReply = (comment: ApiComment) => {
         if (data.requireLogin && !data.loggedIn) {
@@ -483,13 +513,16 @@ export default function CommentsBlock({ data }: Props) {
     const previewCount = 3;
     const visibleRoots = expanded ? threads.roots : threads.roots.slice(0, previewCount);
     const hiddenCount = threads.roots.length - visibleRoots.length;
+    const countValue = data.countText.match(/\d+/)?.[0] ?? '';
 
     return (
         <CommentSection
             id="comments"
             title={title}
-            count={data.countText}
+            count={countValue}
             hint="友善交流，支持 Markdown"
+            sortOrder={data.apiEnabled ? sortOrder : undefined}
+            onSortChange={data.apiEnabled ? setSortOrder : undefined}
         >
             {!data.apiEnabled ? (
                 <LegacyComments data={data} />
@@ -675,7 +708,7 @@ export default function CommentsBlock({ data }: Props) {
                             ))}
                         </div>
                     ) : threads.roots.length > 0 ? (
-                        <ul className="border-t border-line" ref={listRef}>
+                        <ul className="comment-list" ref={listRef}>
                             {visibleRoots.map((comment) => {
                                 const replies =
                                     threads.replies.get(comment.coid) ?? [];
@@ -699,7 +732,6 @@ export default function CommentsBlock({ data }: Props) {
                                         contentHtml={
                                             comment.html || comment.text
                                         }
-                                        childCount={replies.length}
                                         onReply={() => handleReply(comment)}
                                     >
                                         {replies.map((reply) => (

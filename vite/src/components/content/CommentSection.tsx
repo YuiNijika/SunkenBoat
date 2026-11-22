@@ -1,5 +1,6 @@
+import { Children } from 'react';
 import type { FormEvent, ReactNode, RefObject } from 'react';
-import { BadgeCheck, MessageCircle } from 'lucide-react';
+import { BadgeCheck, MessageCircle, MessageSquareText } from 'lucide-react';
 import MarkdownToolbar from './MarkdownToolbar';
 import { memeShortcode } from './MemePicker';
 import type { MemeItem } from './MemePicker';
@@ -15,18 +16,14 @@ function cx(...parts: Array<string | false | null | undefined>): string {
 function safeAuthorUrl(value?: string): string {
     const url = (value ?? '').trim();
     if (
-        url === '' ||
-        url.startsWith('//') ||
-        /[\u0000-\u0020\u007f\\]/.test(url)
+        url === ''
+        || url.startsWith('//')
+        || /[\u0000-\u0020\u007f\\]/.test(url)
     ) {
         return '';
     }
 
-    if (/^(?:https?:\/\/|\/(?!\/))/i.test(url)) {
-        return url;
-    }
-
-    return '';
+    return /^(?:https?:\/\/|\/(?!\/))/i.test(url) ? url : '';
 }
 
 function insertMemeMarkdown(
@@ -42,8 +39,9 @@ function insertMemeMarkdown(
 
     const start = textarea.selectionStart ?? textarea.value.length;
     const end = textarea.selectionEnd ?? start;
-    const next = textarea.value.slice(0, start) + snippet + textarea.value.slice(end);
-    onChange(next);
+    onChange(
+        textarea.value.slice(0, start) + snippet + textarea.value.slice(end)
+    );
     window.requestAnimationFrame(() => {
         textarea.focus();
         const cursor = start + snippet.length;
@@ -60,11 +58,15 @@ export interface CommentAuthor {
     badge?: string;
 }
 
+export type CommentSortOrder = 'latest' | 'oldest';
+
 interface CommentSectionProps {
     id?: string;
     title: string;
     count?: ReactNode;
     hint?: ReactNode;
+    sortOrder?: CommentSortOrder;
+    onSortChange?: (order: CommentSortOrder) => void;
     children: ReactNode;
     className?: string;
 }
@@ -74,25 +76,60 @@ export function CommentSection({
     title,
     count,
     hint,
+    sortOrder,
+    onSortChange,
     children,
     className,
 }: CommentSectionProps) {
     return (
-        <section id={id} className={cx('surface-card overflow-hidden', className)}>
-            <header className="flex flex-wrap items-center gap-2 border-b border-line px-4 py-3">
-                <h2 className="text-[14px] font-semibold text-ink">
-                    {title}
+        <section id={id} className={cx('comment-panel', className)}>
+            <header className="comment-panel-head">
+                <div className="comment-panel-heading">
+                    <span className="comment-panel-icon" aria-hidden="true">
+                        <MessageSquareText strokeWidth={1.8} />
+                    </span>
+                    <h2 className="comment-panel-title">{title}</h2>
                     {count !== undefined && count !== null && count !== '' ? (
-                        <span className="ml-1 text-[12px] font-normal text-ink-faint">
-                            {count}
-                        </span>
+                        <span className="comment-panel-count">{count}</span>
                     ) : null}
-                </h2>
-                {hint ? (
-                    <span className="text-[10.5px] text-ink-faint">{hint}</span>
-                ) : null}
+                </div>
+                <div className="comment-panel-tools">
+                    {hint ? <span className="comment-panel-hint">{hint}</span> : null}
+                    {sortOrder && onSortChange ? (
+                        <div
+                            className="comment-sort"
+                            role="group"
+                            aria-label="评论排序"
+                        >
+                            <button
+                                type="button"
+                                className={
+                                    sortOrder === 'latest'
+                                        ? 'comment-sort-button is-active'
+                                        : 'comment-sort-button'
+                                }
+                                aria-pressed={sortOrder === 'latest'}
+                                onClick={() => onSortChange('latest')}
+                            >
+                                最新
+                            </button>
+                            <button
+                                type="button"
+                                className={
+                                    sortOrder === 'oldest'
+                                        ? 'comment-sort-button is-active'
+                                        : 'comment-sort-button'
+                                }
+                                aria-pressed={sortOrder === 'oldest'}
+                                onClick={() => onSortChange('oldest')}
+                            >
+                                最早
+                            </button>
+                        </div>
+                    ) : null}
+                </div>
             </header>
-            {children}
+            <div className="comment-panel-body">{children}</div>
         </section>
     );
 }
@@ -159,34 +196,33 @@ export function CommentComposer({
         <form
             ref={formRef}
             id="comment-form"
-            className={cx('forum-composer px-3 py-3 sm:px-4 sm:py-4', className)}
+            className={cx('comment-composer', className)}
             onSubmit={onSubmit}
         >
-            <div className="flex items-start gap-3">
+            <div className="comment-composer-layout">
                 <UserAvatar
                     name={authorName}
                     avatar={avatar?.avatar}
                     fallbackImage={avatar?.fallbackImage}
-                    className="size-9 sm:size-10"
+                    className="comment-composer-avatar"
                 />
-                <div className="min-w-0 flex-1">
+                <div className="comment-composer-main">
                     {replyTo ? (
-                        <div className="mb-2 flex items-center gap-2 rounded-[5px] bg-brand-soft px-2.5 py-1.5 text-[11px] text-brand">
-                            <span className="truncate">正在回复 {replyTo.label}</span>
-                            <button
-                                type="button"
-                                className="ml-auto shrink-0"
-                                onClick={replyTo.onCancel}
-                            >
+                        <div className="comment-composer-reply">
+                            <span>
+                                正在回复 <strong>@{replyTo.label}</strong>
+                            </span>
+                            <button type="button" onClick={replyTo.onCancel}>
                                 取消
                             </button>
                         </div>
                     ) : null}
-                    <div className="rounded-[10px] border border-line bg-surface-2/60 p-2.5">
+
+                    <div className="comment-composer-box">
                         <Textarea
                             ref={textareaRef}
                             id={id}
-                            className="min-h-[84px] resize-y border-0 bg-transparent p-1 text-[13px] shadow-none focus-visible:ring-0"
+                            className="comment-composer-input"
                             value={value}
                             onChange={(event) => onChange(event.target.value)}
                             aria-label={label}
@@ -194,7 +230,7 @@ export function CommentComposer({
                             required
                             disabled={disabled || busy}
                         />
-                        <div className="mt-2 flex flex-wrap items-center gap-x-1 gap-y-1.5 border-t border-line pt-2">
+                        <div className="comment-composer-tools">
                             <MarkdownToolbar
                                 target={textareaRef}
                                 onChange={onChange}
@@ -210,25 +246,33 @@ export function CommentComposer({
                                 disabled={disabled || busy}
                             />
                             {quickReply}
-                            <span className="ml-auto hidden text-[10px] text-ink-faint sm:inline">
-                                {footerNote ?? '请勿发布违法或侵权内容'}
-                            </span>
-                            <Button
-                                type="submit"
-                                className="h-8 rounded-[5px] px-3 text-[11.5px]"
-                                disabled={
-                                    disabled
-                                    || busy
-                                    || submitDisabled
-                                    || value.trim() === ''
-                                }
-                            >
-                                {busy ? busyLabel : submitLabel}
-                            </Button>
                         </div>
                     </div>
-                    {guestFields ? <div className="mt-2.5">{guestFields}</div> : null}
-                    {verification ? <div className="mt-2.5">{verification}</div> : null}
+
+                    {guestFields ? (
+                        <div className="comment-composer-extra">{guestFields}</div>
+                    ) : null}
+                    {verification ? (
+                        <div className="comment-composer-extra">{verification}</div>
+                    ) : null}
+
+                    <div className="comment-composer-footer">
+                        <span className="comment-composer-note">
+                            {footerNote ?? '请勿发布违法或侵权内容'}
+                        </span>
+                        <Button
+                            type="submit"
+                            className="comment-composer-submit"
+                            disabled={
+                                disabled
+                                || busy
+                                || submitDisabled
+                                || value.trim() === ''
+                            }
+                        >
+                            {busy ? busyLabel : submitLabel}
+                        </Button>
+                    </div>
                 </div>
             </div>
         </form>
@@ -243,10 +287,49 @@ interface CommentEntryProps {
     createdIso?: string;
     replyToLabel?: string;
     children?: ReactNode;
-    childCount?: number;
     depth?: number;
     onReply?: () => void;
     replyLabel?: string;
+}
+
+function AuthorName({ author }: { author: CommentAuthor }) {
+    const name = author.name.trim() || '匿名';
+    const url = safeAuthorUrl(author.url);
+
+    return url ? (
+        <a
+            className="comment-author"
+            href={url}
+            target="_blank"
+            rel="nofollow ugc noreferrer"
+        >
+            {name}
+        </a>
+    ) : (
+        <span className="comment-author">{name}</span>
+    );
+}
+
+function AuthorBadges({ author }: { author: CommentAuthor }) {
+    return (
+        <>
+            {author.verified ? (
+                <BadgeCheck
+                    className="comment-verified"
+                    strokeWidth={2.05}
+                    aria-label={author.groupLabel || '认证用户'}
+                />
+            ) : null}
+            {author.badge ? (
+                <span className="comment-badge comment-badge-owner">
+                    {author.badge}
+                </span>
+            ) : null}
+            {author.groupLabel ? (
+                <span className="comment-badge">{author.groupLabel}</span>
+            ) : null}
+        </>
+    );
 }
 
 export function CommentEntry({
@@ -257,94 +340,104 @@ export function CommentEntry({
     createdIso,
     replyToLabel,
     children,
-    childCount = 0,
     depth = 0,
     onReply,
     replyLabel = '回复',
 }: CommentEntryProps) {
-    const authorName = author.name.trim() || '匿名';
-    const authorUrl = safeAuthorUrl(author.url);
-    const authorText = authorUrl ? (
-        <a
-            className="truncate text-[12.5px] font-semibold text-ink hover:text-brand"
-            href={authorUrl}
-            target="_blank"
-            rel="nofollow ugc noreferrer"
-        >
-            {authorName}
-        </a>
-    ) : (
-        <span className="truncate text-[12.5px] font-semibold text-ink">
-            {authorName}
-        </span>
-    );
+    const hasChildren = Children.count(children) > 0;
+
+    if (depth > 0) {
+        return (
+            <li
+                id={commentId !== undefined ? `comment-${commentId}` : undefined}
+                className="comment-reply-item"
+            >
+                <div className="comment-reply-body">
+                    <div className="comment-reply-copy">
+                        <span className="comment-reply-head">
+                            <AuthorName author={author} />
+                            <AuthorBadges author={author} />
+                            {replyToLabel ? (
+                                <span className="comment-reply-at">
+                                    回复 @{replyToLabel}
+                                </span>
+                            ) : null}
+                            <span className="comment-reply-colon">：</span>
+                            <time
+                                className="comment-reply-time"
+                                dateTime={createdIso}
+                            >
+                                {createdText}
+                            </time>
+                        </span>
+                        <div
+                            className="comment-reply-content"
+                            dangerouslySetInnerHTML={{ __html: contentHtml }}
+                        />
+                    </div>
+                    {onReply ? (
+                        <button
+                            type="button"
+                            className="comment-reply-action"
+                            onClick={onReply}
+                            title={replyLabel}
+                            aria-label={replyLabel}
+                        >
+                            <MessageCircle strokeWidth={1.8} />
+                        </button>
+                    ) : null}
+                </div>
+                {hasChildren ? children : null}
+            </li>
+        );
+    }
 
     return (
         <li
             id={commentId !== undefined ? `comment-${commentId}` : undefined}
-            className={cx(
-                'px-4 py-4',
-                depth > 0
-                    ? 'ml-2 border-t border-line sm:ml-5'
-                    : 'border-t border-line first:border-t-0'
-            )}
+            className="comment-item"
         >
-            <div className="flex items-start gap-3">
+            <div className="comment-item-shell">
                 <UserAvatar
-                    name={authorName}
+                    name={author.name.trim() || '匿名'}
                     avatar={author.avatar}
-                    className={depth > 0 ? 'size-8' : 'size-9'}
+                    className="comment-avatar-react"
                 />
-                <div className="min-w-0 flex-1">
-                    <div className="flex flex-wrap items-center gap-1.5">
-                        {authorText}
-                        {author.verified ? (
-                            <BadgeCheck
-                                className="size-3.5 text-[#4da3ff]"
-                                strokeWidth={2.1}
-                                aria-label={author.groupLabel || '认证用户'}
-                            />
-                        ) : null}
-                        {author.badge ? (
-                            <span className="rounded-full bg-brand-soft px-1.5 py-0.5 text-[9px] font-medium text-brand">
-                                {author.badge}
-                            </span>
-                        ) : null}
-                        {author.groupLabel ? (
-                            <span className="rounded-full bg-surface-2 px-1.5 py-0.5 text-[9px] text-ink-faint">
-                                {author.groupLabel}
-                            </span>
-                        ) : null}
+                <div className="comment-item-main">
+                    <div className="comment-item-head">
+                        <div className="comment-item-author-row">
+                            <AuthorName author={author} />
+                            <AuthorBadges author={author} />
+                        </div>
                         <time
-                            className="ml-auto text-[10.5px] text-ink-faint"
+                            className="comment-item-time"
                             dateTime={createdIso}
                         >
                             {createdText}
                         </time>
                     </div>
-                    {replyToLabel ? (
-                        <p className="mt-1 text-[11px] text-ink-faint">
-                            回复 <span className="text-brand">@{replyToLabel}</span>
-                        </p>
-                    ) : null}
+
                     <div
-                        className="prose forum-prose forum-reply-prose mt-1.5 text-[13px]"
+                        className="comment-content"
                         dangerouslySetInnerHTML={{ __html: contentHtml }}
                     />
-                    <div className="mt-1.5 flex items-center gap-3 text-[10.5px] text-ink-faint">
-                        {onReply ? (
+
+                    {onReply ? (
+                        <div className="comment-actions">
                             <button
                                 type="button"
-                                className="inline-flex items-center gap-1 hover:text-brand"
+                                className="comment-action"
                                 onClick={onReply}
                             >
-                                <MessageCircle className="size-3" strokeWidth={1.8} />
-                                {replyLabel}
+                                <MessageCircle strokeWidth={1.8} />
+                                <span>{replyLabel}</span>
                             </button>
-                        ) : null}
-                        {childCount > 0 ? <span>{childCount} 条回复</span> : null}
-                    </div>
-                    {children ? <ul className="mt-1">{children}</ul> : null}
+                        </div>
+                    ) : null}
+
+                    {hasChildren ? (
+                        <ul className="comment-replies">{children}</ul>
+                    ) : null}
                 </div>
             </div>
         </li>
@@ -353,7 +446,7 @@ export function CommentEntry({
 
 export function CommentEmpty({ image, text }: { image?: string; text: string }) {
     return (
-        <div className="forum-empty-replies border-t border-line px-4 py-8">
+        <div className="comment-empty">
             {image ? (
                 <img src={image} alt="" loading="lazy" decoding="async" />
             ) : null}
@@ -377,27 +470,32 @@ export function CommentLoginGate({
     registerUrl = '',
     registerEnabled = false,
 }: CommentLoginGateProps) {
-    const loginClass =
-        'h-8 rounded-[4px] border-brand px-4 text-[12px] font-medium text-brand hover:bg-brand-soft hover:text-brand';
-    const registerClass =
-        'h-8 rounded-[4px] bg-brand px-4 text-[12px] font-medium text-brand-contrast hover:bg-brand-strong';
-
     return (
-        <div className="comment-login-gate border-t border-line px-4 py-5">
+        <div className="comment-login-gate">
             <div className="comment-login-gate-panel">
-                <p className="comment-login-gate-title">请先登录！</p>
-                <div className="mt-3 flex flex-wrap items-center justify-center gap-2">
+                <span className="comment-login-gate-icon" aria-hidden="true">
+                    <MessageSquareText strokeWidth={1.7} />
+                </span>
+                <p className="comment-login-gate-title">登录后参与讨论</p>
+                <p className="comment-login-gate-text">
+                    登录后可以回复、补充内容并接收后续动态。
+                </p>
+                <div className="comment-login-gate-actions">
                     {onLogin ? (
                         <Button
                             type="button"
                             variant="outline"
-                            className={loginClass}
+                            className="comment-login-button"
                             onClick={onLogin}
                         >
                             登录
                         </Button>
                     ) : loginUrl !== '' ? (
-                        <Button asChild variant="outline" className={loginClass}>
+                        <Button
+                            asChild
+                            variant="outline"
+                            className="comment-login-button"
+                        >
                             <a href={loginUrl}>登录</a>
                         </Button>
                     ) : null}
@@ -405,13 +503,16 @@ export function CommentLoginGate({
                     {registerEnabled && onRegister ? (
                         <Button
                             type="button"
-                            className={registerClass}
+                            className="comment-login-button comment-login-button-primary"
                             onClick={onRegister}
                         >
                             快速注册
                         </Button>
                     ) : registerEnabled && registerUrl !== '' ? (
-                        <Button asChild className={registerClass}>
+                        <Button
+                            asChild
+                            className="comment-login-button comment-login-button-primary"
+                        >
                             <a href={registerUrl}>快速注册</a>
                         </Button>
                     ) : null}
