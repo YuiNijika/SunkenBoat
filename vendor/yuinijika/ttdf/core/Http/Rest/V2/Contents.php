@@ -144,7 +144,7 @@ final class Contents
             $cid,
             (int) $rows['authorId'],
             $body,
-            is_array($input['attachments'] ?? null) ? (array) $input['attachments'] : [],
+            array_values(is_array($input['attachments'] ?? null) ? $input['attachments'] : []),
             $authorId
         );
         $this->storeBody($cid, $body, $attachments);
@@ -262,7 +262,7 @@ final class Contents
             $cid,
             (int) ($rows['authorId'] ?? $current['authorId']),
             $body,
-            is_array($input['attachments'] ?? null) ? (array) $input['attachments'] : [],
+            array_values(is_array($input['attachments'] ?? null) ? $input['attachments'] : []),
             $actorId
         );
         $this->storeBody($cid, $body, $attachments);

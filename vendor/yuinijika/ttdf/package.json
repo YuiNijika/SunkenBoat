@@ -1,9 +1,9 @@
 {
   "name": "@yuinijika/ttdf-static",
-  "version": "5.0.5-next",
+  "version": "5.0.8-next",
   "private": true,
   "type": "module",
-  "description": "Legacy build tooling. Admin UI sources live in frontend/options and build into static/assets.",
+  "description": "Admin UI sources live in frontend/options and build directly into static/.",
   "scripts": {
     "test:ui": "node -e \"console.log('Run pnpm test:ui in frontend/options')\""
   },
