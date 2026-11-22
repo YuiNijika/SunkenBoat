@@ -3,6 +3,7 @@ logs/*
 !logs/.htaccess
 !logs/index.php
 *.log
+logs/*.log
 .tmp/
 .agents/
 $null
