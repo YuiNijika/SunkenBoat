@@ -47,18 +47,6 @@ return [
                     ],
                     [
                         'type' => 'Select',
-                        'name' => 'User_Article_Group',
-                        'value' => 'editor',
-                        'inline' => true,
-                        'label' => '前台发布文章权限',
-                        'description' => '控制哪些用户组可以进入用户中心的内容管理并发布文章。该选项同时影响前台编辑器入口、文章管理接口和媒体上传入口。',
-                        'options' => [
-                            'editor' => '编辑及以上',
-                            'administrator' => '仅管理员',
-                        ],
-                    ],
-                    [
-                        'type' => 'Select',
                         'name' => 'Avatar_Source',
                         'value' => 'gravatar',
                         'inline' => true,

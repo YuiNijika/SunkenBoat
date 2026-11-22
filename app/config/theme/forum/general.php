@@ -113,15 +113,6 @@ return [
                     ],
                     [
                         'type' => 'Switch',
-                        'name' => 'Forum_Topic_Review',
-                        'value' => false,
-                        'inline' => true,
-                        'show_when' => ['Forum_Switch' => true],
-                        'label' => '普通用户发帖需要审核',
-                        'description' => '开启后，普通用户发布的新帖会先进入待审核；管理员与编辑发布的内容直接公开。',
-                    ],
-                    [
-                        'type' => 'Switch',
                         'name' => 'Forum_Tag_Input',
                         'value' => true,
                         'inline' => true,

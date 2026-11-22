@@ -10,7 +10,7 @@ return [
     'title' => '论坛&圈子',
     'tabs' => [
         'general' => require __DIR__ . '/forum/general.php',
-        'layout' => require __DIR__ . '/forum/layout.php',
         'access' => require __DIR__ . '/forum/access.php',
+        'layout' => require __DIR__ . '/forum/layout.php',
     ],
 ];

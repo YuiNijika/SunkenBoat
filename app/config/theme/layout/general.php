@@ -141,14 +141,6 @@ return [
             ],
             [
                 'type' => 'Switch',
-                'name' => 'Comments_Require_Login',
-                'value' => false,
-                'inline' => true,
-                'label' => '评论需要登录',
-                'description' => '仅作用于文章与独立页面；论坛回复始终要求登录。开启后未登录读者只能查看评论，提交前会显示登录与注册入口。',
-            ],
-            [
-                'type' => 'Switch',
                 'name' => 'Comments_Memes',
                 'value' => true,
                 'inline' => true,
