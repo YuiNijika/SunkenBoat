@@ -11,6 +11,5 @@ return [
     'tabs' => [
         'content' => require __DIR__ . '/access/content.php',
         'circle' => require __DIR__ . '/access/circle.php',
-        'limits' => require __DIR__ . '/access/limits.php',
     ],
 ];

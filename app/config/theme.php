@@ -28,7 +28,6 @@ return [
     'Forum' => require __DIR__ . '/theme/forum.php',
     'Mail' => require __DIR__ . '/theme/mail.php',
     'Access' => require __DIR__ . '/theme/access.php',
-    'Download' => require __DIR__ . '/theme/download.php',
     'Payment' => require __DIR__ . '/theme/payment.php',
     'Runtime' => require __DIR__ . '/theme/runtime.php',
 ];

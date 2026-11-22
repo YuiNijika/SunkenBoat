@@ -69,6 +69,13 @@ final class API
             Downloads::paymentNotify();
         }
 
+        if ($endpoint === 'payment/ping') {
+            Response::success([
+                'reachable' => true,
+                'time' => time(),
+            ]);
+        }
+
         if ($method !== 'GET') {
             Response::error('Method not allowed', 405);
         }

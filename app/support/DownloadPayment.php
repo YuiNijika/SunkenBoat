@@ -28,6 +28,39 @@ final class DownloadPayment
         'custom' => '其他易支付兼容平台',
     ];
 
+    /**
+     * Gateways disagree on the payment type label, so callbacks are matched
+     * through a small alias table instead of a strict string comparison.
+     *
+     * @var array<string, string>
+     */
+    private const TYPE_ALIASES = [
+        'ali' => 'alipay',
+        'alipay' => 'alipay',
+        'wechat' => 'wxpay',
+        'weixin' => 'wxpay',
+        'wechatpay' => 'wxpay',
+        'wxpay' => 'wxpay',
+        'qq' => 'qqpay',
+        'qqpay' => 'qqpay',
+        'tenpay' => 'qqpay',
+    ];
+
+    /**
+     * Informational fields some compatible gateways echo back without signing
+     * them. Verification retries without these keys before giving up.
+     *
+     * @var list<string>
+     */
+    private const UNSIGNED_HINTS = [
+        'sitename',
+        'addtime',
+        'endtime',
+        'param',
+        'buyer',
+        'api_trade_no',
+    ];
+
     public static function configured(): bool
     {
         if (self::enabled() === false) {
@@ -70,6 +103,24 @@ final class DownloadPayment
         $rate = is_array($config) ? (int) ($config['rate'] ?? 100) : 100;
 
         return max(1, min(100000, $rate));
+    }
+
+    /**
+     * Lowest amount a paid download order may use, in cents.
+     */
+    public static function minimumCents(): int
+    {
+        $value = Settings::values()['Downloads_Payment_Min_Amount'] ?? 0.01;
+        if (!is_numeric($value)) {
+            return 1;
+        }
+
+        return max(1, min(99999999, (int) round((float) $value * 100)));
+    }
+
+    public static function minimumAmount(): string
+    {
+        return Downloads::formatAmount(self::minimumCents());
     }
 
     /**
@@ -179,8 +230,8 @@ final class DownloadPayment
         $number = (string) ($input['out_trade_no'] ?? '');
         $trade = (string) ($input['trade_no'] ?? '');
         if (
-            strtoupper((string) ($input['sign_type'] ?? 'MD5')) !== 'MD5'
-            || (string) ($input['trade_status'] ?? '') !== 'TRADE_SUCCESS'
+            strtoupper(trim((string) ($input['sign_type'] ?? 'MD5'))) !== 'MD5'
+            || strtoupper(trim((string) ($input['trade_status'] ?? ''))) !== 'TRADE_SUCCESS'
             || preg_match('/^SK[0-9]{14}[A-F0-9]{16}$/D', $number) !== 1
             || preg_match('/^[A-Za-z0-9_-]{1,100}$/D', $trade) !== 1
             || preg_match('/^[a-f0-9]{32}$/Di', $signature) !== 1
@@ -194,12 +245,25 @@ final class DownloadPayment
         }
 
         $pid = (string) ($input['pid'] ?? '');
-        $type = strtolower((string) ($input['type'] ?? ''));
+        $type = self::normalizeType((string) ($input['type'] ?? ''));
+        $candidates = [];
+        $preferred = null;
         foreach (self::gatewayChannels() as $channel) {
-            if ($pid !== $channel['id'] || ($type !== '' && $type !== $channel['method'])) {
+            if ($pid !== $channel['id']) {
                 continue;
             }
-            if (!hash_equals(self::sign($input, $channel['key']), strtolower($signature))) {
+            if ($type === '' || $type === $channel['method']) {
+                $preferred = $channel;
+                break;
+            }
+            $candidates[] = $channel;
+        }
+        if ($preferred !== null) {
+            array_unshift($candidates, $preferred);
+        }
+
+        foreach ($candidates as $channel) {
+            if (!self::signatureMatches($input, strtolower($signature), $channel['key'])) {
                 continue;
             }
 
@@ -384,5 +448,56 @@ final class DownloadPayment
         }
 
         return md5(implode('&', $parts) . $key);
+    }
+
+    private static function normalizeType(string $type): string
+    {
+        $type = strtolower(trim($type));
+
+        return self::TYPE_ALIASES[$type] ?? $type;
+    }
+
+    private static function signatureMatches(array $input, string $signature, string $key): bool
+    {
+        foreach (self::signatureVariants($input) as $params) {
+            if (hash_equals(self::sign($params, $key), $signature)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Full callback payload first, then payloads with likely unsigned extras
+     * removed. Core fields such as pid, out_trade_no and money are never
+     * dropped, so this only widens tolerance for provider metadata.
+     *
+     * @return list<array<string, mixed>>
+     */
+    private static function signatureVariants(array $input): array
+    {
+        $variants = [$input];
+        $present = array_values(array_filter(
+            self::UNSIGNED_HINTS,
+            static fn (string $name): bool => array_key_exists($name, $input)
+        ));
+        if ($present === []) {
+            return $variants;
+        }
+
+        $withoutAll = $input;
+        foreach ($present as $name) {
+            unset($withoutAll[$name]);
+        }
+        $variants[] = $withoutAll;
+
+        foreach ($present as $name) {
+            $variant = $input;
+            unset($variant[$name]);
+            $variants[] = $variant;
+        }
+
+        return $variants;
     }
 }

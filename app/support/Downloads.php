@@ -291,6 +291,14 @@ final class Downloads
             if ($amount === null || $amount <= 0) {
                 Response::error('付费金额配置无效，请联系发布者', 500);
             }
+            $minimum = DownloadPayment::minimumCents();
+            if ($amount < $minimum) {
+                Response::error(
+                    '付费金额不能低于最低支付金额 ¥' . DownloadPayment::minimumAmount(),
+                    422,
+                    ['price' => '当前资源售价低于站点配置的最低支付金额']
+                );
+            }
 
             $pending = DownloadStore::latestOrder($uid, $contentType, $contentId, 'pending');
             if (
@@ -563,21 +571,47 @@ final class Downloads
 
     public static function paymentNotify(): never
     {
+        $input = strtoupper((string) ($_SERVER['REQUEST_METHOD'] ?? 'GET')) === 'POST'
+            ? $_POST
+            : $_GET;
+
         try {
-            $input = strtoupper((string) ($_SERVER['REQUEST_METHOD'] ?? 'GET')) === 'POST'
-                ? $_POST
-                : $_GET;
             $result = DownloadPayment::verify($input);
-            $order = $result === null
-                ? null
-                : DownloadStore::markPaid(
+            if ($result === null) {
+                $claimed = (string) ($input['out_trade_no'] ?? '');
+                if (preg_match('/^SK[0-9]{14}[A-F0-9]{16}$/D', $claimed) === 1) {
+                    error_log(
+                        'SunkenBoat payment notification rejected: signature or payload check failed for '
+                        . $claimed
+                    );
+                }
+                $order = null;
+            } else {
+                $order = DownloadStore::markPaid(
                     $result['number'],
                     $result['trade'],
                     $result['amount']
                 );
+            }
         } catch (\Throwable $exception) {
-            error_log('SunkenBoat payment notification failed: ' . $exception->getMessage());
-            $order = null;
+            // The table may not exist yet on a fresh install; create it once and retry.
+            try {
+                DownloadStore::install();
+                $order = isset($result) && is_array($result)
+                    ? DownloadStore::markPaid($result['number'], $result['trade'], $result['amount'])
+                    : null;
+            } catch (\Throwable $retry) {
+                error_log('SunkenBoat payment notification failed: ' . $retry->getMessage());
+                $order = null;
+            }
+        }
+
+        if ($order === null && isset($result) && is_array($result)) {
+            error_log(
+                'SunkenBoat payment notification could not settle order '
+                . $result['number']
+                . ' (amount or trade mismatch)'
+            );
         }
 
         if ($order === null) {

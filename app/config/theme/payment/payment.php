@@ -86,16 +86,63 @@ $gatewayChannel = static function (string $label, string $description): array {
     ];
 };
 
+$notifyPath = '/ttdf/sunken/payment/notify';
+try {
+    $base = rtrim(\TTDF\Compat\Typecho::indexUrl() ?: \TTDF\Compat\Typecho::siteUrl(), '/');
+    if ($base !== '') {
+        $notifyPath = $base . $notifyPath;
+    }
+} catch (\Throwable) {
+    // Settings can also be loaded outside a booted Typecho request.
+}
+
 return [
     'title' => '支付设置',
-    'description' => '支付服务与下载、充值等场景共用同一套收款配置。',
+    'description' => '下载开关、每日免费额度、最低支付金额与收款渠道都在这里配置；付费下载记录在用户中心「下载记录」中查看。',
     'fields' => [
         [
             'type' => 'Switch',
             'name' => 'Downloads_Payment_Enabled',
             'value' => false,
+            'inline' => true,
+            'inline_group' => 'payment-base',
             'label' => '启用支付服务',
-            'description' => '开启后，付费下载与其他需要收款的功能可以使用支付网关或账户余额结算。',
+            'description' => '开启后，付费下载可以使用支付网关或账户余额结算。',
+        ],
+        [
+            'type' => 'Number',
+            'name' => 'Downloads_Payment_Min_Amount',
+            'value' => 0.01,
+            'inline' => true,
+            'inline_group' => 'payment-base',
+            'show_when' => ['Downloads_Payment_Enabled' => true],
+            'label' => '最低支付金额（元）',
+            'description' => '单笔付费下载不能低于此金额；低于该值的资源不会生成支付订单。',
+            'min' => 0.01,
+            'max' => 999999.99,
+            'step' => 0.01,
+        ],
+        [
+            'type' => 'Switch',
+            'name' => 'Downloads_Enabled',
+            'value' => false,
+            'inline' => true,
+            'inline_group' => 'download-base',
+            'label' => '启用下载',
+            'description' => '开启后，文章与帖子可以添加下载资源；未登录用户只能看到下载入口。',
+        ],
+        [
+            'type' => 'Number',
+            'name' => 'Downloads_Free_Daily_Limit',
+            'value' => 3,
+            'inline' => true,
+            'inline_group' => 'download-base',
+            'show_when' => ['Downloads_Enabled' => true],
+            'label' => '每日免费下载次数',
+            'description' => '每位登录用户每天可免费领取的次数，文章与帖子共用；填写 0 表示不限次数。',
+            'min' => 0,
+            'max' => 999,
+            'step' => 1,
         ],
         [
             'type' => 'Accordion',
@@ -103,7 +150,7 @@ return [
             'value' => [],
             'show_when' => ['Downloads_Payment_Enabled' => true],
             'label' => '付款方式',
-            'description' => '展开需要的付款方式后分别配置。可同时启用多种方式，结算页会按渠道展示付款入口。',
+            'description' => '点击展开需要的方式后分别填写；可同时启用多种方式，结算页会按渠道展示付款入口。',
             'options' => [
                 'alipay' => $gatewayChannel(
                     '支付宝',
@@ -152,6 +199,12 @@ return [
                     ],
                 ],
             ],
+        ],
+        [
+            'type' => 'Html',
+            'content' => '<div class="ttdf-pay-notify">支付平台回调地址（异步通知）：<code>'
+                . \TTDF\Support\Escaper::html($notifyPath)
+                . '</code><br>请把该地址原样填入支付平台的异步通知 / notify_url；同步跳转地址由每笔订单自动生成。</div>',
         ],
     ],
 ];
