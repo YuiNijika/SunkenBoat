@@ -1,6 +1,39 @@
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Check, ChevronDown, Languages, Menu, Moon, Search, Sun, X } from 'lucide-react';
+import {
+    BookOpen,
+    Bookmark,
+    CalendarDays,
+    Check,
+    ChevronDown,
+    CircleDot,
+    Compass,
+    Download,
+    FileText,
+    Flame,
+    Folder,
+    Globe,
+    Heart,
+    House,
+    Info,
+    Languages,
+    Link2,
+    Mail,
+    Menu,
+    MessageSquare,
+    Moon,
+    Newspaper,
+    Search,
+    Shield,
+    Sparkles,
+    Star,
+    Sun,
+    Tag,
+    UserRound,
+    Users,
+    X,
+    Zap,
+} from 'lucide-react';
 import { useLocation } from 'react-router-dom';
 import { useTheme } from '../../lib/theme';
 import { onSearchOpen } from '../../lib/search';
@@ -33,6 +66,46 @@ function navClass(item: NavItem): string {
             ? 'text-brand before:absolute before:inset-x-0 before:top-0 before:h-[5px] before:rounded-b-[15px] before:bg-brand before:opacity-100'
             : 'text-ink-soft hover:text-brand hover:before:absolute hover:before:inset-x-0 hover:before:top-0 hover:before:h-[5px] hover:before:rounded-b-[15px] hover:before:bg-brand hover:before:opacity-100')
     );
+}
+
+const NAV_ICONS = {
+    home: House,
+    house: House,
+    'file-text': FileText,
+    'message-square': MessageSquare,
+    users: Users,
+    user: UserRound,
+    circle: CircleDot,
+    compass: Compass,
+    newspaper: Newspaper,
+    download: Download,
+    folder: Folder,
+    tag: Tag,
+    calendar: CalendarDays,
+    'book-open': BookOpen,
+    bookmark: Bookmark,
+    star: Star,
+    sparkles: Sparkles,
+    flame: Flame,
+    heart: Heart,
+    globe: Globe,
+    link: Link2,
+    mail: Mail,
+    shield: Shield,
+    info: Info,
+    zap: Zap,
+} as const;
+
+function NavIcon({ name, className = 'size-3.5' }: { name?: string; className?: string }) {
+    if (!name) {
+        return null;
+    }
+    const Icon = NAV_ICONS[name as keyof typeof NAV_ICONS];
+    if (!Icon) {
+        return null;
+    }
+
+    return <Icon className={className} strokeWidth={1.8} aria-hidden="true" />;
 }
 
 export default function SiteHeader({ site, colorMode, widgets, api, showUserCenter }: Props) {
@@ -228,6 +301,7 @@ export default function SiteHeader({ site, colorMode, widgets, api, showUserCent
                                     aria-current={item.active ? 'page' : undefined}
                                     aria-haspopup={item.children?.length ? 'true' : undefined}
                                 >
+                                    <NavIcon name={item.icon} />
                                     {item.label}
                                     {item.children?.length ? (
                                         <ChevronDown
@@ -251,6 +325,7 @@ export default function SiteHeader({ site, colorMode, widgets, api, showUserCent
                                                     href={child.url}
                                                     aria-current={child.active ? 'page' : undefined}
                                                 >
+                                                    <NavIcon name={child.icon} />
                                                     {child.label}
                                                 </a>
                                             </li>
@@ -416,6 +491,7 @@ export default function SiteHeader({ site, colorMode, widgets, api, showUserCent
                                         aria-current={item.active ? 'page' : undefined}
                                         onClick={() => setMenuOpen(false)}
                                     >
+                                        <NavIcon name={item.icon} className="size-4" />
                                         <span>{item.label}</span>
                                         {item.children?.length ? (
                                             <ChevronDown
@@ -440,6 +516,10 @@ export default function SiteHeader({ site, colorMode, widgets, api, showUserCent
                                                         }
                                                         onClick={() => setMenuOpen(false)}
                                                     >
+                                                        <NavIcon
+                                                            name={child.icon}
+                                                            className="size-3.5"
+                                                        />
                                                         {child.label}
                                                     </a>
                                                 </li>

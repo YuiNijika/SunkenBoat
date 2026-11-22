@@ -12,10 +12,14 @@ export interface DownloadsClient {
     paymentEnabled: boolean;
     balanceEnabled: boolean;
     balanceLabel: string;
+    pointsEnabled: boolean;
+    pointsLabel: string;
+    pointsRate: number;
     nonce: string;
     endpoints: {
         order: string;
         balance: string;
+        points: string;
         status: string;
         download: string;
         history: string;
@@ -254,6 +258,26 @@ export async function payDownloadWithBalance({
     const data = await requestDownload({
         client,
         endpoint: client.endpoints.balance,
+        method: 'POST',
+        body: { orderNumber },
+        signal,
+    });
+
+    return orderFrom(data.order);
+}
+
+export async function payDownloadWithPoints({
+    client,
+    orderNumber,
+    signal,
+}: {
+    client: DownloadsClient;
+    orderNumber: string;
+    signal?: AbortSignal;
+}): Promise<DownloadOrder> {
+    const data = await requestDownload({
+        client,
+        endpoint: client.endpoints.points,
         method: 'POST',
         body: { orderNumber },
         signal,

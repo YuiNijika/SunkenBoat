@@ -1,0 +1,74 @@
+/* tokens */
+
+/*
+ * SunkenBoat design tokens and content typography.
+ *
+ * This file is always loaded by the PHP shell, so it must stay valid without
+ * the Vite build: it defines every runtime token Tailwind reads, plus the
+ * markup Typecho renders on its own (post body, pager, comments). Layout
+ * utilities come from assets/dist.
+ */
+
+:root {
+    color-scheme: light;
+
+    --bg: #f5f6f7;
+    --surface: #ffffff;
+    --surface-2: #f6f7f8;
+    --surface-3: #eeeeee;
+    --ink: #333333;
+    --ink-soft: #4e5358;
+    --ink-mute: #777777;
+    --ink-faint: #999999;
+    --line: rgba(50, 50, 50, 0.06);
+
+    --accent: #2563eb;
+    --accent-strong: #1d4ed8;
+    --accent-contrast: #ffffff;
+    --accent-soft: rgba(37, 99, 235, 0.1);
+
+    --status-info: #2563eb;
+    --status-info-soft: rgba(37, 99, 235, 0.09);
+    --status-info-line: rgba(37, 99, 235, 0.22);
+    --status-success: #15803d;
+    --status-success-soft: rgba(21, 128, 61, 0.09);
+    --status-success-line: rgba(21, 128, 61, 0.22);
+    --status-warning: #b45309;
+    --status-warning-soft: rgba(180, 83, 9, 0.1);
+    --status-warning-line: rgba(180, 83, 9, 0.24);
+    --status-danger: #b42318;
+    --status-danger-soft: rgba(180, 35, 24, 0.09);
+    --status-danger-line: rgba(180, 35, 24, 0.22);
+
+    /* Banner gradient always ends dark so white copy stays readable. */
+    --hero-from: color-mix(in oklab, var(--accent) 82%, #0b1120);
+    --hero-to: color-mix(in oklab, var(--accent) 48%, #070c17);
+
+    --footer-bg: #22292d;
+    --footer-ink: #e5e5e5;
+    --footer-line: rgba(255, 255, 255, 0.08);
+
+    --elevation-card: 0 0 10px rgba(116, 116, 116, 0.08);
+    --elevation-pop: 0 12px 28px -12px rgba(0, 0, 0, 0.18);
+
+    --r-card: 8px;
+    --r-ctl: 4px;
+
+    --font-sans-stack: ui-sans-serif, system-ui, -apple-system, "Segoe UI", "PingFang SC",
+        "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans SC", sans-serif;
+    --font-mono-stack: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas,
+        "Liberation Mono", monospace;
+
+    --code-bg: #17181a;
+    --code-head: #1f2022;
+    --code-border: #35383d;
+    --code-ink: #d6d8dc;
+    --code-muted: #8c9098;
+    --code-keyword: #c792ea;
+    --code-string: #c3e88d;
+    --code-number: #f78c6c;
+    --code-title: #82aaff;
+    --code-builtin: #89ddff;
+    --code-variable: #f07178;
+    --code-comment: #7f848e;
+}

@@ -1,0 +1,30 @@
+/* page width */
+
+/* Page width and full-bleed blocks */
+.page-wide-stack {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0;
+    margin-bottom: 0;
+}
+
+.page-wide-half,
+.page-wide-full {
+    min-width: 0;
+}
+
+.page-wide-half {
+    width: 100%;
+    max-width: var(--page-max, 81.25rem);
+    margin-inline: auto;
+    padding-inline: clamp(15px, 2vw, 24px);
+}
+
+.page-wide-full {
+    width: 100%;
+}
+
+.page-wide-full .hero-block,
+.page-wide-full .carousel-block {
+    border-radius: 0;
+}

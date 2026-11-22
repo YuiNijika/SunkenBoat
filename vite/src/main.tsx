@@ -1,5 +1,6 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
+import { TooltipProvider } from './components/ui/tooltip';
 import { readInitialPayload, ThemeRouter } from './lib/router';
 import 'nprogress/nprogress.css';
 import './styles/app.css';
@@ -18,7 +19,9 @@ if (mount && initial) {
 
     createRoot(mount).render(
         <StrictMode>
-            <ThemeRouter initial={initial} />
+            <TooltipProvider>
+                <ThemeRouter initial={initial} />
+            </TooltipProvider>
         </StrictMode>
     );
 } else {

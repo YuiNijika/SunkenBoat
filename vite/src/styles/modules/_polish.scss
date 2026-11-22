@@ -1,0 +1,49 @@
+/* polish */
+
+/* Interaction polish */
+.user-space-signature,
+.user-space-meta,
+.forum-prose,
+.forum-reply-prose {
+    overflow-wrap: anywhere;
+}
+
+.forum-rail-action:active:not(:disabled) .forum-rail-icon {
+    transform: translateY(0) scale(0.94);
+}
+
+.user-space-tabs button,
+.account-section-nav a {
+    transition:
+        color 0.18s ease,
+        background-color 0.18s ease,
+        border-color 0.18s ease;
+}
+
+/* Image tiles: keep the crop centered and avoid transform flicker while the
+   hover zoom is running. */
+.post-list-thumb img,
+.gallery-item img,
+.media-tile img,
+.user-space-post-thumb img,
+.search-panel-thumb img {
+    display: block;
+    object-position: center;
+    backface-visibility: hidden;
+    -webkit-backface-visibility: hidden;
+}
+
+.post-list-thumb img,
+.gallery-item img,
+.media-tile img,
+.user-space-post-thumb img {
+    will-change: transform;
+}
+
+@media (max-width: 640px) {
+    .content-tabs {
+        width: 100%;
+        flex-wrap: wrap;
+        overflow: visible;
+    }
+}

@@ -1,0 +1,53 @@
+/* typecho */
+
+/* Typecho renders the pager and comment actions without theme hooks. */
+.page-navigator {
+    display: block;
+    margin: 0;
+    padding: 20px 0;
+    list-style: none;
+    text-align: center;
+}
+
+.page-navigator li {
+    display: inline-block;
+}
+
+.page-navigator li > a,
+.page-navigator li > span {
+    display: inline-block;
+    margin: 3px;
+    padding: 6px 9px 5px;
+    border: 0;
+    border-radius: 3px;
+    background: rgba(136, 136, 136, 0.1);
+    color: var(--ink-mute);
+    font-size: 14px;
+    line-height: 1.4;
+    text-decoration: none;
+    transition: color 150ms ease, background-color 150ms ease;
+}
+
+.page-navigator li > a:hover {
+    color: var(--accent);
+    background: var(--accent-soft);
+}
+
+.page-navigator li.current > a {
+    background: var(--accent);
+    color: var(--accent-contrast);
+}
+
+.post-nav-link a,
+.cancel-comment-reply a,
+.comment-reply a {
+    color: var(--ink-soft);
+    text-decoration: none;
+    transition: color 150ms ease;
+}
+
+.post-nav-link a:hover,
+.cancel-comment-reply a:hover,
+.comment-reply a:hover {
+    color: var(--accent);
+}

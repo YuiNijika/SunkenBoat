@@ -4,6 +4,13 @@ export interface ApiPayload {
     data?: unknown;
     message?: string;
     errors?: Record<string, unknown>;
+    meta?: {
+        page?: number;
+        pageSize?: number;
+        total?: number;
+        lastPage?: number;
+        [key: string]: unknown;
+    };
 }
 
 const MESSAGES: Record<string, string> = {

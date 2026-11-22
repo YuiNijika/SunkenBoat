@@ -22,6 +22,7 @@ export default defineConfig({
     assetsDir: '',
     emptyOutDir: true,
     manifest: true,
+    cssMinify: 'esbuild',
     target: 'es2022',
     rollupOptions: {
       input: 'src/main.tsx',

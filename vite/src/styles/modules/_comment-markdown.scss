@@ -1,0 +1,118 @@
+/* comment markdown */
+
+/* Comment markdown */
+.comment-content-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+}
+
+.comment-content-row .comment-content {
+    min-width: 0;
+    flex: 1 1 auto;
+}
+
+.comment-content-row .comment-reply-btn {
+    flex: 0 0 auto;
+    margin-top: 10px;
+}
+
+.comments-more {
+    display: flex;
+    justify-content: center;
+    padding: 16px 20px 20px;
+}
+
+.comment-legacy.is-collapsed > .comment-list > .comment-item:nth-of-type(n + 4) {
+    display: none;
+}
+
+.comment-field-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 4px 12px;
+}
+
+.comment-field-hint {
+    color: var(--ink-faint);
+    font-size: 11px;
+    line-height: 1.5;
+}
+
+.markdown-editor {
+    overflow: hidden;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: var(--surface);
+}
+
+.markdown-toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 2px;
+    padding: 4px 6px;
+    border-bottom: 1px solid var(--line);
+    background: var(--surface-2);
+}
+
+.markdown-toolbar-btn {
+    color: var(--ink-mute);
+}
+
+.markdown-toolbar-btn:hover {
+    color: var(--ink);
+}
+
+.markdown-editor textarea.markdown-input {
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
+}
+
+.comment-body pre {
+    overflow-x: auto;
+    margin: 10px 0;
+    padding: 12px 14px;
+    border: 1px solid var(--code-border);
+    border-radius: 6px;
+    background: var(--code-bg);
+    color: var(--code-ink);
+    font-size: 12px;
+    line-height: 1.65;
+}
+
+.comment-body code {
+    padding: 1px 4px;
+    border-radius: 3px;
+    background: var(--surface-3);
+    font-family: var(--font-mono-stack);
+    font-size: 0.92em;
+}
+
+.comment-body pre code {
+    padding: 0;
+    background: transparent;
+    font-size: inherit;
+}
+
+.comment-body a {
+    color: var(--accent);
+    text-decoration: underline;
+    text-underline-offset: 2px;
+}
+
+.comment-body blockquote {
+    margin: 8px 0;
+    padding: 2px 12px;
+    border-left: 3px solid var(--accent);
+    color: var(--ink-mute);
+}
+
+.comment-body ul,
+.comment-body ol {
+    margin: 6px 0;
+    padding-left: 20px;
+}

@@ -1,0 +1,322 @@
+/* post lists */
+
+/* Post list layouts */
+.post-list-thumb {
+    position: relative;
+    display: block;
+    overflow: hidden;
+    border-radius: 8px;
+    background: var(--surface-3);
+}
+
+.post-list-thumb img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    transition: transform 0.3s ease;
+}
+
+.post-list-large:hover .post-list-thumb img,
+.post-list-row:hover .post-list-thumb img {
+    transform: scale(1.03);
+}
+
+.post-list-thumb-fallback {
+    display: grid;
+    width: 100%;
+    height: 100%;
+    place-items: center;
+    color: var(--accent);
+    font-size: 18px;
+    font-weight: 600;
+}
+
+.post-list-meta {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 10px;
+    margin-top: auto;
+    padding-top: 8px;
+    color: var(--ink-faint);
+    font-size: 11px;
+}
+
+.post-list-meta span {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.post-list-meta svg {
+    width: 12px;
+    height: 12px;
+}
+
+.post-list-large {
+    display: flex;
+    min-width: 0;
+    flex-direction: column;
+    overflow: hidden;
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    background: var(--surface);
+    box-shadow: var(--elevation-card);
+}
+
+.post-list-large-media {
+    position: relative;
+    display: block;
+    aspect-ratio: 16 / 10;
+    overflow: hidden;
+}
+
+.post-list-large-media .post-list-thumb {
+    width: 100%;
+    height: 100%;
+    border-radius: 0;
+}
+
+.post-list-large-tag {
+    position: absolute;
+    top: 10px;
+    left: 10px;
+    padding: 2px 8px;
+    border-radius: 4px;
+    background: rgba(8, 12, 20, 0.62);
+    color: #fff;
+    font-size: 11px;
+    backdrop-filter: blur(6px);
+}
+
+.post-list-large-body {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    padding: 12px 14px 14px;
+}
+
+.post-list-large-body h3 {
+    display: -webkit-box;
+    overflow: hidden;
+    margin: 0;
+    font-size: 15px;
+    font-weight: 600;
+    line-height: 1.45;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 1;
+}
+
+.post-list-large-body h3 a {
+    color: var(--ink);
+    text-decoration: none;
+}
+
+.post-list-large-body h3 a:hover {
+    color: var(--accent);
+}
+
+.post-list-large-body p {
+    display: -webkit-box;
+    overflow: hidden;
+    margin: 6px 0 0;
+    color: var(--ink-mute);
+    font-size: 12.5px;
+    line-height: 1.6;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 1;
+}
+
+.post-list-row {
+    display: flex;
+    min-width: 0;
+    gap: 10px;
+    padding: 10px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: var(--surface);
+    transition: border-color 0.16s ease;
+}
+
+.post-list-row:hover {
+    border-color: color-mix(in srgb, var(--accent) 34%, var(--line));
+}
+
+.post-list-row-media {
+    flex: none;
+    width: 104px;
+}
+
+.post-list-row-media .post-list-thumb {
+    width: 100%;
+    height: 100%;
+    min-height: 66px;
+}
+
+.post-list-row-body {
+    display: flex;
+    min-width: 0;
+    flex: 1;
+    flex-direction: column;
+}
+
+.post-list-row-body h3 {
+    display: -webkit-box;
+    overflow: hidden;
+    margin: 0;
+    font-size: 13px;
+    font-weight: 600;
+    line-height: 1.45;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 1;
+}
+
+.post-list-row-body h3 a {
+    color: var(--ink);
+    text-decoration: none;
+}
+
+.post-list-row-body h3 a:hover {
+    color: var(--accent);
+}
+
+.post-list-row-body p {
+    display: -webkit-box;
+    overflow: hidden;
+    margin: 4px 0 0;
+    color: var(--ink-mute);
+    font-size: 11.5px;
+    line-height: 1.55;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 1;
+}
+
+.post-feature-layout,
+.post-split-layout,
+.post-showcase-layout {
+    display: grid;
+    gap: 15px;
+}
+
+.post-feature-side,
+.post-split-list {
+    display: grid;
+    align-content: start;
+    gap: 10px;
+}
+
+.post-showcase-top,
+.post-showcase-rest {
+    display: grid;
+    gap: 15px;
+}
+
+@media (min-width: 768px) {
+    .post-showcase-top,
+    .post-showcase-rest {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+
+    .post-showcase-rest {
+        gap: 10px;
+    }
+
+    .post-compact-layout {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .post-headline-layout {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+}
+
+@media (min-width: 900px) {
+    .post-feature-layout {
+        grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr);
+        align-items: start;
+    }
+
+    .post-split-layout {
+        grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr);
+        align-items: start;
+    }
+}
+
+.post-compact-layout {
+    display: grid;
+    gap: 10px;
+}
+
+.post-headline-layout {
+    display: grid;
+    gap: 18px;
+}
+
+.post-headline-list {
+    display: grid;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.post-headline-list li {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 9px 0;
+    border-bottom: 1px dashed var(--line);
+}
+
+.post-headline-list a {
+    min-width: 0;
+    flex: 1;
+    overflow: hidden;
+    color: var(--ink);
+    font-size: 13px;
+    text-decoration: none;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.post-headline-list a:hover {
+    color: var(--accent);
+}
+
+.post-headline-list time {
+    flex: none;
+    color: var(--ink-faint);
+    font-size: 11px;
+}
+
+@media (min-width: 640px) {
+    .post-grid-cols-2 {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .post-grid-cols-3 {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .post-grid-cols-4 {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .post-grid-cols-5 {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+}
+
+@media (min-width: 1024px) {
+    .post-grid-cols-3 {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+
+    .post-grid-cols-4 {
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+    }
+
+    .post-grid-cols-5 {
+        grid-template-columns: repeat(5, minmax(0, 1fr));
+    }
+}

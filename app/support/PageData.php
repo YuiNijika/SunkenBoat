@@ -2736,6 +2736,7 @@ final class PageData
                         'label' => (string) ($child['label'] ?? ''),
                         'url' => $childUrl,
                         'active' => self::navActive($childUrl, $currentUrl),
+                        'icon' => self::navIcon($child['icon'] ?? ''),
                     ];
                 }
 
@@ -2744,6 +2745,7 @@ final class PageData
                     'label' => (string) ($item['label'] ?? ''),
                     'url' => $itemUrl,
                     'active' => self::navActive($itemUrl, $currentUrl),
+                    'icon' => self::navIcon($item['icon'] ?? ''),
                     'children' => $children,
                 ];
             }
@@ -2756,6 +2758,7 @@ final class PageData
                     'active' => $archive !== null
                         && is_callable([$archive, 'is'])
                         && $archive->is('page', $navPages->slug),
+                    'icon' => '',
                 ];
             }
         }
@@ -2776,6 +2779,17 @@ final class PageData
             'themeVersion' => Typecho::themeVersion(),
             'translate' => self::translateConfig($values),
         ];
+    }
+
+    private static function navIcon(mixed $value): string
+    {
+        if (!is_scalar($value)) {
+            return '';
+        }
+
+        $icon = strtolower(trim((string) $value));
+
+        return preg_match('/^[a-z0-9-]{1,48}$/D', $icon) === 1 ? $icon : '';
     }
 
     private static function apiBase(string $siteUrl): string

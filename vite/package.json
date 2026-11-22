@@ -4,7 +4,9 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc --noEmit && vite build",
+    "build": "tsc --noEmit && pnpm build:style && vite build",
+    "build:style": "sass --no-source-map --style=compressed src/styles/theme.scss ../assets/style.css",
+    "watch:style": "sass --watch --no-source-map src/styles/theme.scss ../assets/style.css",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit"
   },
@@ -43,6 +45,7 @@
     "@vitejs/plugin-react": "^5.2.0",
     "tailwindcss": "^4.3.5",
     "typescript": "^5.9.3",
+    "sass": "^1.108.2",
     "vite": "^7.3.8"
   }
 }

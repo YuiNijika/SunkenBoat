@@ -1,0 +1,246 @@
+/* boot */
+
+/* Boot screen. Rendered by PHP so it also covers the SEO fallback when the
+   React bundle is slow or fails; the long animation is the no-JS fallback. */
+#ttdf-loader {
+    position: fixed;
+    inset: 0;
+    z-index: 9999;
+    display: grid;
+    place-items: center;
+    background: var(--bg);
+    color: var(--ink);
+    transition: opacity 0.32s ease, visibility 0.32s ease;
+    animation: ttdf-loader-timeout 0.4s ease var(--ttdf-loader-timeout, 12s) forwards;
+}
+
+html[data-ttdf-app="ready"] #ttdf-loader {
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+}
+
+.ttdf-loader-inner {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 18px;
+    padding: 24px;
+}
+
+.ttdf-loader-text {
+    margin: 0;
+    color: var(--ink-mute);
+    font-size: 13px;
+    letter-spacing: 0.08em;
+}
+
+.ttdf-loader-ring {
+    width: 42px;
+    height: 42px;
+    border: 3px solid color-mix(in oklab, var(--accent) 18%, transparent);
+    border-radius: 999px;
+    border-top-color: var(--accent);
+    animation: ttdf-loader-spin 0.8s linear infinite;
+}
+
+.ttdf-loader-dots {
+    display: flex;
+    gap: 8px;
+}
+
+.ttdf-loader-dots i {
+    width: 9px;
+    height: 9px;
+    border-radius: 999px;
+    background: var(--accent);
+    animation: ttdf-loader-bounce 1s ease-in-out infinite;
+}
+
+.ttdf-loader-dots i:nth-child(2) {
+    animation-delay: 0.14s;
+}
+
+.ttdf-loader-dots i:nth-child(3) {
+    animation-delay: 0.28s;
+}
+
+.ttdf-loader-bars {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    height: 34px;
+}
+
+.ttdf-loader-bars i {
+    width: 5px;
+    height: 12px;
+    border-radius: 3px;
+    background: var(--accent);
+    animation: ttdf-loader-bars 1s ease-in-out infinite;
+}
+
+.ttdf-loader-bars i:nth-child(2) {
+    animation-delay: 0.1s;
+}
+
+.ttdf-loader-bars i:nth-child(3) {
+    animation-delay: 0.2s;
+}
+
+.ttdf-loader-bars i:nth-child(4) {
+    animation-delay: 0.3s;
+}
+
+.ttdf-loader-bars i:nth-child(5) {
+    animation-delay: 0.4s;
+}
+
+.ttdf-loader-pulse {
+    position: relative;
+    display: grid;
+    width: 46px;
+    height: 46px;
+    place-items: center;
+}
+
+.ttdf-loader-pulse i {
+    position: absolute;
+    inset: 0;
+    border: 2px solid var(--accent);
+    border-radius: 999px;
+    opacity: 0;
+    animation: ttdf-loader-pulse 1.8s ease-out infinite;
+}
+
+.ttdf-loader-pulse i:nth-child(2) {
+    animation-delay: 0.9s;
+}
+
+.ttdf-loader-orbit {
+    position: relative;
+    width: 44px;
+    height: 44px;
+    border: 2px solid color-mix(in oklab, var(--accent) 22%, transparent);
+    border-radius: 999px;
+    animation: ttdf-loader-spin 1.2s linear infinite;
+}
+
+.ttdf-loader-orbit i {
+    position: absolute;
+    top: -4px;
+    left: 50%;
+    width: 8px;
+    height: 8px;
+    margin-left: -4px;
+    border-radius: 999px;
+    background: var(--accent);
+}
+
+.ttdf-loader-logo {
+    width: 56px;
+    height: 56px;
+    object-fit: contain;
+    animation: ttdf-loader-breathe 1.8s ease-in-out infinite;
+}
+
+@keyframes ttdf-loader-spin {
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+@keyframes ttdf-loader-bounce {
+    0%,
+    80%,
+    100% {
+        transform: translateY(0);
+        opacity: 0.55;
+    }
+
+    40% {
+        transform: translateY(-7px);
+        opacity: 1;
+    }
+}
+
+@keyframes ttdf-loader-bars {
+    0%,
+    100% {
+        height: 10px;
+        opacity: 0.5;
+    }
+
+    50% {
+        height: 30px;
+        opacity: 1;
+    }
+}
+
+@keyframes ttdf-loader-pulse {
+    0% {
+        transform: scale(0.45);
+        opacity: 0.9;
+    }
+
+    100% {
+        transform: scale(1.15);
+        opacity: 0;
+    }
+}
+
+@keyframes ttdf-loader-breathe {
+    0%,
+    100% {
+        transform: scale(0.92);
+        opacity: 0.65;
+    }
+
+    50% {
+        transform: scale(1.04);
+        opacity: 1;
+    }
+}
+
+@keyframes ttdf-loader-timeout {
+    to {
+        opacity: 0;
+        visibility: hidden;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .ttdf-loader-ring,
+    .ttdf-loader-dots i,
+    .ttdf-loader-bars i,
+    .ttdf-loader-pulse i,
+    .ttdf-loader-orbit,
+    .ttdf-loader-logo {
+        animation: none;
+    }
+
+    .ttdf-loader-pulse i {
+        opacity: 0.55;
+    }
+
+    .ttdf-loader-pulse i:nth-child(2) {
+        display: none;
+    }
+}
+
+.skip-link {
+    position: absolute;
+    left: -9999px;
+    top: 0;
+    z-index: 100;
+    padding: 0.65rem 1rem;
+    border-radius: 0 0 0.75rem 0;
+    background: var(--accent);
+    color: var(--accent-contrast);
+    font-weight: 600;
+    text-decoration: none;
+}
+
+.skip-link:focus {
+    left: 0;
+}

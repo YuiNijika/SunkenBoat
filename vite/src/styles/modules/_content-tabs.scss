@@ -1,0 +1,106 @@
+/* content tabs */
+
+/* Content tabs and comment history */
+.content-tabs {
+    display: inline-flex;
+    width: max-content;
+    max-width: 100%;
+    gap: 3px;
+    padding: 3px;
+    overflow-x: auto;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: var(--surface-2);
+    scrollbar-width: thin;
+}
+
+.content-tabs button {
+    display: inline-flex;
+    align-items: center;
+    flex: 0 0 auto;
+    gap: 6px;
+    padding: 6px 11px;
+    border: 0;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--ink-mute);
+    font-size: 12px;
+    cursor: pointer;
+    transition:
+        background-color 150ms ease,
+        color 150ms ease;
+}
+
+.content-tabs button svg {
+    width: 14px;
+    height: 14px;
+}
+
+.content-tabs button span {
+    color: var(--ink-faint);
+    font-size: 10px;
+}
+
+.content-tabs button.is-active {
+    background: var(--surface);
+    color: var(--ink);
+    box-shadow: var(--elevation-card);
+}
+
+.content-tabs button:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 1px;
+}
+
+.comment-history {
+    display: grid;
+    gap: 8px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.comment-history-item {
+    padding: 12px 14px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: var(--surface-2);
+}
+
+.comment-history-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+}
+
+.comment-history-title {
+    min-width: 0;
+    overflow: hidden;
+    color: var(--ink);
+    font-size: 12.5px;
+    font-weight: 600;
+    text-decoration: none;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.comment-history-title:hover {
+    color: var(--accent);
+}
+
+.comment-history-head time {
+    margin-left: auto;
+    color: var(--ink-faint);
+    font-size: 10.5px;
+}
+
+.comment-history-text {
+    margin: 7px 0 0;
+    overflow: hidden;
+    color: var(--ink-mute);
+    font-size: 12px;
+    line-height: 1.7;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}

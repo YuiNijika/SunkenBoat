@@ -26,6 +26,7 @@ final class Downloads
         foreach ([
             'download-order' => ['handleOrder', 'POST'],
             'download-balance-pay' => ['handleBalancePay', 'POST'],
+            'download-points-pay' => ['handlePointsPay', 'POST'],
             'download-status' => ['handleStatus', 'GET'],
             'download-file' => ['handleDownload', 'POST'],
             'download-history' => ['handleHistory', 'GET'],
@@ -150,10 +151,14 @@ final class Downloads
             'paymentEnabled' => DownloadPayment::configured(),
             'balanceEnabled' => self::enabled() && DownloadPayment::balanceEnabled(),
             'balanceLabel' => trim((string) (Settings::values()['Economy_Balance_Name'] ?? '')) ?: '余额',
+            'pointsEnabled' => self::enabled() && DownloadPayment::pointsEnabled(),
+            'pointsLabel' => trim((string) (Settings::values()['Economy_Points_Name'] ?? '')) ?: '积分',
+            'pointsRate' => DownloadPayment::pointsRate(),
             'nonce' => Typecho::isLoggedIn() ? Typecho::securityToken() : '',
             'endpoints' => [
                 'order' => Endpoint::url('download-order'),
                 'balance' => Endpoint::url('download-balance-pay'),
+                'points' => Endpoint::url('download-points-pay'),
                 'status' => Endpoint::url('download-status'),
                 'download' => Endpoint::url('download-file'),
                 'history' => Endpoint::url('download-history'),
@@ -366,6 +371,37 @@ final class Downloads
         WriteThrottle::guard('download-balance-pay', $uid, 20, 60);
 
         $paid = UserEconomy::markOrderPaidWithBalance($order, $uid);
+
+        return ['order' => self::orderPayload($paid)];
+    }
+
+    /**
+     * Settle a pending order with the viewer's points balance.
+     *
+     * @param array<string, mixed> $data
+     * @return array<string, mixed>
+     */
+    public static function handlePointsPay(array $data): array
+    {
+        $uid = self::requireUser();
+        if (!self::enabled()) {
+            Response::error('下载功能尚未开启', 404);
+        }
+        if (!DownloadStore::available() || !UserEconomy::available()) {
+            Response::error('交易数据表尚未初始化，请管理员保存一次主题设置', 503);
+        }
+
+        $number = self::orderNumber($data['orderNumber'] ?? '');
+        $order = DownloadStore::orderByNumber($number);
+        if ($order === null || (int) ($order['user_id'] ?? 0) !== $uid) {
+            Response::error('订单不存在', 404);
+        }
+        if ((string) ($order['status'] ?? '') === 'paid') {
+            return ['order' => self::orderPayload($order)];
+        }
+        WriteThrottle::guard('download-points-pay', $uid, 20, 60);
+
+        $paid = UserEconomy::markOrderPaidWithPoints($order, $uid);
 
         return ['order' => self::orderPayload($paid)];
     }

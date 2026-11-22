@@ -262,6 +262,8 @@ final class UserEconomy
                 'checkedIn' => (string) ($row['checkin_last'] ?? '') === $today,
                 'streak' => $streak,
                 'total' => (int) ($row['checkin_total'] ?? 0),
+                'last' => (string) ($row['checkin_last'] ?? ''),
+                'today' => $today,
                 'rewards' => self::checkinRewards($row),
             ],
         ];
@@ -358,6 +360,20 @@ final class UserEconomy
         return $next;
     }
 
+    public static function changePointsInTransaction(int $uid, int $delta): ?int
+    {
+        $row = self::row($uid);
+        $points = max(0, (int) ($row['points'] ?? 0));
+        $next = $points + $delta;
+        if ($next < 0) {
+            return null;
+        }
+
+        self::upsert($uid, ['points' => $next]);
+
+        return $next;
+    }
+
     public static function markOrderPaidWithBalance(array $order, int $uid): array
     {
         if (!self::enabled() || !self::available()) {
@@ -405,6 +421,69 @@ final class UserEconomy
         return is_array($result['order'] ?? null) ? $result['order'] : [];
     }
 
+    public static function markOrderPaidWithPoints(array $order, int $uid): array
+    {
+        if (!self::enabled() || !self::available()) {
+            Response::error('积分支付暂不可用', 403);
+        }
+        if (!DownloadPayment::pointsEnabled()) {
+            Response::error('积分支付未开启', 403);
+        }
+
+        $number = (string) ($order['number'] ?? '');
+        $amount = (int) ($order['amount_cents'] ?? 0);
+        if ($amount <= 0) {
+            Response::error('订单金额无效', 422);
+        }
+        $cost = max(1, (int) ceil($amount * DownloadPayment::pointsRate() / 100));
+
+        $paid = DownloadStore::transaction(
+            $uid,
+            static function () use ($number, $uid, $amount, $cost): array {
+                $fresh = DownloadStore::orderByNumber($number);
+                if ($fresh === null || (int) ($fresh['user_id'] ?? 0) !== $uid) {
+                    return ['error' => '订单不存在', 'status' => 404];
+                }
+                if ((string) ($fresh['status'] ?? '') === 'paid') {
+                    return ['order' => $fresh];
+                }
+                if ((string) ($fresh['status'] ?? '') !== 'pending') {
+                    return ['error' => '订单状态不可支付', 'status' => 409];
+                }
+
+                $points = self::changePointsInTransaction($uid, -$cost);
+                if ($points === null) {
+                    return [
+                        'error' => '积分不足，请先获取更多积分',
+                        'status' => 402,
+                        'cost' => $cost,
+                    ];
+                }
+
+                $updated = DownloadStore::markPaid(
+                    $number,
+                    'PTS' . bin2hex(random_bytes(10)),
+                    $amount
+                );
+                if ($updated === null) {
+                    return ['error' => '支付确认失败，请稍后重试', 'status' => 409];
+                }
+
+                return ['order' => $updated, 'cost' => $cost];
+            }
+        );
+
+        if (isset($result['error'])) {
+            Response::error(
+                (string) $result['error'],
+                (int) ($result['status'] ?? 400),
+                isset($result['cost']) ? ['points' => (int) $result['cost']] : []
+            );
+        }
+
+        return is_array($result['order'] ?? null) ? $result['order'] : [];
+    }
+
     public static function handleInstall(array $data): array
     {
         unset($data);
@@ -435,6 +514,7 @@ final class UserEconomy
         $balance = 0;
         $points = 0;
         $todayCheckin = 0;
+        $trend = [];
         if (self::available()) {
             $db = Db::get();
             $banned = (int) (self::fetchOne(
@@ -455,6 +535,40 @@ final class UserEconomy
                     ->from(self::TABLE)
                     ->where('checkin_last = ?', date('Y-m-d'))
             )['total'] ?? 0);
+
+            for ($offset = 6; $offset >= 0; $offset--) {
+                $day = date('Y-m-d', strtotime('-' . $offset . ' day'));
+                $start = (int) strtotime($day . ' 00:00:00');
+                $end = $start + 86400;
+                $registered = (int) (self::fetchOne(
+                    $db->select('COUNT(*) AS total')
+                        ->from('table.users')
+                        ->where('created >= ? AND created < ?', $start, $end)
+                )['total'] ?? 0);
+                $createdTopics = 0;
+                try {
+                    $createdTopics = (int) (self::fetchOne(
+                        $db->select('COUNT(*) AS total')
+                            ->from('table.sunken_forum_topics')
+                            ->where('created >= ? AND created < ?', $start, $end)
+                    )['total'] ?? 0);
+                } catch (\Throwable) {
+                    $createdTopics = 0;
+                }
+                $checkedIn = (int) (self::fetchOne(
+                    $db->select('COUNT(*) AS total')
+                        ->from(self::TABLE)
+                        ->where('checkin_last = ?', $day)
+                )['total'] ?? 0);
+
+                $trend[] = [
+                    'date' => $day,
+                    'label' => date('m/d', $start),
+                    'users' => $registered,
+                    'topics' => $createdTopics,
+                    'checkins' => $checkedIn,
+                ];
+            }
         }
 
         return [
@@ -467,6 +581,7 @@ final class UserEconomy
                 'todayCheckin' => $todayCheckin,
                 'economyEnabled' => self::enabled(),
                 'financial' => $admin,
+                'trend' => $trend,
             ],
             'labels' => [
                 'balance' => self::label('Economy_Balance_Name', '余额'),

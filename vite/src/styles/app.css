@@ -266,7 +266,6 @@
 
 .user-menu-content .user-menu-stat:hover,
 .user-menu-content .user-menu-stat:focus {
-    border-color: color-mix(in srgb, var(--accent) 28%, var(--line));
     background: var(--surface);
 }
 

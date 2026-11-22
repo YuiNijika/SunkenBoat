@@ -1,0 +1,71 @@
+/* crawler */
+
+/* Crawler fallback: the React tree replaces this once it mounts. */
+.ttdf-seo {
+    max-width: 81.25rem;
+    margin: 0 auto;
+    padding: 1.5rem 1.25rem 3rem;
+}
+
+.ttdf-seo a {
+    color: var(--accent);
+}
+
+.ttdf-seo h1,
+.ttdf-seo h2,
+.ttdf-seo h3 {
+    color: var(--ink);
+    font-weight: 600;
+    line-height: 1.3;
+}
+
+.ttdf-seo ul {
+    padding-left: 1.1rem;
+}
+
+.ttdf-seo-main > * + * {
+    margin-top: 1.75rem;
+}
+
+.ttdf-seo-meta,
+.ttdf-seo-posts time {
+    color: var(--ink-mute);
+    font-size: 0.8rem;
+}
+
+.ttdf-seo-posts {
+    display: grid;
+    gap: 1.25rem;
+    padding: 0;
+    list-style: none;
+}
+
+.ttdf-seo-prose {
+    color: var(--ink-soft);
+    font-size: 1rem;
+    line-height: 1.85;
+}
+
+.ttdf-seo .ttdf-seo-brand {
+    color: var(--ink);
+    font-size: 1.15rem;
+    font-weight: 600;
+    text-decoration: none;
+}
+
+.ttdf-seo-header,
+.ttdf-seo-footer {
+    display: grid;
+    gap: 0.5rem;
+    padding-bottom: 1.25rem;
+    border-bottom: 1px solid var(--line);
+}
+
+.ttdf-seo-footer {
+    margin-top: 2.5rem;
+    padding: 1.25rem 0 0;
+    border-bottom: 0;
+    border-top: 1px solid var(--line);
+    color: var(--ink-mute);
+    font-size: 0.85rem;
+}

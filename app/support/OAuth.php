@@ -178,11 +178,12 @@ final class OAuth
         ];
 
         try {
-            $flow = self::flow();
-            if (!$flow->isEnabled()) {
+            $values = Settings::values();
+            if (($values['OAuth_Enabled'] ?? false) !== true) {
                 return $empty;
             }
 
+            $flow = self::flow();
             $uid = self::currentUid();
             $providers = [];
             foreach ($flow->providers() as $provider) {

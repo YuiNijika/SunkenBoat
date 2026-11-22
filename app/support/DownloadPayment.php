@@ -27,7 +27,7 @@ final class DownloadPayment
             return false;
         }
 
-        return self::gatewayChannels() !== [] || self::balanceEnabled();
+        return self::gatewayChannels() !== [] || self::balanceEnabled() || self::pointsEnabled();
     }
 
     public static function balanceEnabled(): bool
@@ -42,6 +42,27 @@ final class DownloadPayment
         }
 
         return self::legacyValue('Downloads_Allow_Balance') === true;
+    }
+
+    public static function pointsEnabled(): bool
+    {
+        if (self::enabled() === false || !UserEconomy::enabled() || !UserEconomy::available()) {
+            return false;
+        }
+
+        $config = self::channelValues()['points'] ?? null;
+
+        return is_array($config)
+            && ($config['enabled'] ?? false) === true
+            && self::pointsRate() > 0;
+    }
+
+    public static function pointsRate(): int
+    {
+        $config = self::channelValues()['points'] ?? null;
+        $rate = is_array($config) ? (int) ($config['rate'] ?? 100) : 100;
+
+        return max(1, min(100000, $rate));
     }
 
     /**

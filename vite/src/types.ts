@@ -5,6 +5,7 @@ export type ThemeName = 'light' | 'dark';
 export interface NavItem {
     label: string;
     url: string;
+    icon?: string;
     active?: boolean;
     children?: NavItem[];
 }
@@ -142,6 +143,8 @@ export interface UserEconomySummary {
         checkedIn: boolean;
         streak: number;
         total: number;
+        last: string;
+        today: string;
         rewards: {
             experience: number;
             points: number;

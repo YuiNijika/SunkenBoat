@@ -5,7 +5,6 @@ import {
     BadgeCheck,
     CalendarCheck,
     Camera,
-    CircleDot,
     CircleAlert,
     Coins,
     ExternalLink,
@@ -16,7 +15,6 @@ import {
     LogOut,
     Mail,
     MapPin,
-    MessageSquare,
     Newspaper,
     ShieldCheck,
     Sparkles,
@@ -26,7 +24,19 @@ import {
     UserRound,
 } from 'lucide-react';
 import { Button } from '../ui/button';
+import {
+    Dialog,
+    DialogContent,
+    DialogDescription,
+    DialogHeader,
+    DialogTitle,
+} from '../ui/dialog';
 import { Input } from '../ui/input';
+import {
+    Tooltip,
+    TooltipContent,
+    TooltipTrigger,
+} from '../ui/tooltip';
 import {
     errorMessage,
     profileFrom,
@@ -64,14 +74,6 @@ type Status = 'loading' | 'guest' | 'ready' | 'error';
 interface Props {
     api?: UserApiEndpoints;
     section?: AccountSection;
-}
-
-interface PendingCertification {
-    uid: number;
-    name: string;
-    screenName: string;
-    avatar: string;
-    certification: UserCertification;
 }
 
 interface ProfileDetails {
@@ -204,10 +206,7 @@ export default function AccountPanel({ api, section = 'profile' }: Props) {
     const [certName, setCertName] = useState('');
     const [certNote, setCertNote] = useState('');
     const [certBusy, setCertBusy] = useState(false);
-    const [pendingCertifications, setPendingCertifications] = useState<PendingCertification[]>([]);
-    const [pendingCertLoading, setPendingCertLoading] = useState(false);
-    const [certReviewBusy, setCertReviewBusy] = useState(0);
-    const [certReason, setCertReason] = useState('');
+    const [certDetailsOpen, setCertDetailsOpen] = useState(false);
     const [economy, setEconomy] = useState<UserEconomySummary | null>(null);
     const [checkinCaptcha, setCheckinCaptcha] = useState<CaptchaValue | null>(null);
     const [checkinBusy, setCheckinBusy] = useState(false);
@@ -368,91 +367,6 @@ export default function AccountPanel({ api, section = 'profile' }: Props) {
             controller.abort();
         };
     }, [api?.enabled, api?.enhanced, api?.profile, api?.profileNonce, meEndpoint, sessionEndpoint]);
-
-    useEffect(() => {
-        if (
-            section !== 'content'
-            || profile?.group !== 'administrator'
-            || !api?.certificationEnabled
-            || !api.certification
-            || !api.certificationNonce
-        ) {
-            setPendingCertifications([]);
-            return;
-        }
-
-        const controller = new AbortController();
-        let active = true;
-        setPendingCertLoading(true);
-
-        void (async () => {
-            try {
-                const url = new URL(api.certification, window.location.href);
-                url.searchParams.set('pending', '1');
-                const response = await fetch(url, {
-                    credentials: 'same-origin',
-                    headers: {
-                        Accept: 'application/json',
-                        'X-Typecho-Token': api.certificationNonce,
-                    },
-                    signal: controller.signal,
-                });
-                const payload = await readPayload(response);
-                if (!response.ok) {
-                    throw new Error(errorMessage(payload, '读取认证申请失败'));
-                }
-
-                const data = payload?.data as { items?: unknown } | undefined;
-                const items = Array.isArray(data?.items) ? data.items : [];
-                if (active) {
-                    setPendingCertifications(
-                        items
-                            .map((value): PendingCertification | null => {
-                                if (!value || typeof value !== 'object') {
-                                    return null;
-                                }
-                                const item = value as Partial<PendingCertification>;
-                                const cert = certificationFrom(item.certification);
-                                if (!cert || Number(item.uid) <= 0) {
-                                    return null;
-                                }
-
-                                return {
-                                    uid: Number(item.uid),
-                                    name: String(item.name ?? ''),
-                                    screenName: String(item.screenName ?? ''),
-                                    avatar: String(item.avatar ?? ''),
-                                    certification: cert,
-                                };
-                            })
-                            .filter((item): item is PendingCertification => item !== null)
-                    );
-                }
-            } catch (reason) {
-                if (reason instanceof DOMException && reason.name === 'AbortError') {
-                    return;
-                }
-                if (active) {
-                    setPendingCertifications([]);
-                }
-            } finally {
-                if (active) {
-                    setPendingCertLoading(false);
-                }
-            }
-        })();
-
-        return () => {
-            active = false;
-            controller.abort();
-        };
-    }, [
-        section,
-        profile?.group,
-        api?.certification,
-        api?.certificationEnabled,
-        api?.certificationNonce,
-    ]);
 
     useEffect(() => {
         if (cooldown <= 0) {
@@ -887,37 +801,6 @@ export default function AccountPanel({ api, section = 'profile' }: Props) {
         }
     };
 
-    const reviewCertification = async (uid: number, op: 'approve' | 'reject' | 'revoke') => {
-        if (!api?.certification || !api.certificationNonce || certReviewBusy > 0) {
-            return;
-        }
-
-        setCertReviewBusy(uid);
-        try {
-            const response = await fetch(api.certification, {
-                method: 'POST',
-                credentials: 'same-origin',
-                headers: {
-                    Accept: 'application/json',
-                    'Content-Type': 'application/json',
-                    'X-Typecho-Token': api.certificationNonce,
-                },
-                body: JSON.stringify({ op, uid, reason: certReason.trim() }),
-            });
-            const payload = await readPayload(response);
-            if (!response.ok) {
-                throw new Error(errorMessage(payload, '认证审核失败'));
-            }
-
-            setPendingCertifications((current) => current.filter((item) => item.uid !== uid));
-            notifySuccess(op === 'approve' ? '认证已通过。' : op === 'reject' ? '认证已驳回。' : '认证已撤销。');
-        } catch (reason) {
-            notifyError(reason instanceof Error ? reason.message : '认证审核失败');
-        } finally {
-            setCertReviewBusy(0);
-        }
-    };
-
     if (!api?.enabled) {
         const centerEnabled = api?.centerEnabled === true;
         const apiReady = api?.apiReady === true;
@@ -1117,7 +1000,7 @@ export default function AccountPanel({ api, section = 'profile' }: Props) {
         },
         content: {
             title: '内容管理',
-            description: `统一管理文章、${forumLabel}帖子、${forumLabel}与历史评论，数据会随页面一起加载。`,
+            description: `统一管理文章、${forumLabel}帖子、${forumLabel}与我的评论，数据会随页面一起加载。`,
         },
         downloads: {
             title: '订单&下载',
@@ -1135,7 +1018,7 @@ export default function AccountPanel({ api, section = 'profile' }: Props) {
                                 type="button"
                                 size="sm"
                                 variant="secondary"
-                                className="h-8 border-white/20 bg-black/25 text-white backdrop-blur hover:bg-black/40"
+                                className="account-cover-button"
                                 onClick={() => setBackgroundMediaOpen(true)}
                             >
                                 <Camera aria-hidden="true" />
@@ -1144,88 +1027,89 @@ export default function AccountPanel({ api, section = 'profile' }: Props) {
                         </div>
                     ) : null}
                 </div>
-                <div className="card-pad relative -mt-12 min-w-0">
-                    <div className="flex flex-col gap-4 sm:flex-row sm:flex-wrap sm:items-end sm:justify-between">
-                        <div className="flex min-w-0 flex-col items-start gap-3 sm:flex-row sm:items-end sm:gap-4">
-                            <ProfileAvatar
-                                profile={profile}
-                                className="size-20 border-4 border-surface shadow-card sm:size-24"
-                            />
-                            <div className="min-w-0 w-full pb-1 sm:w-auto">
-                                <div className="flex flex-wrap items-center gap-2">
-                                    <h2 className="min-w-0 truncate text-[22px] font-semibold leading-8">
-                                        {profile.screenName || profile.name}
-                                    </h2>
-                                    {certificationApproved ? (
-                                        <span
-                                            className="chip border-[rgba(77,163,255,0.35)] bg-[rgba(77,163,255,0.1)] text-[#2d7dd2]"
-                                            title="已通过站点认证"
-                                        >
-                                            <BadgeCheck className="size-3.5" strokeWidth={2} aria-hidden="true" />
-                                            已认证
-                                        </span>
-                                    ) : null}
-                                    <span className="chip">
-                                        <ShieldCheck className="size-3.5" strokeWidth={1.8} aria-hidden="true" />
-                                        {GROUP_LABELS[profile.group] ?? profile.group}
+                <div className="account-profile-shell">
+                    <div className="account-profile-main">
+                        <ProfileAvatar profile={profile} className="account-profile-avatar" />
+                        <div className="account-profile-copy">
+                            <div className="account-profile-heading">
+                                <h2 className="account-profile-name">
+                                    {profile.screenName || profile.name}
+                                </h2>
+                                <span className="account-profile-role">
+                                    {GROUP_LABELS[profile.group] ?? profile.group}
+                                </span>
+                            </div>
+                            <div className="account-profile-meta">
+                                <span>@{profile.name}</span>
+                                <span>UID {profile.uid}</span>
+                                {createdText ? <span>{createdText} 加入</span> : null}
+                                {details.location ? (
+                                    <span>
+                                        <MapPin className="size-3" strokeWidth={1.8} aria-hidden="true" />
+                                        {details.location}
                                     </span>
-                                    <span className="inline-flex flex-wrap items-center gap-2 sm:ml-auto">
-                                        <span className="chip">
-                                            <FileText className="size-3.5" strokeWidth={1.8} aria-hidden="true" />
-                                            文章 {profile.posts ?? 0}
-                                        </span>
-                                        <span className="chip">
-                                            <MessageSquare className="size-3.5" strokeWidth={1.8} aria-hidden="true" />
-                                            评论 {profile.comments ?? 0}
-                                        </span>
-                                        {typeof profile.circles === 'number' ? (
-                                            <span
-                                                className="chip"
-                                                title={`加入 ${profile.joinedCircles ?? 0} · 创建 ${profile.createdCircles ?? 0}`}
-                                            >
-                                                <CircleDot className="size-3.5" strokeWidth={1.8} aria-hidden="true" />
-                                                {forumLabel} {profile.circles}
-                                            </span>
-                                        ) : null}
-                                    </span>
-                                </div>
-                                <p className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-[12px] text-ink-mute">
-                                    <span>@{profile.name}</span>
-                                    <span>UID {profile.uid}</span>
-                                    {createdText ? <span>{createdText} 加入</span> : null}
-                                    {details.location ? (
-                                        <span className="inline-flex items-center gap-1">
-                                            <MapPin className="size-3" strokeWidth={1.8} aria-hidden="true" />
-                                            {details.location}
-                                        </span>
-                                    ) : null}
-                                    {details.gender !== 'secret'
-                                        ? <span>{GENDER_LABELS[details.gender] ?? details.gender}</span>
-                                        : null}
-                                    {profile.url ? (
-                                        <a
-                                            className="inline-flex items-center gap-1 text-brand hover:underline"
-                                            href={profile.url}
-                                            target="_blank"
-                                            rel="noreferrer noopener"
-                                        >
-                                            <ExternalLink
-                                                className="size-3"
-                                                strokeWidth={1.8}
-                                                aria-hidden="true"
-                                            />
-                                            个人主页
-                                        </a>
-                                    ) : null}
-                                </p>
-                                {details.signature ? (
-                                    <p className="mt-2 max-w-2xl break-words text-[13px] leading-6 text-ink-soft">
-                                        {details.signature}
-                                    </p>
+                                ) : null}
+                                {details.gender !== 'secret' ? (
+                                    <span>{GENDER_LABELS[details.gender] ?? details.gender}</span>
+                                ) : null}
+                                {profile.url ? (
+                                    <a
+                                        href={profile.url}
+                                        target="_blank"
+                                        rel="noreferrer noopener"
+                                    >
+                                        <ExternalLink
+                                            className="size-3"
+                                            strokeWidth={1.8}
+                                            aria-hidden="true"
+                                        />
+                                        个人主页
+                                    </a>
                                 ) : null}
                             </div>
+                            {certificationApproved ? (
+                                <button
+                                    type="button"
+                                    className="account-profile-certification"
+                                    title="查看认证详情"
+                                    onClick={() => setCertDetailsOpen(true)}
+                                >
+                                    <BadgeCheck
+                                        className="size-3.5"
+                                        strokeWidth={2}
+                                        aria-hidden="true"
+                                    />
+                                    认证 · {certification?.name || '站点认证'}
+                                </button>
+                            ) : null}
+                            {details.signature ? (
+                                <p className="account-profile-signature">
+                                    {details.signature}
+                                </p>
+                            ) : null}
                         </div>
-                        <div className="flex flex-wrap items-center gap-2 sm:justify-end">
+                    </div>
+
+                    <aside className="account-profile-side">
+                        <div className="account-profile-stats">
+                            <div>
+                                <strong>{profile.posts ?? 0}</strong>
+                                <small>文章</small>
+                            </div>
+                            <div>
+                                <strong>{profile.comments ?? 0}</strong>
+                                <small>评论</small>
+                            </div>
+                            {typeof profile.circles === 'number' ? (
+                                <div
+                                    title={`加入 ${profile.joinedCircles ?? 0} · 创建 ${profile.createdCircles ?? 0}`}
+                                >
+                                    <strong>{profile.circles}</strong>
+                                    <small>{forumLabel}</small>
+                                </div>
+                            ) : null}
+                        </div>
+                        <div className="account-profile-actions">
                             {api.operations?.enabled ? (
                                 <Button asChild type="button" size="sm">
                                     <a href={api.operations.home}>
@@ -1242,9 +1126,11 @@ export default function AccountPanel({ api, section = 'profile' }: Props) {
                             </Button>
                             <Button
                                 type="button"
-                                variant="outline"
-                                size="sm"
+                                variant="ghost"
+                                size="icon-sm"
                                 disabled={loggingOut}
+                                title={loggingOut ? '退出中…' : '退出登录'}
+                                aria-label={loggingOut ? '退出中…' : '退出登录'}
                                 onClick={() => void logout()}
                             >
                                 {loggingOut ? (
@@ -1252,12 +1138,13 @@ export default function AccountPanel({ api, section = 'profile' }: Props) {
                                 ) : (
                                     <LogOut aria-hidden="true" />
                                 )}
-                                {loggingOut ? '退出中…' : '退出登录'}
                             </Button>
                         </div>
-                    </div>
+                    </aside>
+                </div>
+                <div className="px-4 pb-4">
                     {loadError ? (
-                        <p className="mt-4 text-[12px] leading-5 text-destructive" role="alert">
+                        <p className="text-[12px] leading-5 text-destructive" role="alert">
                             {loadError}
                         </p>
                     ) : null}
@@ -1303,21 +1190,47 @@ export default function AccountPanel({ api, section = 'profile' }: Props) {
                             ) : null}
                         </div>
                         {economy.enabled && economy.checkin.enabled ? (
-                            <Button
-                                type="button"
-                                size="sm"
-                                onClick={() => void checkin()}
-                                disabled={checkinBusy || economy.checkin.checkedIn}
-                            >
-                                {checkinBusy ? (
-                                    <LoaderCircle className="animate-spin" aria-hidden="true" />
-                                ) : (
-                                    <CalendarCheck aria-hidden="true" />
-                                )}
-                                {economy.checkin.checkedIn
-                                    ? `已签到 · 连续 ${economy.checkin.streak} 天`
-                                    : `签到 · 连续 ${economy.checkin.streak} 天`}
-                            </Button>
+                            <Tooltip>
+                                <TooltipTrigger asChild>
+                                    <span tabIndex={0} className="inline-flex">
+                                        <Button
+                                            type="button"
+                                            size="sm"
+                                            onClick={() => void checkin()}
+                                            disabled={checkinBusy || economy.checkin.checkedIn}
+                                        >
+                                            {checkinBusy ? (
+                                                <LoaderCircle
+                                                    className="animate-spin"
+                                                    aria-hidden="true"
+                                                />
+                                            ) : (
+                                                <CalendarCheck aria-hidden="true" />
+                                            )}
+                                            {economy.checkin.checkedIn ? '今日已签到' : '签到'}
+                                        </Button>
+                                    </span>
+                                </TooltipTrigger>
+                                <TooltipContent side="bottom" className="max-w-60 px-3 py-2">
+                                    <div className="grid gap-1 text-[11.5px] leading-5">
+                                        <p className="font-medium">
+                                            总签到 {economy.checkin.total} 天
+                                            {economy.checkin.streak > 0
+                                                ? ` · 连续 ${economy.checkin.streak} 天`
+                                                : ''}
+                                        </p>
+                                        <p className="opacity-80">
+                                            {economy.checkin.checkedIn
+                                                ? `今日已签到（${economy.checkin.today}）`
+                                                : '今日还未签到'}
+                                        </p>
+                                        <p className="opacity-80">
+                                            最近签到：
+                                            {economy.checkin.last || '暂无记录'}
+                                        </p>
+                                    </div>
+                                </TooltipContent>
+                            </Tooltip>
                         ) : null}
                     </div>
 
@@ -1981,7 +1894,24 @@ export default function AccountPanel({ api, section = 'profile' }: Props) {
                                         </div>
                                     ))}
 
-                                    {socialCount === 0 ? (
+                                    {oauthProviders.length === 0 ? (
+                                        <div className="rounded-[6px] border border-dashed border-line bg-surface-2 px-5 py-8 text-center">
+                                            {api.oauth?.nullImage ? (
+                                                <img
+                                                    className="mx-auto w-48 max-w-full opacity-80"
+                                                    src={api.oauth.nullImage}
+                                                    alt=""
+                                                    loading="lazy"
+                                                />
+                                            ) : null}
+                                            <p className="mt-3 text-[13px] font-medium">
+                                                暂未配置社交平台
+                                            </p>
+                                            <p className="mt-1 text-[12px] leading-5 text-ink-mute">
+                                                管理员完成任一 OAuth 平台的 App ID 与密钥配置后，这里会出现对应的绑定入口。
+                                            </p>
+                                        </div>
+                                    ) : socialCount === 0 ? (
                                         <div className="rounded-[6px] border border-dashed border-line bg-surface-2 px-5 py-8 text-center">
                                             {api.oauth?.nullImage ? (
                                                 <img
@@ -2018,111 +1948,6 @@ export default function AccountPanel({ api, section = 'profile' }: Props) {
 
                         {section === 'content' ? (
                             <div className="grid gap-[15px]">
-                                {profile.group === 'administrator'
-                                && api.certificationEnabled
-                                && api.certification ? (
-                                    <section className="rounded-[8px] border border-line bg-surface-2 p-4">
-                                        <div className="flex flex-wrap items-center justify-between gap-2">
-                                            <div>
-                                                <h4 className="flex items-center gap-2 text-[14px] font-medium">
-                                                    <UserCheck
-                                                        className="size-4 text-ink-mute"
-                                                        strokeWidth={1.8}
-                                                        aria-hidden="true"
-                                                    />
-                                                    认证审核
-                                                </h4>
-                                                <p className="mt-1 text-[12px] leading-5 text-ink-mute">
-                                                    待处理的认证申请会显示在这里。
-                                                </p>
-                                            </div>
-                                            <span className="chip">
-                                                {pendingCertLoading
-                                                    ? '读取中…'
-                                                    : `${pendingCertifications.length} 待审核`}
-                                            </span>
-                                        </div>
-
-                                        {pendingCertLoading ? (
-                                            <div className="mt-4 grid gap-2" aria-busy="true">
-                                                <span className="h-14 animate-pulse rounded-[6px] bg-surface-3" />
-                                                <span className="h-14 animate-pulse rounded-[6px] bg-surface-3" />
-                                            </div>
-                                        ) : pendingCertifications.length === 0 ? (
-                                            <p className="mt-4 rounded-[6px] border border-dashed border-line bg-surface px-3 py-5 text-center text-[12px] text-ink-faint">
-                                                暂无待审核的认证申请。
-                                            </p>
-                                        ) : (
-                                            <div className="mt-4 grid gap-2">
-                                                <Input
-                                                    className="h-9"
-                                                    value={certReason}
-                                                    onChange={(event) => setCertReason(event.target.value)}
-                                                    maxLength={200}
-                                                    placeholder="审核备注（可选，会显示给申请人）"
-                                                />
-                                                {pendingCertifications.map((item) => (
-                                                    <div
-                                                        key={item.uid}
-                                                        className="flex flex-wrap items-center gap-3 rounded-[6px] border border-line bg-surface p-3"
-                                                    >
-                                                        <UserAvatar
-                                                            name={item.screenName || item.name}
-                                                            avatar={item.avatar}
-                                                            className="size-10"
-                                                        />
-                                                        <div className="min-w-0 flex-1">
-                                                            <p className="truncate text-[13px] font-medium">
-                                                                {item.certification.name
-                                                                    || item.screenName
-                                                                    || item.name}
-                                                                <span className="ml-2 text-[11px] font-normal text-ink-faint">
-                                                                    {item.certification.type === 'organization'
-                                                                        ? '组织认证'
-                                                                        : '个人认证'}
-                                                                </span>
-                                                            </p>
-                                                            <p className="mt-0.5 line-clamp-2 text-[11.5px] leading-5 text-ink-mute">
-                                                                {item.certification.note}
-                                                            </p>
-                                                        </div>
-                                                        <div className="flex shrink-0 items-center gap-1.5">
-                                                            <Button
-                                                                type="button"
-                                                                size="sm"
-                                                                disabled={certReviewBusy > 0}
-                                                                onClick={() =>
-                                                                    void reviewCertification(
-                                                                        item.uid,
-                                                                        'approve'
-                                                                    )
-                                                                }
-                                                            >
-                                                                {certReviewBusy === item.uid
-                                                                    ? '处理中…'
-                                                                    : '通过'}
-                                                            </Button>
-                                                            <Button
-                                                                type="button"
-                                                                size="sm"
-                                                                variant="outline"
-                                                                disabled={certReviewBusy > 0}
-                                                                onClick={() =>
-                                                                    void reviewCertification(
-                                                                        item.uid,
-                                                                        'reject'
-                                                                    )
-                                                                }
-                                                            >
-                                                                驳回
-                                                            </Button>
-                                                        </div>
-                                                    </div>
-                                                ))}
-                                            </div>
-                                        )}
-                                    </section>
-                                ) : null}
                                 <ContentManager api={api} profile={profile} />
                             </div>
                         ) : null}
@@ -2131,6 +1956,68 @@ export default function AccountPanel({ api, section = 'profile' }: Props) {
                             <DownloadHistory client={api.downloads} />
                         ) : null}
             </section>
+
+            <Dialog open={certDetailsOpen} onOpenChange={setCertDetailsOpen}>
+                <DialogContent>
+                    <DialogHeader>
+                        <DialogTitle className="flex items-center gap-2">
+                            <BadgeCheck className="size-5 text-[#2d7dd2]" aria-hidden="true" />
+                            认证详情
+                        </DialogTitle>
+                        <DialogDescription>
+                            该认证由站点管理员审核，认证信息会展示在个人资料与用户空间。
+                        </DialogDescription>
+                    </DialogHeader>
+                    {certification ? (
+                        <div className="grid gap-3 text-[13px]">
+                            <div className="rounded-[6px] border border-line bg-surface-2 px-3.5 py-3">
+                                <p className="text-[11px] text-ink-faint">认证名称</p>
+                                <p className="mt-1 font-medium text-ink">
+                                    {certification.name || '已认证用户'}
+                                </p>
+                            </div>
+                            <div className="grid gap-3 sm:grid-cols-2">
+                                <div className="rounded-[6px] border border-line px-3.5 py-3">
+                                    <p className="text-[11px] text-ink-faint">认证类型</p>
+                                    <p className="mt-1 text-ink-soft">
+                                        {certification.type === 'organization'
+                                            ? '组织认证'
+                                            : '个人认证'}
+                                    </p>
+                                </div>
+                                <div className="rounded-[6px] border border-line px-3.5 py-3">
+                                    <p className="text-[11px] text-ink-faint">审核时间</p>
+                                    <p className="mt-1 text-ink-soft">
+                                        {certification.reviewed > 0
+                                            ? new Date(
+                                                  certification.reviewed * 1000
+                                              ).toLocaleString()
+                                            : '暂无记录'}
+                                    </p>
+                                </div>
+                            </div>
+                            <div className="rounded-[6px] border border-line px-3.5 py-3">
+                                <p className="text-[11px] text-ink-faint">认证说明</p>
+                                <p className="mt-1 whitespace-pre-wrap break-words leading-6 text-ink-soft">
+                                    {certification.note || '未填写认证说明。'}
+                                </p>
+                            </div>
+                            {certification.reason ? (
+                                <div className="rounded-[6px] border border-line px-3.5 py-3">
+                                    <p className="text-[11px] text-ink-faint">审核备注</p>
+                                    <p className="mt-1 break-words leading-6 text-ink-soft">
+                                        {certification.reason}
+                                    </p>
+                                </div>
+                            ) : null}
+                        </div>
+                    ) : (
+                        <p className="rounded-[6px] border border-dashed border-line bg-surface-2 px-3.5 py-6 text-center text-[12px] text-ink-faint">
+                            暂无认证信息。
+                        </p>
+                    )}
+                </DialogContent>
+            </Dialog>
 
             <MediaLibrary
                 open={avatarMediaOpen}
