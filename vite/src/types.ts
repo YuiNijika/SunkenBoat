@@ -55,6 +55,19 @@ export interface ThemeOptions {
     shareItems: string[];
     sharePosterBrand: string;
     pageWidth: number;
+    userCenter: UserCenterOptions;
+}
+
+export interface UserCenterOptions {
+    eyebrow: string;
+    title: string;
+    description: string;
+    railMode: 'pinned' | 'follow';
+    showIdentity: boolean;
+    showStats: boolean;
+    showWallet: boolean;
+    showCheckin: boolean;
+    showLinks: boolean;
 }
 
 export interface ShareConfig {

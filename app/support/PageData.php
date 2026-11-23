@@ -141,6 +141,7 @@ final class PageData
         $meta = $sections[$section];
         $title = $editor ? '写文章' : $meta['title'];
         $site = self::site(null);
+        $values = Settings::values();
 
         return [
             'kind' => $editor ? 'editor' : 'account',
@@ -149,7 +150,7 @@ final class PageData
             'site' => $site,
             'theme' => self::theme(),
             'api' => self::api(),
-            'blocks' => [],
+            'blocks' => $editor ? [] : self::standaloneBlocks($values['Account_Blocks'] ?? null),
             'widgets' => self::widgets(),
             'title' => $title,
             'documentTitle' => Seo::documentTitle(
@@ -817,6 +818,70 @@ final class PageData
         }
 
         return $blocks;
+    }
+
+    /**
+     * Build customizer-managed account blocks without requiring an Archive
+     * context. The schema deliberately limits this field to static and
+     * site-aware modules that are safe on every user-center section.
+     *
+     * @return list<array<string, mixed>>
+     */
+    private static function standaloneBlocks(mixed $saved): array
+    {
+        $specs = self::normalizeSpecs($saved, []);
+        $blocks = [];
+
+        foreach ($specs as $spec) {
+            $block = self::standaloneBlock($spec);
+            if ($block === null) {
+                continue;
+            }
+
+            $block['settingsIndex'] = (int) $spec['index'];
+            $blocks[] = $block;
+        }
+
+        return $blocks;
+    }
+
+    /**
+     * @param array{name: string, variant: string, data: array<string, mixed>} $spec
+     * @return array<string, mixed>|null
+     */
+    private static function standaloneBlock(array $spec): ?array
+    {
+        $type = $spec['name'];
+        $variant = $spec['variant'];
+        $data = $spec['data'];
+
+        $block = match ($type) {
+            'alert' => self::alertBlock($variant, $data),
+            'notice' => self::noticeBlock($variant, $data),
+            'quote' => self::quoteBlock($variant, $data),
+            'feature-grid' => self::featureGridBlock($variant, $data),
+            'stats' => self::statsBlock($variant, $data),
+            'steps' => self::stepsBlock($variant, $data),
+            'faq' => self::faqBlock($variant, $data),
+            'timeline' => self::timelineBlock($data),
+            'gallery' => self::galleryBlock($variant, $data),
+            'table' => self::tableBlock($data),
+            'media-grid' => self::mediaGridBlock($data),
+            'promo-grid' => self::promoGridBlock($variant, $data),
+            'product-grid' => self::productGridBlock($data),
+            'logo-cloud' => self::logoCloudBlock($data),
+            'heading' => self::headingBlock($variant, $data),
+            'button-group' => self::buttonGroupBlock($variant, $data),
+            'info-cards' => self::infoCardsBlock($data),
+            'media-split' => self::mediaSplitBlock($variant, $data),
+            'pricing' => self::pricingBlock($data),
+            'link-list' => self::linkListBlock($data),
+            'divider' => ['type' => 'divider', 'variant' => $variant !== '' ? $variant : 'default'],
+            'spacer' => ['type' => 'spacer', 'variant' => $variant !== '' ? $variant : 'md'],
+            default => null,
+        };
+
+        return $block === null ? null : array_merge($block, self::blockLayout($data));
     }
 
     /**
@@ -2985,6 +3050,45 @@ final class PageData
             'shareItems' => self::shareItems($values['Share_Items'] ?? null),
             'sharePosterBrand' => trim((string) ($values['Share_Poster_Brand'] ?? '')),
             'pageWidth' => self::pageWidth($values['Page_Width'] ?? null),
+            'userCenter' => self::userCenter($values),
+        ];
+    }
+
+    /**
+     * @param array<string, mixed> $values
+     * @return array{
+     *     eyebrow: string,
+     *     title: string,
+     *     description: string,
+     *     railMode: 'pinned'|'follow',
+     *     showIdentity: bool,
+     *     showStats: bool,
+     *     showWallet: bool,
+     *     showCheckin: bool,
+     *     showLinks: bool
+     * }
+     */
+    private static function userCenter(array $values): array
+    {
+        $railMode = (string) ($values['UserCenter_Rail_Mode'] ?? 'pinned');
+        $eyebrow = self::clip((string) ($values['UserCenter_Eyebrow'] ?? ''), 48);
+        $title = self::clip((string) ($values['UserCenter_Title'] ?? ''), 48);
+        $description = self::clip((string) ($values['UserCenter_Description'] ?? ''), 180);
+
+        return [
+            'eyebrow' => $eyebrow !== '' ? $eyebrow : 'Member workspace',
+            'title' => $title !== '' ? $title : '用户中心',
+            'description' => $description !== ''
+                ? $description
+                : '管理公开身份、登录安全、创作内容与账号资产。',
+            'railMode' => in_array($railMode, ['pinned', 'follow'], true)
+                ? $railMode
+                : 'pinned',
+            'showIdentity' => ($values['UserCenter_Show_Identity'] ?? true) === true,
+            'showStats' => ($values['UserCenter_Show_Stats'] ?? true) === true,
+            'showWallet' => ($values['UserCenter_Show_Wallet'] ?? true) === true,
+            'showCheckin' => ($values['UserCenter_Show_Checkin'] ?? true) === true,
+            'showLinks' => ($values['UserCenter_Show_Links'] ?? true) === true,
         ];
     }
 

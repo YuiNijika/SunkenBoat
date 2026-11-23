@@ -252,8 +252,9 @@ function SiteApp({ data, appStyle }: { data: PageData; appStyle: CSSProperties }
     );
     const isWideBlock = (block: PageData['blocks'][number]) =>
         block.width === 'half' || block.width === 'full';
-    const indexedBlocks = data.blocks.map((block, index) => ({ block, index }));
-    const topBlock = data.blocks[0];
+    const flowBlocks = data.kind === 'account' ? [] : data.blocks;
+    const indexedBlocks = flowBlocks.map((block, index) => ({ block, index }));
+    const topBlock = flowBlocks[0];
     const flushTop = topBlock?.spaceTop === 'none';
     const flowItems = indexedBlocks.map(({ block, index }) => {
         const wide = isWideBlock(block);
@@ -275,7 +276,9 @@ function SiteApp({ data, appStyle }: { data: PageData; appStyle: CSSProperties }
             <AccountPanel
                 key={data.userSection ?? 'profile'}
                 api={data.api?.user}
+                blocks={data.blocks}
                 section={data.userSection ?? 'profile'}
+                userCenter={data.theme.userCenter}
             />
         ) : null;
     const sidebarNode = twoColumn ? (

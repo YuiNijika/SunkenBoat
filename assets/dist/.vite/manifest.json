@@ -1,6 +1,6 @@
 {
   "src/lib/highlight.ts": {
-    "file": "highlight-DbBbX_Wj.js",
+    "file": "highlight-B5YjRJ4m.js",
     "name": "highlight",
     "src": "src/lib/highlight.ts",
     "isDynamicEntry": true,
@@ -9,7 +9,7 @@
     ]
   },
   "src/main.tsx": {
-    "file": "main-B5B2T-bP.js",
+    "file": "main-DB-cRAEx.js",
     "name": "main",
     "src": "src/main.tsx",
     "isEntry": true,

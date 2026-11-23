@@ -20,7 +20,7 @@ $colorMode = (string) ($values['Color_Mode'] ?? 'auto');
 $lightThemeColor = (string) ($values['Color_Background'] ?? '');
 $darkThemeColor = (string) ($values['Color_Background_Dark'] ?? '');
 $lightThemeColor = $lightThemeColor !== '' ? $lightThemeColor : '#f3f5f7';
-$darkThemeColor = $darkThemeColor !== '' ? $darkThemeColor : '#202830';
+$darkThemeColor = $darkThemeColor !== '' ? $darkThemeColor : '#0e1319';
 
 $seo = \SunkenBoat\Support\Seo::pageMeta($viewData, is_object($archive) ? $archive : null);
 $structuredData = \SunkenBoat\Support\Seo::structuredData(

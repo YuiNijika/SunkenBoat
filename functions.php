@@ -27,6 +27,7 @@ if (PHP_VERSION_ID < 80200) {
 
 \TTDF\Autoloader::register(__DIR__, 'SunkenBoat');
 
+\TTDF\Hooks\Hooks::addAction('framework.boot', [\SunkenBoat\Support\AccountCustomizer::class, 'register']);
 \TTDF\Hooks\Hooks::addAction('framework.boot', [\SunkenBoat\Support\AdminGuard::class, 'enforce']);
 \TTDF\Hooks\Hooks::addAction('framework.boot', [\SunkenBoat\Support\Avatar::class, 'register']);
 \TTDF\Hooks\Hooks::addAction('framework.boot', [\SunkenBoat\Support\API::class, 'register']);

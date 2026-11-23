@@ -53,7 +53,7 @@ return [
                     [
                         'type' => 'ColorPicker',
                         'name' => 'Color_Background_Dark',
-                        'value' => '#202830',
+                        'value' => '#0e1319',
                         'inline' => true,
                         'label' => '深色模式背景',
                         'description' => '深色模式下的页面底色；留空使用主题默认色。',

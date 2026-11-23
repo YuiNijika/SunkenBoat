@@ -14,6 +14,7 @@ return [
         'archive' => require __DIR__ . '/layout/archive.php',
         'post' => require __DIR__ . '/layout/post.php',
         'page' => require __DIR__ . '/layout/page.php',
+        'account' => require __DIR__ . '/layout/account.php',
         'templates' => require __DIR__ . '/layout/templates.php',
         'loading' => require __DIR__ . '/layout/loading.php',
         'notfound' => require __DIR__ . '/layout/notfound.php',

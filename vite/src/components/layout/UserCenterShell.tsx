@@ -15,10 +15,17 @@ import {
     Wallet,
 } from 'lucide-react';
 import { Button } from '../ui/button';
+import BlockRenderer from '../blocks/BlockRenderer';
 import LevelBadge from '../content/LevelBadge';
 import UserAvatar from './UserAvatar';
 import { cssUrl } from '../../lib/css';
-import type { UserApiEndpoints, UserEconomySummary, UserProfile } from '../../types';
+import type {
+    Block,
+    UserApiEndpoints,
+    UserCenterOptions,
+    UserEconomySummary,
+    UserProfile,
+} from '../../types';
 
 export type AccountSection = 'profile' | 'security' | 'social' | 'content' | 'downloads';
 
@@ -39,6 +46,7 @@ export interface AccountNavGroup {
 interface Props {
     active: AccountSection;
     api: UserApiEndpoints;
+    blocks: Block[];
     children: ReactNode;
     coverUrl: string;
     economy: UserEconomySummary | null;
@@ -51,8 +59,21 @@ interface Props {
     pageTitle: string;
     profile: UserProfile;
     spaceUrl: string;
+    userCenter?: UserCenterOptions;
     checkinBusy: boolean;
 }
+
+const DEFAULT_USER_CENTER: UserCenterOptions = {
+    eyebrow: 'Member workspace',
+    title: '用户中心',
+    description: '管理公开身份、登录安全、创作内容与账号资产。',
+    railMode: 'pinned',
+    showIdentity: true,
+    showStats: true,
+    showWallet: true,
+    showCheckin: true,
+    showLinks: true,
+};
 
 const GROUP_LABELS: Record<string, string> = {
     administrator: '管理员',
@@ -110,6 +131,7 @@ function NavLink({
 export default function UserCenterShell({
     active,
     api,
+    blocks,
     children,
     coverUrl,
     economy,
@@ -122,6 +144,7 @@ export default function UserCenterShell({
     pageTitle,
     profile,
     spaceUrl,
+    userCenter = DEFAULT_USER_CENTER,
     checkinBusy,
 }: Props) {
     const mobileNavRef = useRef<HTMLElement>(null);
@@ -130,7 +153,9 @@ export default function UserCenterShell({
     const allNavItems = navGroups.flatMap((group) => group.items);
     const certificationApproved = profile.certification?.status === 'approved';
     const canWrite = profile.canWrite || api.content.enabled;
-    const checkinReady = economy?.enabled && economy.checkin.enabled;
+    const checkinReady = Boolean(
+        userCenter.showCheckin && economy?.enabled && economy.checkin.enabled
+    );
     const checkinLabel = economy?.checkin.checkedIn
         ? '今日已签到'
         : checkinBusy
@@ -187,7 +212,7 @@ export default function UserCenterShell({
         return () => observer.disconnect();
     }, [active]);
 
-    const identity = (
+    const identity = userCenter.showIdentity ? (
         <section className="user-center-identity" aria-label="当前账号">
             <div className="user-center-identity-cover" style={coverStyle(coverUrl)}>
                 <span className="user-center-session-chip">
@@ -235,22 +260,24 @@ export default function UserCenterShell({
                     {profile.signature || '还没有填写个性签名。'}
                 </p>
 
-                <dl className="user-center-stats">
-                    <div>
-                        <dt>文章</dt>
-                        <dd>{profile.posts ?? 0}</dd>
-                    </div>
-                    <div>
-                        <dt>评论</dt>
-                        <dd>{profile.comments ?? 0}</dd>
-                    </div>
-                    <div>
-                        <dt>{api.forum?.label || '圈子'}</dt>
-                        <dd>{profile.circles ?? 0}</dd>
-                    </div>
-                </dl>
+                {userCenter.showStats ? (
+                    <dl className="user-center-stats">
+                        <div>
+                            <dt>文章</dt>
+                            <dd>{profile.posts ?? 0}</dd>
+                        </div>
+                        <div>
+                            <dt>评论</dt>
+                            <dd>{profile.comments ?? 0}</dd>
+                        </div>
+                        <div>
+                            <dt>{api.forum?.label || '圈子'}</dt>
+                            <dd>{profile.circles ?? 0}</dd>
+                        </div>
+                    </dl>
+                ) : null}
 
-                {economy?.enabled ? (
+                {economy?.enabled && userCenter.showWallet ? (
                     <div className="user-center-wallet">
                         <div>
                             <span>
@@ -302,7 +329,7 @@ export default function UserCenterShell({
                     </p>
                 ) : null}
 
-                {checkinReady ? (
+                {economy && checkinReady ? (
                     <button
                         type="button"
                         className={
@@ -331,41 +358,50 @@ export default function UserCenterShell({
                     </button>
                 ) : null}
 
-                <div className="user-center-identity-links">
-                    {canWrite ? (
-                        <a href={api.pages.editor}>
-                            <PenLine aria-hidden="true" />
-                            写内容
+                {userCenter.showLinks ? (
+                    <div className="user-center-identity-links">
+                        {canWrite ? (
+                            <a href={api.pages.editor}>
+                                <PenLine aria-hidden="true" />
+                                写内容
+                            </a>
+                        ) : null}
+                        <a href={spaceUrl}>
+                            <ExternalLink aria-hidden="true" />
+                            公开主页
                         </a>
-                    ) : null}
-                    <a href={spaceUrl}>
-                        <ExternalLink aria-hidden="true" />
-                        公开主页
-                    </a>
-                    {api.operations?.enabled ? (
-                        <a href={api.operations.home}>
-                            <ShieldCheck aria-hidden="true" />
-                            运营中心
-                        </a>
-                    ) : null}
-                    {api.admin ? (
-                        <a href={adminUrl}>
-                            <ShieldCheck aria-hidden="true" />
-                            管理后台
-                        </a>
-                    ) : null}
-                </div>
+                        {api.operations?.enabled ? (
+                            <a href={api.operations.home}>
+                                <ShieldCheck aria-hidden="true" />
+                                运营中心
+                            </a>
+                        ) : null}
+                        {api.admin ? (
+                            <a href={adminUrl}>
+                                <ShieldCheck aria-hidden="true" />
+                                管理后台
+                            </a>
+                        ) : null}
+                    </div>
+                ) : null}
             </div>
         </section>
-    );
+    ) : null;
 
     return (
-        <section className="user-center-shell" aria-labelledby="user-center-title">
+        <section
+            className={
+                'user-center-shell is-sidebar-'
+                + (userCenter.railMode === 'follow' ? 'follow' : 'pinned')
+            }
+            data-rail-mode={userCenter.railMode}
+            aria-labelledby="user-center-title"
+        >
             <header className="user-center-intro">
                 <div>
-                    <p className="section-label">Member workspace</p>
-                    <h1 id="user-center-title">用户中心</h1>
-                    <p>管理公开身份、登录安全、创作内容与账号资产。</p>
+                    <p className="section-label">{userCenter.eyebrow}</p>
+                    <h1 id="user-center-title">{userCenter.title}</h1>
+                    <p>{userCenter.description}</p>
                 </div>
                 <a className="user-center-home-link" href={spaceUrl}>
                     <UserRound aria-hidden="true" />
@@ -374,52 +410,56 @@ export default function UserCenterShell({
                 </a>
             </header>
 
-            <div className="user-center-mobile-identity">
-                <div className="user-center-mobile-cover" style={coverStyle(coverUrl)}>
-                    <UserAvatar
-                        name={name}
-                        avatar={profile.avatar}
-                        className="user-center-mobile-avatar"
-                    />
-                    <div className="user-center-mobile-copy">
-                        <strong>{name}</strong>
-                        <span>
-                            @{profile.name}
-                            <i aria-hidden="true">·</i>
-                            {role}
-                        </span>
+            {userCenter.showIdentity ? (
+                <div className="user-center-mobile-identity">
+                    <div className="user-center-mobile-cover" style={coverStyle(coverUrl)}>
+                        <UserAvatar
+                            name={name}
+                            avatar={profile.avatar}
+                            className="user-center-mobile-avatar"
+                        />
+                        <div className="user-center-mobile-copy">
+                            <strong>{name}</strong>
+                            <span>
+                                @{profile.name}
+                                <i aria-hidden="true">·</i>
+                                {role}
+                            </span>
+                        </div>
+                        <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon-sm"
+                            className="user-center-mobile-logout"
+                            aria-label={loggingOut ? '正在退出登录' : '退出登录'}
+                            disabled={loggingOut}
+                            onClick={onLogout}
+                        >
+                            {loggingOut ? (
+                                <LoaderCircle className="animate-spin" aria-hidden="true" />
+                            ) : (
+                                <LogOut aria-hidden="true" />
+                            )}
+                        </Button>
                     </div>
-                    <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon-sm"
-                        className="user-center-mobile-logout"
-                        aria-label={loggingOut ? '正在退出登录' : '退出登录'}
-                        disabled={loggingOut}
-                        onClick={onLogout}
-                    >
-                        {loggingOut ? (
-                            <LoaderCircle className="animate-spin" aria-hidden="true" />
-                        ) : (
-                            <LogOut aria-hidden="true" />
-                        )}
-                    </Button>
+                    {economy && checkinReady ? (
+                        <button
+                            type="button"
+                            className="user-center-mobile-checkin"
+                            disabled={checkinBusy || economy.checkin.checkedIn}
+                            onClick={onCheckin}
+                        >
+                            <CalendarCheck aria-hidden="true" />
+                            <span>{checkinLabel}</span>
+                            {!economy.checkin.checkedIn ? (
+                                <small>
+                                    +{economy.checkin.rewards.points} {economy.labels.points}
+                                </small>
+                            ) : null}
+                        </button>
+                    ) : null}
                 </div>
-                {checkinReady ? (
-                    <button
-                        type="button"
-                        className="user-center-mobile-checkin"
-                        disabled={checkinBusy || economy.checkin.checkedIn}
-                        onClick={onCheckin}
-                    >
-                        <CalendarCheck aria-hidden="true" />
-                        <span>{checkinLabel}</span>
-                        {!economy.checkin.checkedIn ? (
-                            <small>+{economy.checkin.rewards.points} {economy.labels.points}</small>
-                        ) : null}
-                    </button>
-                ) : null}
-            </div>
+            ) : null}
 
             <nav
                 ref={mobileNavRef}
@@ -483,6 +523,30 @@ export default function UserCenterShell({
                     <div className="user-center-section-body" tabIndex={-1}>
                         {children}
                     </div>
+                    {blocks.length > 0 ? (
+                        <section
+                            className="user-center-custom-blocks"
+                            aria-label="用户中心扩展内容"
+                        >
+                            {blocks.map((block, index) => {
+                                const settingsIndex =
+                                    typeof block.settingsIndex === 'number'
+                                        ? block.settingsIndex
+                                        : index;
+
+                                return (
+                                    <div
+                                        key={`${block.type}-${settingsIndex}-${index}`}
+                                        className="user-center-custom-block"
+                                        data-block={block.type}
+                                        data-block-index={settingsIndex}
+                                    >
+                                        <BlockRenderer block={block} />
+                                    </div>
+                                );
+                            })}
+                        </section>
+                    ) : null}
                 </div>
             </div>
 

@@ -32,11 +32,13 @@ import {
     requestEmailCode,
 } from '../../lib/user';
 import type {
+    Block,
     OAuthProvider,
     UserApiEndpoints,
     UserCertification,
     UserEconomySummary,
     UserProfile,
+    UserCenterOptions,
 } from '../../types';
 import { notifyError, notifySuccess } from '../../lib/notify';
 import { refreshApp } from '../../lib/appNavigation';
@@ -56,7 +58,9 @@ type Status = 'loading' | 'guest' | 'ready' | 'error';
 
 interface Props {
     api?: UserApiEndpoints;
+    blocks?: Block[];
     section?: AccountSection;
+    userCenter?: UserCenterOptions;
 }
 
 interface ProfileDetails {
@@ -176,7 +180,12 @@ function ProfileAvatar({ profile, className }: { profile: UserProfile; className
     );
 }
 
-export default function AccountPanel({ api, section = 'profile' }: Props) {
+export default function AccountPanel({
+    api,
+    blocks = [],
+    section = 'profile',
+    userCenter,
+}: Props) {
     const [status, setStatus] = useState<Status>(
         api?.enabled && api?.authenticated ? 'loading' : 'guest'
     );
@@ -1067,6 +1076,7 @@ export default function AccountPanel({ api, section = 'profile' }: Props) {
         <UserCenterShell
             active={section}
             api={api}
+            blocks={blocks}
             coverUrl={coverUrl}
             economy={economy}
             loggingOut={loggingOut}
@@ -1078,6 +1088,7 @@ export default function AccountPanel({ api, section = 'profile' }: Props) {
             pageTitle={sectionTitles[section].title}
             profile={profile}
             spaceUrl={spaceUrl}
+            userCenter={userCenter}
             checkinBusy={checkinBusy}
         >
             <div className="user-center-content-card">
