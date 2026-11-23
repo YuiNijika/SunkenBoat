@@ -6,6 +6,7 @@ namespace TTDF;
 
 use RuntimeException;
 use TTDF\Ajax\Endpoint as AjaxEndpoint;
+use TTDF\Cache\Cache;
 use TTDF\Compat\Typecho as TypechoCompat;
 use TTDF\Config\Config;
 use TTDF\Config\ConfigLoader;
@@ -26,7 +27,7 @@ use TTDF\Theme\ThemeConfig;
 
 final class Framework
 {
-    public const VERSION = '5.0.8-next';
+    public const VERSION = '5.0.9-next';
 
     public const CORE_RELATIVE_PATH = 'vendor/yuinijika/ttdf/core';
 
@@ -98,6 +99,7 @@ final class Framework
         self::$root = '';
         AjaxEndpoint::reset();
         ArchiveLayout::reset();
+        Cache::reset();
         FrontendAssets::reset();
         RuntimeConsole::reset();
         Hooks::reset();
