@@ -37,6 +37,7 @@ interface Props {
     onInsert: (snippet: string, attachments?: MediaItem[]) => void;
     excluded?: Array<'login' | 'reply'>;
     api?: UserApiEndpoints;
+    mediaEndpoint?: string;
     uploadPurpose?: UploadPurpose;
 }
 
@@ -491,6 +492,7 @@ export default function ComponentLibrary({
     onInsert,
     excluded = EMPTY_EXCLUDED,
     api,
+    mediaEndpoint,
     uploadPurpose = 'article',
 }: Props) {
     const available = useMemo(
@@ -904,6 +906,7 @@ export default function ComponentLibrary({
                     }
                 }}
                 api={api}
+                mediaEndpoint={mediaEndpoint}
                 uploadPurpose={uploadPurpose}
                 multiple={picker?.multiple ?? false}
                 onSelect={(item) => pickMedia([item])}

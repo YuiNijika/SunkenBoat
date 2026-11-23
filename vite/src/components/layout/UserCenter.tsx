@@ -21,6 +21,8 @@ import {
     DropdownMenuTrigger,
 } from '../ui/dropdown-menu';
 import AuthDialog from './AuthDialog';
+import CaptchaDialog from './CaptchaDialog';
+import type { CaptchaValue } from './CaptchaField';
 import LevelBadge from '../content/LevelBadge';
 import UserAvatar from './UserAvatar';
 import { refreshApp } from '../../lib/appNavigation';
@@ -55,6 +57,9 @@ export default function UserCenter({ api, show, site }: Props) {
     const [submitting, setSubmitting] = useState(false);
     const [refreshKey, setRefreshKey] = useState(0);
     const [economy, setEconomy] = useState<UserEconomySummary | null>(null);
+    const [checkinBusy, setCheckinBusy] = useState(false);
+    const [checkinCaptcha, setCheckinCaptcha] = useState<CaptchaValue | null>(null);
+    const [checkinCaptchaOpen, setCheckinCaptchaOpen] = useState(false);
 
     useEffect(() => {
         if (!show || !api?.enabled) {
@@ -281,6 +286,59 @@ export default function UserCenter({ api, show, site }: Props) {
     const canOpenContent =
         api.content.enabled || api.forum?.canPost === true || api.forum?.canCreateCircle === true;
 
+    const runCheckin = async (captchaValue: CaptchaValue | null) => {
+        if (checkinBusy || !api.economy?.checkin) {
+            return;
+        }
+
+        setCheckinBusy(true);
+        try {
+            const response = await fetch(api.economy.checkin, {
+                method: 'POST',
+                credentials: 'same-origin',
+                headers: {
+                    Accept: 'application/json',
+                    'Content-Type': 'application/json',
+                    'X-Typecho-Token': api.economy.nonce,
+                },
+                body: JSON.stringify(captchaValue ? { captcha: captchaValue } : {}),
+            });
+            const payload = await readPayload(response);
+            if (!response.ok) {
+                throw new Error(errorMessage(payload, '签到失败'));
+            }
+
+            const next = (payload?.data as { economy?: UserEconomySummary } | undefined)
+                ?.economy;
+            if (next) {
+                setEconomy(next);
+            }
+            setCheckinCaptcha(null);
+            setCheckinCaptchaOpen(false);
+            notifySuccess('签到成功，奖励已到账。');
+        } catch (reason) {
+            setCheckinCaptcha(null);
+            notifyError(reason instanceof Error ? reason.message : '签到失败');
+        } finally {
+            setCheckinBusy(false);
+        }
+    };
+
+    const checkinCaptchaRequired = Boolean(
+        api.captcha?.enabled && api.captcha.scenes.includes('checkin')
+    );
+
+    const checkin = () => {
+        if (checkinBusy || !api.economy?.checkin) {
+            return;
+        }
+        if (checkinCaptchaRequired && !checkinCaptcha) {
+            setCheckinCaptchaOpen(true);
+            return;
+        }
+        void runCheckin(checkinCaptcha);
+    };
+
     const trigger = (
         <Button
             variant="ghost"
@@ -367,8 +425,10 @@ export default function UserCenter({ api, show, site }: Props) {
                             ) : null}
 
                             {economy?.enabled && economy.checkin.enabled ? (
-                                <a
-                                    href={profileUrl}
+                                <button
+                                    type="button"
+                                    onClick={checkin}
+                                    disabled={checkinBusy || economy.checkin.checkedIn}
                                     className={
                                         'user-menu-checkin'
                                         + (economy.checkin.checkedIn ? ' is-done' : '')
@@ -390,9 +450,13 @@ export default function UserCenter({ api, show, site }: Props) {
                                         </span>
                                     </span>
                                     <span className="user-menu-checkin-action">
-                                        {economy.checkin.checkedIn ? '已签到' : '去签到'}
+                                        {economy.checkin.checkedIn
+                                            ? '已签到'
+                                            : checkinBusy
+                                              ? '签到中…'
+                                              : '立即签到'}
                                     </span>
-                                </a>
+                                </button>
                             ) : null}
 
                             <div className="user-menu-stats">
@@ -427,27 +491,6 @@ export default function UserCenter({ api, show, site }: Props) {
                                     </a>
                                 </DropdownMenuItem>
                             </div>
-
-                            {api.operations?.enabled || user.group === 'administrator' ? (
-                                <div className="user-menu-secondary">
-                                    {api.operations?.enabled ? (
-                                        <DropdownMenuItem asChild className="user-menu-secondary-link">
-                                            <a href={api.operations.home}>
-                                                <ShieldCheck strokeWidth={1.8} aria-hidden="true" />
-                                                <span>运营中心</span>
-                                            </a>
-                                        </DropdownMenuItem>
-                                    ) : null}
-                                    {user.group === 'administrator' ? (
-                                        <DropdownMenuItem asChild className="user-menu-secondary-link">
-                                            <a href={adminUrl}>
-                                                <Shield strokeWidth={1.8} aria-hidden="true" />
-                                                <span>进入后台</span>
-                                            </a>
-                                        </DropdownMenuItem>
-                                    ) : null}
-                                </div>
-                            ) : null}
 
                             <div className="user-menu-actions">
                                 <DropdownMenuItem asChild className="user-menu-action">
@@ -485,6 +528,26 @@ export default function UserCenter({ api, show, site }: Props) {
                                         </a>
                                     </DropdownMenuItem>
                                 )}
+                                {api.operations?.enabled ? (
+                                    <DropdownMenuItem asChild className="user-menu-action">
+                                        <a href={api.operations.home}>
+                                            <span className="user-menu-action-icon">
+                                                <ShieldCheck strokeWidth={1.8} aria-hidden="true" />
+                                            </span>
+                                            <span>运营中心</span>
+                                        </a>
+                                    </DropdownMenuItem>
+                                ) : null}
+                                {user.group === 'administrator' ? (
+                                    <DropdownMenuItem asChild className="user-menu-action">
+                                        <a href={adminUrl}>
+                                            <span className="user-menu-action-icon">
+                                                <Shield strokeWidth={1.8} aria-hidden="true" />
+                                            </span>
+                                            <span>管理后台</span>
+                                        </a>
+                                    </DropdownMenuItem>
+                                ) : null}
                                 <DropdownMenuItem
                                     className="user-menu-action user-menu-action-logout"
                                     disabled={submitting}
@@ -514,6 +577,19 @@ export default function UserCenter({ api, show, site }: Props) {
                 checking={checking}
                 onAuthenticated={(profile) => {
                     void hydrateProfile(profile);
+                }}
+            />
+
+            <CaptchaDialog
+                open={checkinCaptchaOpen}
+                onOpenChange={setCheckinCaptchaOpen}
+                config={api.captcha}
+                scene="checkin"
+                title="完成验证后签到"
+                description="拖动拼图块完成人机验证，验证通过后会自动签到并领取奖励。"
+                onVerified={(value) => {
+                    setCheckinCaptcha(value);
+                    void runCheckin(value);
                 }}
             />
         </>

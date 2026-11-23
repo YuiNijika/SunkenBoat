@@ -303,12 +303,17 @@
 .user-menu-checkin {
     display: flex;
     align-items: center;
+    width: calc(100% - 28px);
     gap: 10px;
     margin: 0 14px 8px;
     padding: 9px 10px;
     border: 1px solid var(--line);
     border-radius: 8px;
     background: var(--surface-2);
+    color: inherit;
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
     transition: border-color 150ms ease, background 150ms ease;
 }
 
@@ -317,6 +322,14 @@
     border-color: color-mix(in srgb, var(--accent) 28%, var(--line));
     background: var(--surface);
     outline: none;
+}
+
+.user-menu-checkin:disabled {
+    cursor: default;
+}
+
+.user-menu-checkin:disabled:not(.is-done) {
+    opacity: 0.72;
 }
 
 .user-menu-checkin-icon {
@@ -419,46 +432,9 @@
     background: var(--surface);
 }
 
-.user-menu-secondary {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 8px;
-    padding: 0 14px 10px;
-}
-
-.user-menu-content .user-menu-secondary-link {
-    display: inline-flex;
-    align-items: center;
-    gap: 4px;
-    padding: 3px 7px;
-    border: 1px solid var(--line);
-    border-radius: 6px;
-    color: var(--ink-mute);
-    font-size: 9.5px;
-    cursor: pointer;
-}
-
-.user-menu-content .user-menu-secondary-link svg {
-    width: 12px;
-    height: 12px;
-    color: var(--ink-faint);
-    transition: color 150ms ease;
-}
-
-.user-menu-content .user-menu-secondary-link:hover,
-.user-menu-content .user-menu-secondary-link:focus {
-    background: var(--surface-2);
-    color: var(--ink);
-}
-
-.user-menu-content .user-menu-secondary-link:hover svg,
-.user-menu-content .user-menu-secondary-link:focus svg {
-    color: var(--accent);
-}
-
 .user-menu-actions {
     display: grid;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
+    grid-template-columns: repeat(3, minmax(0, 1fr));
     gap: 3px;
     padding: 12px 10px 14px;
     border-top: 1px solid var(--line);

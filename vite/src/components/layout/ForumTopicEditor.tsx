@@ -923,6 +923,8 @@ function TopicEditor({ editor }: { editor: ForumEditorData }) {
                 open={libraryOpen}
                 onOpenChange={setLibraryOpen}
                 onInsert={insertSnippet}
+                mediaEndpoint={editor.mediaEndpoint}
+                uploadPurpose="topic"
             />
 
             <MediaLibrary

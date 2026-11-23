@@ -15,6 +15,7 @@ import { Button } from '../ui/button';
 import { Card } from '../ui/card';
 import AuthDialog from './AuthDialog';
 import UserAvatar from './UserAvatar';
+import { cssUrl } from '../../lib/css';
 import { profileFrom, readPayload } from '../../lib/user';
 import type { UserApiEndpoints, UserProfile } from '../../types';
 
@@ -232,10 +233,19 @@ export default function SidebarUserCard({ api }: Props) {
         { label: '评论', value: user.comments ?? 0 },
         { label: '圈子', value: user.circles ?? 0 },
     ];
+    const coverStyle = user.background
+        ? {
+              backgroundImage:
+                  'linear-gradient(180deg, rgba(8, 12, 18, 0.08), rgba(8, 12, 18, 0.36)), '
+                  + cssUrl(user.background),
+              backgroundSize: 'cover',
+              backgroundPosition: 'center',
+          }
+        : undefined;
 
     return (
         <Card className="surface-card sidebar-user-card gap-0 overflow-hidden p-0">
-            <div className="sidebar-user-cover relative h-[128px]">
+            <div className="sidebar-user-cover relative h-[128px]" style={coverStyle}>
                 <span className="absolute right-3 top-3 inline-flex items-center gap-1 rounded-[5px] bg-gradient-to-r from-[#ff7a45] to-[#ffa63d] px-2 py-1 text-[10px] font-medium text-white shadow-[0_4px_12px_-6px_rgba(255,122,69,0.9)]">
                     <CalendarCheck2 className="size-3" strokeWidth={2} aria-hidden="true" />
                     已登录

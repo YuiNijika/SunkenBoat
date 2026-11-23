@@ -38,6 +38,7 @@ export interface DownloadOffer extends DownloadsClient {
     limit: number;
     used: number;
     remaining: number | null;
+    isAuthor: boolean;
     purchased: boolean;
 }
 

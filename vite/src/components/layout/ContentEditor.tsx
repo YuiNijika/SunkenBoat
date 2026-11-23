@@ -1254,6 +1254,7 @@ export default function ContentEditor({
                 onOpenChange={setLibraryOpen}
                 onInsert={insertSnippet}
                 api={api}
+                mediaEndpoint={api.content.media}
                 uploadPurpose="article"
             />
 

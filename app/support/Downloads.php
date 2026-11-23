@@ -269,6 +269,7 @@ final class Downloads
 
         $config = $resource['config'];
         $limit = self::freeLimit();
+        $author = $uid > 0 && (int) ($resource['authorId'] ?? 0) === $uid;
 
         return [
             ...self::client(),
@@ -279,11 +280,12 @@ final class Downloads
             'price' => $config['paid'] ? $config['price'] : '0.00',
             'currency' => 'CNY',
             'loggedIn' => $uid > 0,
-            'available' => $purchased || !$config['paid'] || DownloadPayment::configured(),
+            'isAuthor' => $author,
+            'available' => $author || $purchased || !$config['paid'] || DownloadPayment::configured(),
             'limit' => $limit,
             'used' => $used,
             'remaining' => $limit === 0 ? null : max(0, $limit - $used),
-            'purchased' => $purchased,
+            'purchased' => $author || $purchased,
         ];
     }
 
@@ -310,6 +312,27 @@ final class Downloads
         }
 
         $config = $resource['config'];
+        $author = $uid === (int) ($resource['authorId'] ?? 0);
+        if ($author) {
+            $order = [
+                'number' => self::newOrderNumber(),
+                'user_id' => $uid,
+                'content_type' => $contentType,
+                'content_id' => $contentId,
+                'title' => self::clipTitle((string) $resource['title']),
+                'content_url' => (string) $config['url'],
+                'amount_cents' => 0,
+                'status' => 'free',
+                'gateway_trade' => null,
+                'download_count' => 0,
+                'created' => time(),
+                'paid_at' => 0,
+            ];
+            DownloadStore::createOrder($order);
+
+            return ['order' => self::orderPayload($order)];
+        }
+
         if (($config['paid'] ?? false) === true) {
             $paid = DownloadStore::latestOrder($uid, $contentType, $contentId, 'paid');
             if ($paid !== null) {
@@ -402,8 +425,8 @@ final class Downloads
         }
 
         $number = self::orderNumber($data['orderNumber'] ?? '');
-        $order = DownloadStore::orderByNumber($number);
-        if ($order === null || (int) ($order['user_id'] ?? 0) !== $uid) {
+        $order = self::downloadOrder($number, $uid);
+        if ($order === null) {
             Response::error('订单不存在', 404);
         }
         if ((string) ($order['status'] ?? '') === 'paid') {
@@ -433,8 +456,8 @@ final class Downloads
         }
 
         $number = self::orderNumber($data['orderNumber'] ?? '');
-        $order = DownloadStore::orderByNumber($number);
-        if ($order === null || (int) ($order['user_id'] ?? 0) !== $uid) {
+        $order = self::downloadOrder($number, $uid);
+        if ($order === null) {
             Response::error('订单不存在', 404);
         }
         if ((string) ($order['status'] ?? '') === 'paid') {
@@ -462,8 +485,8 @@ final class Downloads
         }
 
         $number = self::orderNumber($data['orderNumber'] ?? '');
-        $order = DownloadStore::orderByNumber($number);
-        if ($order === null || (int) ($order['user_id'] ?? 0) !== $uid) {
+        $order = self::downloadOrder($number, $uid);
+        if ($order === null) {
             Response::error('订单不存在', 404);
         }
 
@@ -487,10 +510,17 @@ final class Downloads
         $number = self::orderNumber($data['orderNumber'] ?? '');
 
         $result = DownloadStore::transaction($uid, static function () use ($uid, $number): array {
-            $order = DownloadStore::orderByNumber($number);
-            if ($order === null || (int) ($order['user_id'] ?? 0) !== $uid) {
+            $order = self::downloadOrder($number, $uid);
+            if ($order === null) {
                 return ['error' => '订单不存在', 'status' => 404];
             }
+            $resource = self::resource(
+                (string) ($order['content_type'] ?? ''),
+                (int) ($order['content_id'] ?? 0),
+                $uid
+            );
+            $author = $resource !== null
+                && (int) ($resource['authorId'] ?? 0) === $uid;
 
             $status = (string) ($order['status'] ?? '');
             if ($status === 'pending') {
@@ -504,7 +534,7 @@ final class Downloads
             }
 
             $limit = self::freeLimit();
-            if ($status === 'free' && $limit > 0 && self::freeUsed($uid) >= $limit) {
+            if (!$author && $status === 'free' && $limit > 0 && self::freeUsed($uid) >= $limit) {
                 return [
                     'error' => '今日免费下载次数已用完',
                     'status' => 429,
@@ -517,9 +547,16 @@ final class Downloads
                 return ['error' => '下载链接暂不可用，请联系发布者', 'status' => 422];
             }
 
-            DownloadStore::recordDownload($order, $uid, $status === 'paid');
-            $fresh = DownloadStore::orderByNumber($number) ?? $order;
+            $downloadCount = (int) ($order['download_count'] ?? 0);
             $used = self::freeUsed($uid);
+            if (!$author) {
+                DownloadStore::recordDownload($order, $uid, $status === 'paid');
+                $downloadCount++;
+                if ($status === 'free') {
+                    $used++;
+                }
+            }
+            $fresh = array_replace($order, ['download_count' => $downloadCount]);
 
             return [
                 'data' => [
@@ -619,18 +656,14 @@ final class Downloads
                 }
                 $order = null;
             } else {
-                $order = DownloadStore::markPaid(
-                    $result['number'],
-                    $result['trade'],
-                    $result['amount']
-                );
+                $order = self::settleGatewayOrder($result);
             }
         } catch (\Throwable $exception) {
             // The table may not exist yet on a fresh install; create it once and retry.
             try {
                 DownloadStore::install();
                 $order = isset($result) && is_array($result)
-                    ? DownloadStore::markPaid($result['number'], $result['trade'], $result['amount'])
+                    ? self::settleGatewayOrder($result)
                     : null;
             } catch (\Throwable $retry) {
                 error_log('SunkenBoat payment notification failed: ' . $retry->getMessage());
@@ -667,6 +700,35 @@ final class Downloads
         }
         echo 'success';
         exit;
+    }
+
+    /**
+     * Dispatch a verified gateway notification by the stored order kind.
+     * Downloads and paid-content blocks share the order table, but their
+     * settlement rules must stay independent.
+     *
+     * @param array{number: string, trade: string, amount: int} $result
+     * @return array<string, mixed>|null
+     */
+    private static function settleGatewayOrder(array $result): ?array
+    {
+        $order = DownloadStore::orderByNumber((string) ($result['number'] ?? ''));
+        if ($order === null) {
+            return null;
+        }
+
+        if ((string) ($order['content_type'] ?? '') === PaidContent::ORDER_TYPE) {
+            return PaidContent::settleGatewayOrder($result);
+        }
+        if (!in_array((string) ($order['content_type'] ?? ''), ['article', 'topic'], true)) {
+            return null;
+        }
+
+        return DownloadStore::markPaid(
+            (string) $result['number'],
+            (string) $result['trade'],
+            (int) $result['amount']
+        );
     }
 
     /**
@@ -849,6 +911,25 @@ final class Downloads
         }
 
         return $uid;
+    }
+
+    /**
+     * Resolve a download order without ever accepting a paid-content order.
+     *
+     * @return array<string, mixed>|null
+     */
+    private static function downloadOrder(string $number, int $uid): ?array
+    {
+        $order = DownloadStore::orderByNumber($number);
+        if (
+            $order === null
+            || (int) ($order['user_id'] ?? 0) !== $uid
+            || !in_array((string) ($order['content_type'] ?? ''), ['article', 'topic'], true)
+        ) {
+            return null;
+        }
+
+        return $order;
     }
 
     private static function uid(): int

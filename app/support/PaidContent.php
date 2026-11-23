@@ -111,16 +111,18 @@ final class PaidContent
 
         $uid ??= self::uid();
         $admin ??= UserProfile::viewerIsAdmin();
-        $purchased = $admin ? [] : self::purchasedKeys($contentType, $contentId, $uid);
+        $author = $uid > 0 && $uid === self::contentAuthor($contentType, $contentId);
+        $unlocked = $admin || $author;
+        $purchased = $unlocked ? [] : self::purchasedKeys($contentType, $contentId, $uid);
         $index = 0;
 
         $rendered = preg_replace_callback(
             self::INNER_PATTERN,
-            static function (array $match) use ($contentType, $contentId, $uid, $admin, $purchased, &$index): string {
+            static function (array $match) use ($contentType, $contentId, $uid, $unlocked, $purchased, &$index): string {
                 $attributes = self::attributes((string) ($match[1] ?? ''));
                 $body = (string) ($match[2] ?? '');
                 $quote = self::quote($attributes, $contentType, $contentId, $index++);
-                if ($admin || ($uid > 0 && $quote['blockKey'] !== '' && isset($purchased[$quote['blockKey']]))) {
+                if ($unlocked || ($uid > 0 && $quote['blockKey'] !== '' && isset($purchased[$quote['blockKey']]))) {
                     return $body;
                 }
 
@@ -205,6 +207,36 @@ final class PaidContent
         $marker = self::decodeMarker($order);
 
         return self::safeReturnUrl((string) ($marker['return'] ?? ''));
+    }
+
+    /**
+     * Settle a gateway callback only when the stored order is a paid-content
+     * order. Download orders are handled by Downloads, so the two callback
+     * paths cannot accidentally unlock each other.
+     *
+     * @param array{number: string, trade: string, amount: int} $result
+     * @return array<string, mixed>|null
+     */
+    public static function settleGatewayOrder(array $result): ?array
+    {
+        $order = DownloadStore::orderByNumber((string) ($result['number'] ?? ''));
+        if ($order === null || (string) ($order['content_type'] ?? '') !== self::ORDER_TYPE) {
+            return null;
+        }
+
+        $marker = self::decodeMarker($order);
+        if (
+            !in_array((string) ($marker['contentType'] ?? ''), self::CONTENT_TYPES, true)
+            || preg_match('/^[a-f0-9]{40}$/D', (string) ($marker['blockKey'] ?? '')) !== 1
+        ) {
+            return null;
+        }
+
+        return DownloadStore::markPaid(
+            (string) $result['number'],
+            (string) $result['trade'],
+            (int) $result['amount']
+        );
     }
 
     /**
@@ -365,17 +397,19 @@ final class PaidContent
         // with a stray </p> or end with an unclosed <p>.
         $html = self::unwrapShortcodeParagraphs($html, 'paid');
 
-        $purchased = $admin ? [] : self::purchasedKeys($contentType, $contentId, $uid);
+        $author = $uid > 0 && $uid === self::contentAuthor($contentType, $contentId);
+        $unlocked = $admin || $author;
+        $purchased = $unlocked ? [] : self::purchasedKeys($contentType, $contentId, $uid);
         $index = 0;
         $rendered = preg_replace_callback(
             self::INNER_PATTERN,
-            static function (array $match) use ($contentType, $contentId, $uid, $admin, $purchased, $returnUrl, &$index): string {
+            static function (array $match) use ($contentType, $contentId, $uid, $unlocked, $purchased, $returnUrl, &$index): string {
                 $attributes = self::attributes((string) ($match[1] ?? ''));
                 $body = (string) ($match[2] ?? '');
                 $quote = self::quote($attributes, $contentType, $contentId, $index++);
                 $quote['returnUrl'] = $returnUrl;
 
-                if ($admin || ($uid > 0 && $quote['blockKey'] !== '' && isset($purchased[$quote['blockKey']]))) {
+                if ($unlocked || ($uid > 0 && $quote['blockKey'] !== '' && isset($purchased[$quote['blockKey']]))) {
                     return self::unlocked($body, $quote);
                 }
 
@@ -991,6 +1025,42 @@ final class PaidContent
         }
 
         return $attributes;
+    }
+
+    /**
+     * Author uid for the article or topic that owns this paid block.
+     */
+    private static function contentAuthor(string $contentType, int $contentId): int
+    {
+        if ($contentId <= 0 || !in_array($contentType, self::CONTENT_TYPES, true)) {
+            return 0;
+        }
+
+        try {
+            $db = Db::get();
+            if ($contentType === 'topic') {
+                $row = $db->fetchRow(
+                    $db->select('author_id')
+                        ->from('table.sunken_forum_topics')
+                        ->where('id = ?', $contentId)
+                        ->limit(1)
+                );
+
+                return is_array($row) ? max(0, (int) ($row['author_id'] ?? 0)) : 0;
+            }
+
+            $row = $db->fetchRow(
+                $db->select('authorId')
+                    ->from('table.contents')
+                    ->where('cid = ?', $contentId)
+                    ->where('type = ?', 'post')
+                    ->limit(1)
+            );
+
+            return is_array($row) ? max(0, (int) ($row['authorId'] ?? 0)) : 0;
+        } catch (\Throwable) {
+            return 0;
+        }
     }
 
     private static function icon(string $name): string

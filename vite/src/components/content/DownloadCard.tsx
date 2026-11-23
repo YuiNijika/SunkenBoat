@@ -7,7 +7,6 @@ import {
     DialogContent,
     DialogDescription,
     DialogFooter,
-    DialogHeader,
     DialogTitle,
 } from '../ui/dialog';
 import {
@@ -79,10 +78,22 @@ function PaymentDialog({
     const [payingBalance, setPayingBalance] = useState(false);
     const [payingPoints, setPayingPoints] = useState(false);
     const [gatewayStarted, setGatewayStarted] = useState(false);
+    const [selected, setSelected] = useState<'balance' | 'points' | number | null>(null);
     const controller = useRef<AbortController | null>(null);
     const paymentOptions = order.paymentOptions.filter((option) => safeDownloadUrl(option.url) !== '');
 
     useEffect(() => () => controller.current?.abort(), []);
+
+    useEffect(() => {
+        const fallback: 'balance' | 'points' | number | null = client.balanceEnabled
+            ? 'balance'
+            : client.pointsEnabled
+              ? 'points'
+              : paymentOptions.length > 0
+                ? 0
+                : null;
+        setSelected(fallback);
+    }, [client.balanceEnabled, client.pointsEnabled, open, order.number, paymentOptions.length]);
 
     useEffect(() => {
         if (!open || !gatewayStarted) {
@@ -269,96 +280,273 @@ function PaymentDialog({
         }
     };
 
+    const openGateway = (url: string) => {
+        setGatewayStarted(true);
+        const popup = window.open(url, '_blank');
+        if (popup) {
+            popup.opener = null;
+        }
+        if (!popup) {
+            notifyInfo('浏览器拦截了付款窗口，请允许弹出窗口后再试。');
+        }
+    };
+
+    const pointsCost = client.pointsEnabled
+        ? Math.max(1, Math.ceil(Number(order.amount) * client.pointsRate))
+        : 0;
+    const selectedGateway =
+        typeof selected === 'number' ? paymentOptions[selected] ?? null : null;
+    const busy = checking || payingBalance || payingPoints;
+    const primaryLabel =
+        selected === 'balance'
+            ? `使用${client.balanceLabel}支付 ¥${order.amount}`
+            : selected === 'points'
+              ? `使用 ${pointsCost} ${client.pointsLabel}支付`
+              : selectedGateway !== null
+                ? `前往${selectedGateway.label}支付`
+                : '暂无可用的付款方式';
+
+    const paySelected = () => {
+        if (busy || selected === null) {
+            return;
+        }
+        if (selected === 'balance') {
+            void payWithBalance();
+            return;
+        }
+        if (selected === 'points') {
+            void payWithPoints();
+            return;
+        }
+        if (selectedGateway !== null) {
+            openGateway(selectedGateway.url);
+        }
+    };
+
     return (
         <Dialog open={open} onOpenChange={onOpenChange}>
-            <DialogContent>
-                <DialogHeader>
-                    <DialogTitle>购买下载</DialogTitle>
-                    <DialogDescription>完成付款后会自动确认；也可以点击“我已支付”手动查询结果。</DialogDescription>
-                </DialogHeader>
-                <div className="grid min-w-0 gap-3 rounded-lg border border-line p-4">
-                    <p className="break-words text-sm font-medium text-ink">{order.title}</p>
-                    <dl className="grid min-w-0 gap-2 text-xs">
-                        <div className="flex flex-wrap justify-between gap-2">
-                            <dt className="text-ink-faint">应付金额</dt>
-                            <dd className="text-lg font-semibold tabular-nums text-ink">¥{order.amount}</dd>
-                        </div>
-                        {client.pointsEnabled ? (
-                            <div className="flex flex-wrap justify-between gap-2">
-                                <dt className="text-ink-faint">{client.pointsLabel}抵扣</dt>
-                                <dd className="tabular-nums text-ink">
-                                    {Math.max(
-                                        1,
-                                        Math.ceil(
-                                            Number(order.amount) * client.pointsRate
-                                        )
-                                    ).toLocaleString('zh-CN')}{' '}
-                                    {client.pointsLabel}
-                                </dd>
-                            </div>
-                        ) : null}
-                        <div className="grid min-w-0 gap-1 sm:grid-cols-[auto_minmax(0,1fr)] sm:gap-4">
-                            <dt className="text-ink-faint">订单号</dt>
-                            <dd className="break-all font-mono text-ink-mute sm:text-right">{order.number}</dd>
-                        </div>
-                    </dl>
+            <DialogContent className="max-h-[min(88dvh,760px)] gap-0 overflow-hidden p-0 sm:max-w-[470px]">
+                <div className="flex items-start gap-3 border-b border-line px-5 pb-4 pr-12 pt-5">
+                    <span className="grid size-10 shrink-0 place-items-center rounded-[8px] bg-brand-soft text-brand">
+                        <ArrowDownToLine className="size-5" strokeWidth={1.8} aria-hidden="true" />
+                    </span>
+                    <div className="min-w-0">
+                        <DialogTitle className="text-[17px] leading-6">购买下载</DialogTitle>
+                        <DialogDescription className="mt-1 text-[12px] leading-5 text-ink-mute">
+                            付款确认后自动获取下载链接；第三方支付可返回此处手动确认。
+                        </DialogDescription>
+                    </div>
                 </div>
-                {paymentOptions.length === 0 && !client.balanceEnabled && !client.pointsEnabled ? (
-                    <p className="text-sm text-ink-mute">支付链接暂不可用，请返回资源页重新下单。</p>
-                ) : paymentOptions.length === 0 ? (
-                    <p className="text-sm text-ink-mute">
-                        可使用账户余额或{client.pointsLabel}直接结算，支付成功后立即解锁资源。
-                    </p>
-                ) : paymentOptions.length > 1 ? (
-                    <p className="text-sm text-ink-mute">可选择一种付款方式完成支付，付款后返回这里确认结果。</p>
-                ) : null}
-                <DialogFooter>
-                    <div className="flex w-full flex-wrap justify-end gap-2">
-                        <Button type="button" variant="outline" onClick={() => void checkPayment()} disabled={checking}>
-                            {checking ? <LoaderCircle className="animate-spin" aria-hidden="true" /> : <CheckCircle2 aria-hidden="true" />}
-                            {checking ? '查询中…' : '我已支付'}
-                        </Button>
-                        {client.balanceEnabled ? (
-                            <Button type="button" onClick={() => void payWithBalance()} disabled={payingBalance}>
-                                {payingBalance ? <LoaderCircle className="animate-spin" aria-hidden="true" /> : <Wallet aria-hidden="true" />}
-                                {payingBalance ? '支付中…' : `用${client.balanceLabel}支付`}
-                            </Button>
+
+                <div className="grid gap-4 overflow-y-auto px-5 py-4">
+                    <div className="rounded-[8px] border border-line bg-surface-2 p-4">
+                        <p className="break-words text-[13px] font-medium leading-5 text-ink">
+                            {order.title}
+                        </p>
+                        <div className="mt-3 flex flex-wrap items-end justify-between gap-3 border-t border-line pt-3">
+                            <span className="text-[11px] text-ink-faint">应付金额</span>
+                            <span className="flex items-baseline gap-0.5 text-ink">
+                                <span className="text-xs">¥</span>
+                                <strong className="text-[26px] font-semibold tabular-nums leading-none">
+                                    {order.amount}
+                                </strong>
+                            </span>
+                        </div>
+                        {pointsCost > 0 ? (
+                            <p className="mt-2 text-[11px] text-ink-faint">
+                                或使用 {pointsCost.toLocaleString('zh-CN')} {client.pointsLabel}
+                            </p>
                         ) : null}
+                        <p className="mt-2 break-all font-mono text-[10.5px] leading-5 text-ink-faint">
+                            订单 {order.number}
+                        </p>
+                    </div>
+
+                    <div className="grid gap-2">
+                        <p className="text-[11px] font-medium text-ink">选择支付方式</p>
+                        {client.balanceEnabled ? (
+                            <button
+                                type="button"
+                                role="radio"
+                                aria-checked={selected === 'balance'}
+                                onClick={() => setSelected('balance')}
+                                className={
+                                    'flex w-full items-center gap-3 rounded-[8px] border px-3.5 py-3 text-left transition-colors '
+                                    + (selected === 'balance'
+                                        ? 'border-brand/40 bg-brand-soft'
+                                        : 'border-line bg-surface hover:border-brand/30 hover:bg-surface-2')
+                                }
+                            >
+                                <span className="grid size-9 shrink-0 place-items-center rounded-[6px] bg-surface-2 text-ink-mute">
+                                    <Wallet className="size-4" aria-hidden="true" />
+                                </span>
+                                <span className="min-w-0 flex-1">
+                                    <span className="block text-[12.5px] font-medium text-ink">
+                                        {client.balanceLabel}支付
+                                    </span>
+                                    <span className="mt-0.5 block text-[10.5px] text-ink-faint">
+                                        从账户{client.balanceLabel}中即时扣除
+                                    </span>
+                                </span>
+                                <span className="shrink-0 text-[12px] font-semibold tabular-nums text-ink">
+                                    ¥{order.amount}
+                                </span>
+                                <span
+                                    className={
+                                        'grid size-4 shrink-0 place-items-center rounded-full border '
+                                        + (selected === 'balance'
+                                            ? 'border-brand bg-brand text-brand-contrast'
+                                            : 'border-line bg-surface')
+                                    }
+                                    aria-hidden="true"
+                                >
+                                    {selected === 'balance' ? (
+                                        <CheckCircle2 className="size-2.5" strokeWidth={3} />
+                                    ) : null}
+                                </span>
+                            </button>
+                        ) : null}
+
                         {client.pointsEnabled ? (
+                            <button
+                                type="button"
+                                role="radio"
+                                aria-checked={selected === 'points'}
+                                onClick={() => setSelected('points')}
+                                className={
+                                    'flex w-full items-center gap-3 rounded-[8px] border px-3.5 py-3 text-left transition-colors '
+                                    + (selected === 'points'
+                                        ? 'border-brand/40 bg-brand-soft'
+                                        : 'border-line bg-surface hover:border-brand/30 hover:bg-surface-2')
+                                }
+                            >
+                                <span className="grid size-9 shrink-0 place-items-center rounded-[6px] bg-surface-2 text-ink-mute">
+                                    <Coins className="size-4" aria-hidden="true" />
+                                </span>
+                                <span className="min-w-0 flex-1">
+                                    <span className="block text-[12.5px] font-medium text-ink">
+                                        {client.pointsLabel}支付
+                                    </span>
+                                    <span className="mt-0.5 block text-[10.5px] text-ink-faint">
+                                        按当前兑换比例即时扣除
+                                    </span>
+                                </span>
+                                <span className="shrink-0 text-[12px] font-semibold tabular-nums text-ink">
+                                    {pointsCost.toLocaleString('zh-CN')} {client.pointsLabel}
+                                </span>
+                                <span
+                                    className={
+                                        'grid size-4 shrink-0 place-items-center rounded-full border '
+                                        + (selected === 'points'
+                                            ? 'border-brand bg-brand text-brand-contrast'
+                                            : 'border-line bg-surface')
+                                    }
+                                    aria-hidden="true"
+                                >
+                                    {selected === 'points' ? (
+                                        <CheckCircle2 className="size-2.5" strokeWidth={3} />
+                                    ) : null}
+                                </span>
+                            </button>
+                        ) : null}
+
+                        {paymentOptions.map((option, index) => (
+                            <button
+                                key={option.method + ':' + option.url}
+                                type="button"
+                                role="radio"
+                                aria-checked={selected === index}
+                                onClick={() => setSelected(index)}
+                                className={
+                                    'flex w-full items-center gap-3 rounded-[8px] border px-3.5 py-3 text-left transition-colors '
+                                    + (selected === index
+                                        ? 'border-brand/40 bg-brand-soft'
+                                        : 'border-line bg-surface hover:border-brand/30 hover:bg-surface-2')
+                                }
+                            >
+                                <span className="grid size-9 shrink-0 place-items-center rounded-[6px] bg-surface-2 text-ink-mute">
+                                    <CreditCard className="size-4" aria-hidden="true" />
+                                </span>
+                                <span className="min-w-0 flex-1">
+                                    <span className="block truncate text-[12.5px] font-medium text-ink">
+                                        {option.label}
+                                    </span>
+                                    <span className="mt-0.5 block text-[10.5px] text-ink-faint">
+                                        在新窗口完成付款
+                                    </span>
+                                </span>
+                                <ExternalLink className="size-3.5 shrink-0 text-ink-faint" aria-hidden="true" />
+                                <span
+                                    className={
+                                        'grid size-4 shrink-0 place-items-center rounded-full border '
+                                        + (selected === index
+                                            ? 'border-brand bg-brand text-brand-contrast'
+                                            : 'border-line bg-surface')
+                                    }
+                                    aria-hidden="true"
+                                >
+                                    {selected === index ? (
+                                        <CheckCircle2 className="size-2.5" strokeWidth={3} />
+                                    ) : null}
+                                </span>
+                            </button>
+                        ))}
+
+                        {!client.balanceEnabled &&
+                        !client.pointsEnabled &&
+                        paymentOptions.length === 0 ? (
+                            <p className="rounded-[6px] border border-dashed border-line bg-surface-2 px-3 py-4 text-[11px] leading-5 text-ink-faint">
+                                当前没有可用的付款方式，请联系发布者或管理员。
+                            </p>
+                        ) : null}
+                    </div>
+
+                    <p className="flex items-start gap-2 rounded-[6px] bg-surface-2 px-3 py-2.5 text-[11px] leading-5 text-ink-faint">
+                        <CheckCircle2 className="mt-0.5 size-3.5 shrink-0" aria-hidden="true" />
+                        {client.balanceEnabled || client.pointsEnabled
+                            ? '余额与积分即时到账；第三方支付完成后返回本窗口点击“我已支付”。'
+                            : '第三方支付完成后返回本窗口点击“我已支付”确认结果。'}
+                    </p>
+                </div>
+
+                <DialogFooter className="gap-2 border-t border-line px-5 py-4 sm:flex-col sm:space-x-0">
+                    <Button
+                        type="button"
+                        className="h-11 w-full"
+                        onClick={paySelected}
+                        disabled={busy || selected === null}
+                    >
+                        {busy ? (
+                            <LoaderCircle className="animate-spin" aria-hidden="true" />
+                        ) : selectedGateway !== null ? (
+                            <ExternalLink aria-hidden="true" />
+                        ) : (
+                            <CreditCard aria-hidden="true" />
+                        )}
+                        {busy ? '处理中…' : primaryLabel}
+                    </Button>
+                    <div className="flex w-full items-center justify-between gap-2">
+                        <Button type="button" variant="ghost" size="sm" onClick={() => onOpenChange(false)}>
+                            稍后支付
+                        </Button>
+                        {paymentOptions.length > 0 ? (
                             <Button
                                 type="button"
-                                variant="outline"
-                                onClick={() => void payWithPoints()}
-                                disabled={payingPoints}
+                                variant="link"
+                                size="sm"
+                                onClick={() => void checkPayment()}
+                                disabled={checking}
                             >
-                                {payingPoints ? (
+                                {checking ? (
                                     <LoaderCircle className="animate-spin" aria-hidden="true" />
                                 ) : (
-                                    <Coins aria-hidden="true" />
+                                    <CheckCircle2 aria-hidden="true" />
                                 )}
-                                {payingPoints
-                                    ? '支付中…'
-                                    : `用 ${Math.max(
-                                          1,
-                                          Math.ceil(Number(order.amount) * client.pointsRate)
-                                      )} ${client.pointsLabel}支付`}
+                                {checking ? '查询中…' : '我已支付'}
                             </Button>
-                        ) : null}
-                        {paymentOptions.map((option) => (
-                            <Button asChild key={option.method + '\n' + option.url}>
-                                <a
-                                    href={option.url}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    data-ttdf-reload
-                                    onClick={() => setGatewayStarted(true)}
-                                >
-                                    <CreditCard aria-hidden="true" />
-                                    {option.method === 'default' ? option.label : `前往${option.label}付款`}
-                                    <ExternalLink aria-hidden="true" />
-                                </a>
-                            </Button>
-                        ))}
+                        ) : (
+                            <span className="pr-1 text-[10.5px] text-ink-faint">余额或积分即时到账</span>
+                        )}
                     </div>
                 </DialogFooter>
             </DialogContent>
@@ -544,7 +732,15 @@ export default function DownloadCard({ offer }: { offer: DownloadOffer }) {
                 <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-center gap-2">
                         <h2 className="text-sm font-semibold text-ink">资源下载</h2>
-                        <Badge variant="secondary">{purchased ? '已购买' : offer.paid ? '付费资源' : '免费资源'}</Badge>
+                        <Badge variant="secondary">
+                            {offer.isAuthor
+                                ? '作者资源'
+                                : purchased
+                                  ? '已购买'
+                                  : offer.paid
+                                    ? '付费资源'
+                                    : '免费资源'}
+                        </Badge>
                     </div>
                     <p className="mt-1 break-words text-xs text-ink-mute">{offer.title}</p>
                 </div>
@@ -554,8 +750,10 @@ export default function DownloadCard({ offer }: { offer: DownloadOffer }) {
                 <p className="text-xs leading-5 text-ink-faint" aria-live="polite">
                     {unavailable
                         ? '资源暂不可下载，请联系发布者。'
-                        : offer.paid
-                            ? purchased ? '已解锁，可重复下载。' : '付款成功后即可获取下载链接。'
+                        : offer.isAuthor
+                            ? '作者本人可直接下载，不占用免费次数。'
+                            : offer.paid
+                              ? purchased ? '已解锁，可重复下载。' : '付款成功后即可获取下载链接。'
                             : offer.limit > 0
                                 ? offer.loggedIn ? `今日免费次数剩余 ${remaining ?? Math.max(0, offer.limit - offer.used)} / ${offer.limit}` : `每人每天可免费下载 ${offer.limit} 次`
                                 : '免费下载，下载记录可在用户中心查看。'}
