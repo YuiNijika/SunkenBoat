@@ -338,6 +338,21 @@ final class DownloadStore
     }
 
     /**
+     * Keep a reusable free order pointed at the current resource title/URL.
+     */
+    public static function updateOrderResource(string $number, string $title, string $url): void
+    {
+        Db::get()->query(
+            Db::get()->update('table.sunken_download_orders')
+                ->rows([
+                    'title' => $title,
+                    'content_url' => $url,
+                ])
+                ->where('number = ?', $number)
+        );
+    }
+
+    /**
      * @return array{items: list<array<string, mixed>>, total: int}
      */
     public static function history(int $uid, int $page, int $pageSize): array
@@ -346,25 +361,30 @@ final class DownloadStore
         $page = max(1, $page);
         $pageSize = max(1, min(50, $pageSize));
         $offset = ($page - 1) * $pageSize;
-        $count = self::fetchOne(
-            $db->select('COUNT(*) AS total')
-                ->from('table.sunken_download_orders')
-                ->where('user_id = ?', $uid)
-                ->where('content_type <> ?', 'paid')
-        );
         $rows = $db->fetchAll(
             $db->select('*')
                 ->from('table.sunken_download_orders')
                 ->where('user_id = ?', $uid)
                 ->where('content_type <> ?', 'paid')
                 ->order('id', Db::SORT_DESC)
-                ->offset($offset)
-                ->limit($pageSize)
         );
+        $unique = [];
+        foreach ($rows as $row) {
+            if (!is_array($row)) {
+                continue;
+            }
+            $key = (string) ($row['content_type'] ?? '') . ':' . (int) ($row['content_id'] ?? 0);
+            if (!isset($unique[$key])) {
+                $unique[$key] = $row;
+            }
+        }
+        $items = array_values($unique);
+        $total = count($items);
+        $items = array_slice($items, $offset, $pageSize);
 
         return [
-            'items' => array_values(array_filter($rows, 'is_array')),
-            'total' => (int) ($count['total'] ?? 0),
+            'items' => $items,
+            'total' => $total,
         ];
     }
 

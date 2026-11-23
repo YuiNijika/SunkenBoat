@@ -1,6 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
-import { ShieldCheck } from 'lucide-react';
-import { Button } from '../ui/button';
+import { useEffect, useRef } from 'react';
 import {
     Dialog,
     DialogContent,
@@ -28,15 +26,12 @@ export default function CaptchaDialog({
     config,
     scene,
     onVerified,
-    title = '完成人机验证后继续',
-    description = '拖动拼图块，把图片放回缺口位置；验证完成后会自动继续。',
+    title = '人机验证',
+    description = '点击“我不是机器人”开始验证；通过后会自动继续。',
 }: Props) {
-    const [value, setValue] = useState<CaptchaValue | null>(null);
     const completed = useRef(false);
-    const manual = config?.provider === 'math' || config?.provider === 'slider';
 
     useEffect(() => {
-        setValue(null);
         completed.current = false;
     }, [open, scene]);
 
@@ -51,13 +46,12 @@ export default function CaptchaDialog({
 
     return (
         <Dialog open={open} onOpenChange={onOpenChange}>
-            <DialogContent className="w-[calc(100%-2rem)] max-w-[430px] gap-4 rounded-[10px] border-line bg-surface p-5 shadow-pop">
-                <DialogHeader className="gap-1.5 pr-6 text-left">
-                    <DialogTitle className="flex items-center gap-2 text-[18px] leading-tight font-semibold tracking-[-0.01em] text-ink">
-                        <ShieldCheck className="size-4.5 text-brand" aria-hidden="true" />
+            <DialogContent className="w-[calc(100%-2rem)] max-w-[400px] gap-3 rounded-[6px] border-line bg-surface p-4 shadow-pop">
+                <DialogHeader className="gap-0.5 pr-6 text-left">
+                    <DialogTitle className="text-[15px] leading-tight font-semibold tracking-[-0.01em] text-ink">
                         {title}
                     </DialogTitle>
-                    <DialogDescription className="text-[12px] leading-5 text-ink-mute">
+                    <DialogDescription className="text-[11px] leading-4 text-ink-faint">
                         {description}
                     </DialogDescription>
                 </DialogHeader>
@@ -66,17 +60,10 @@ export default function CaptchaDialog({
                     key={`${scene}:${open ? 'open' : 'closed'}`}
                     config={config}
                     scene={scene}
-                    autoStart={open}
                     compact
-                    onChange={setValue}
+                    onChange={() => undefined}
                     onComplete={finish}
                 />
-
-                {manual ? (
-                    <Button type="button" className="h-9 w-full" disabled={!value} onClick={() => finish(value)}>
-                        完成验证
-                    </Button>
-                ) : null}
             </DialogContent>
         </Dialog>
     );

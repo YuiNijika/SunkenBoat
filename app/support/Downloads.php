@@ -314,13 +314,24 @@ final class Downloads
         $config = $resource['config'];
         $author = $uid === (int) ($resource['authorId'] ?? 0);
         if ($author) {
+            $title = self::clipTitle((string) $resource['title']);
+            $url = (string) $config['url'];
+            $existing = DownloadStore::latestOrder($uid, $contentType, $contentId, 'free');
+            if ($existing !== null) {
+                DownloadStore::updateOrderResource((string) $existing['number'], $title, $url);
+
+                return ['order' => self::orderPayload(array_replace($existing, [
+                    'title' => $title,
+                    'content_url' => $url,
+                ]))];
+            }
             $order = [
                 'number' => self::newOrderNumber(),
                 'user_id' => $uid,
                 'content_type' => $contentType,
                 'content_id' => $contentId,
-                'title' => self::clipTitle((string) $resource['title']),
-                'content_url' => (string) $config['url'],
+                'title' => $title,
+                'content_url' => $url,
                 'amount_cents' => 0,
                 'status' => 'free',
                 'gateway_trade' => null,
@@ -389,13 +400,25 @@ final class Downloads
             Response::error('今日免费下载次数已用完', 429, ['remaining' => 0]);
         }
 
+        $title = self::clipTitle((string) $resource['title']);
+        $url = (string) $config['url'];
+        $existing = DownloadStore::latestOrder($uid, $contentType, $contentId, 'free');
+        if ($existing !== null) {
+            DownloadStore::updateOrderResource((string) $existing['number'], $title, $url);
+
+            return ['order' => self::orderPayload(array_replace($existing, [
+                'title' => $title,
+                'content_url' => $url,
+            ]))];
+        }
+
         $order = [
             'number' => self::newOrderNumber(),
             'user_id' => $uid,
             'content_type' => $contentType,
             'content_id' => $contentId,
-            'title' => self::clipTitle((string) $resource['title']),
-            'content_url' => (string) $config['url'],
+            'title' => $title,
+            'content_url' => $url,
             'amount_cents' => 0,
             'status' => 'free',
             'gateway_trade' => null,

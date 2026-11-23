@@ -706,7 +706,7 @@ final class UserEconomy
         if ($uid <= 0) {
             Response::error('用户不存在', 404);
         }
-        self::assertManageable($uid);
+        self::assertEditable($uid);
 
         $changes = [];
         if (array_key_exists('balance', $data)) {
@@ -1148,6 +1148,27 @@ final class UserEconomy
         }
         if ((string) ($row['group'] ?? '') === 'administrator') {
             Response::error('不能管理管理员账号', 403);
+        }
+    }
+
+    /**
+     * Editors and administrators may adjust their own economy values, but only
+     * administrators can touch another administrator's account.
+     */
+    private static function assertEditable(int $uid): void
+    {
+        $db = Db::get();
+        $row = $db->fetchRow(
+            $db->select('group')->from('table.users')->where('uid = ?', $uid)->limit(1)
+        );
+        if (!is_array($row)) {
+            Response::error('用户不存在', 404);
+        }
+        if (
+            (string) ($row['group'] ?? '') === 'administrator'
+            && $uid !== UserProfile::viewerUid()
+        ) {
+            Response::error('不能管理其他管理员账号', 403);
         }
     }
 

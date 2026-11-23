@@ -586,7 +586,7 @@ export default function UserCenter({ api, show, site }: Props) {
                 config={api.captcha}
                 scene="checkin"
                 title="完成验证后签到"
-                description="拖动拼图块完成人机验证，验证通过后会自动签到并领取奖励。"
+                description="按提示完成人机验证，验证通过后会自动签到并领取奖励。"
                 onVerified={(value) => {
                     setCheckinCaptcha(value);
                     void runCheckin(value);

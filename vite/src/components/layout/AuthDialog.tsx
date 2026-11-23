@@ -641,7 +641,7 @@ export default function AuthDialog({
             config={api.captcha}
             scene={captchaScene}
             title={mode === 'register' ? '完成验证后注册' : '完成验证后登录'}
-            description="拖动拼图块完成人机验证，验证通过后会自动继续。"
+            description="按提示完成人机验证，验证通过后会自动继续。"
             onVerified={(value) => {
                 setCaptcha(value);
                 void performSubmit(value);

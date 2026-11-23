@@ -1387,7 +1387,7 @@ export default function AccountPanel({ api, section = 'profile' }: Props) {
                                     </p>
                                     {checkinCaptchaRequired ? (
                                         <p className="text-[11px] leading-5 text-ink-faint">
-                                            点击签到后会弹出人机验证，完成拼图即可领取奖励。
+                                            点击签到后会弹出人机验证，验证通过即可领取奖励。
                                         </p>
                                     ) : null}
                                 </div>
@@ -2117,7 +2117,7 @@ export default function AccountPanel({ api, section = 'profile' }: Props) {
                 config={api.captcha}
                 scene="checkin"
                 title="完成验证后签到"
-                description="拖动拼图块完成人机验证，验证通过后会自动签到并领取奖励。"
+                description="按提示完成人机验证，验证通过后会自动签到并领取奖励。"
                 onVerified={(value) => {
                     setCheckinCaptcha(value);
                     void runCheckin(value);

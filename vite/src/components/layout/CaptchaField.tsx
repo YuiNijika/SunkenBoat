@@ -1,9 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { KeyboardEvent as ReactKeyboardEvent, PointerEvent as ReactPointerEvent } from 'react';
-import { GripVertical, RefreshCw, ShieldCheck } from 'lucide-react';
+import { GripVertical, RefreshCw } from 'lucide-react';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
-import { Label } from '../ui/label';
 import type { UserCaptchaConfig } from '../../types';
 
 export interface CaptchaValue {
@@ -14,12 +13,17 @@ export interface CaptchaValue {
 
 interface Challenge {
     id: string;
-    provider: 'math' | 'slider';
+    provider: 'math' | 'slider' | 'image_text' | 'image_select';
     question?: string;
+    prompt?: string;
     image?: string;
     piece?: string;
     pieceTop?: number;
     pieceWidth?: number;
+    length?: number;
+    options?: Array<{ id: string; image: string }>;
+    source?: 'builtin' | 'custom';
+    target?: string | null;
     expiresIn: number;
 }
 
@@ -84,6 +88,44 @@ function loadScript(id: string, src: string): Promise<void> {
     });
 }
 
+function RecaptchaMark() {
+    return (
+        <svg viewBox="0 0 32 32" className="size-7" aria-hidden="true">
+            <path
+                d="M16 4.5a11.5 11.5 0 0 1 9.9 5.7"
+                fill="none"
+                stroke="#4285f4"
+                strokeLinecap="round"
+                strokeWidth="2.8"
+            />
+            <path
+                d="M26.8 3.8v7.2h-7.2"
+                fill="none"
+                stroke="#4285f4"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth="2.8"
+            />
+            <path
+                d="M16 27.5a11.5 11.5 0 0 1-9.9-5.7"
+                fill="none"
+                stroke="#5f6368"
+                strokeLinecap="round"
+                strokeWidth="2.8"
+            />
+            <path
+                d="M5.2 28.2V21h7.2"
+                fill="none"
+                stroke="#5f6368"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth="2.8"
+            />
+            <circle cx="16" cy="16" r="4.2" fill="none" stroke="#4285f4" strokeWidth="2.4" />
+        </svg>
+    );
+}
+
 export default function CaptchaField({
     config,
     scene,
@@ -94,7 +136,11 @@ export default function CaptchaField({
 }: Props) {
     const enabled = Boolean(config?.enabled && config.scenes.includes(scene));
     const provider = config?.provider ?? 'math';
-    const builtin = provider === 'math' || provider === 'slider';
+    const builtin =
+        provider === 'math'
+        || provider === 'slider'
+        || provider === 'image_text'
+        || provider === 'image_select';
     const [started, setStarted] = useState(false);
     const [challenge, setChallenge] = useState<Challenge | null>(null);
     const [answer, setAnswer] = useState('');
@@ -234,10 +280,7 @@ export default function CaptchaField({
                 return;
             }
 
-            const value = updateSlide(drag.answer);
-            if (value) {
-                onCompleteRef.current?.(value);
-            }
+            updateSlide(drag.answer);
         };
 
         window.addEventListener('pointermove', move, { passive: false });
@@ -454,167 +497,369 @@ export default function CaptchaField({
         return null;
     }
 
+    const canVerify =
+        challenge?.provider === 'slider' ? slide > 0.05 : answer.trim() !== '';
+
+    const verify = () => {
+        if (!challenge) {
+            return;
+        }
+        if (challenge.provider === 'slider') {
+            const value = valueRef.current ?? updateSlide(slide);
+            if (value) {
+                onCompleteRef.current?.(value);
+            }
+            return;
+        }
+        if (answer.trim() === '') {
+            return;
+        }
+        submitBuiltin(answer, true);
+    };
+
     return (
         <div
-            className={
-                compact
-                    ? 'grid gap-2'
-                    : 'grid gap-2 rounded-lg border border-line bg-surface-mute p-3'
-            }
+            className={`overflow-hidden rounded-[3px] border border-[#d3d3d3] bg-white text-[#202124] dark:border-[#5f6368] dark:bg-[#222] dark:text-[#e8eaed] ${
+                compact ? '' : 'shadow-[0_0_4px_rgba(0,0,0,0.12)]'
+            }`}
         >
-            <div
-                className={
-                    compact
-                        ? 'flex items-center justify-end gap-2'
-                        : 'flex items-center justify-between gap-2'
-                }
-            >
-                {compact ? null : (
-                    <Label className="inline-flex items-center gap-1.5">
-                        <ShieldCheck className="size-4" aria-hidden="true" />
-                        人机验证
-                    </Label>
-                )}
-                {started && builtin ? (
-                    <Button
-                        type="button"
-                        size="icon"
-                        variant="ghost"
-                        aria-label="刷新验证码"
-                        onClick={() => void refresh()}
-                        disabled={loading}
+            <div className="flex min-h-[74px] items-center justify-between gap-3 px-3 py-2">
+                <button
+                    type="button"
+                    onClick={start}
+                    disabled={loading || cloudBusy || started}
+                    className="flex min-w-0 items-center gap-3 text-left disabled:cursor-default"
+                >
+                    <span
+                        className="grid size-[28px] shrink-0 place-items-center rounded-[2px] border-2 border-[#c1c1c1] bg-white dark:border-[#5f6368] dark:bg-[#2d2d2d]"
+                        aria-hidden="true"
                     >
-                        <RefreshCw className={loading ? 'animate-spin' : ''} aria-hidden="true" />
-                    </Button>
-                ) : null}
+                        {loading || cloudBusy ? (
+                            <span className="size-4 animate-spin rounded-full border-2 border-[#4285f4] border-t-transparent" />
+                        ) : null}
+                    </span>
+                    <span className="text-[14px] leading-5">我不是机器人</span>
+                </button>
+                <div className="flex shrink-0 flex-col items-end leading-none">
+                    <RecaptchaMark />
+                    <span className="mt-1 text-[9px] text-[#9aa0a6]">reCAPTCHA</span>
+                    <span className="mt-0.5 text-[7px] text-[#9aa0a6]">隐私条款 - 使用条款</span>
+                </div>
             </div>
 
-            {!started ? (
-                <div className="flex flex-wrap items-center gap-2.5">
-                    <Button
-                        type="button"
-                        size="sm"
-                        variant="outline"
-                        onClick={start}
-                        disabled={loading}
-                    >
-                        {loading ? '加载中…' : '开始验证'}
-                    </Button>
-                    <span className="text-xs text-ink-faint">
-                        点击后加载验证码，避免页面打开时自动请求。
-                    </span>
-                </div>
-            ) : builtin && challenge ? (
-                challenge.provider === 'slider' ? (
-                    <div className="grid gap-2">
-                        {challenge.image && challenge.piece ? (
+            {started ? (
+                <div className="border-t border-[#e5e5e5] dark:border-[#3c4043]">
+                    {builtin ? (
+                        challenge ? (
                             <>
-                                <div
-                                    ref={stageRef}
-                                    className="relative aspect-[2/1] w-full select-none overflow-hidden rounded-md border border-line bg-surface-2"
-                                >
-                                    <img
-                                        src={challenge.image}
-                                        alt=""
-                                        aria-hidden="true"
-                                        draggable={false}
-                                        className="absolute inset-0 size-full object-cover"
-                                    />
-                                    <img
-                                        src={challenge.piece}
-                                        alt=""
-                                        aria-hidden="true"
-                                        draggable={false}
-                                        onPointerDown={beginSlideDrag}
-                                        className={`absolute touch-none drop-shadow-[0_2px_5px_rgba(0,0,0,0.28)] ${
-                                            dragging ? 'cursor-grabbing' : 'cursor-grab'
-                                        }`}
-                                        style={{
-                                            left: `${slide}%`,
-                                            top: `${challenge.pieceTop ?? 30}%`,
-                                            width: `${pieceWidth}%`,
-                                        }}
-                                    />
-                                </div>
-                                <div
-                                    role="slider"
-                                    tabIndex={0}
-                                    aria-label="拖动滑块完成图片拼图"
-                                    aria-valuemin={0}
-                                    aria-valuemax={Math.round(maxAnswer)}
-                                    aria-valuenow={Math.round(slide)}
-                                    aria-valuetext={`已拖动 ${Math.round((slide / maxAnswer) * 100)}%`}
-                                    onPointerDown={beginSlideDrag}
-                                    onKeyDown={handleSlideKey}
-                                    className={`relative h-10 w-full touch-none select-none overflow-hidden rounded-full border border-line bg-surface outline-none focus-visible:ring-2 focus-visible:ring-brand/35 ${
-                                        dragging ? 'cursor-grabbing' : 'cursor-grab'
-                                    }`}
-                                >
-                                    <span
-                                        className="absolute inset-y-0 left-0 bg-brand-soft"
-                                        style={{ width: `${(slide / maxAnswer) * 100}%` }}
-                                        aria-hidden="true"
-                                    />
-                                    <span className="pointer-events-none absolute inset-0 grid place-items-center text-[11px] text-ink-faint">
-                                        拖动滑块完成拼图
-                                    </span>
-                                    <span
-                                        className="absolute top-1/2 grid size-8 -translate-y-1/2 place-items-center rounded-full bg-brand text-brand-foreground shadow-sm"
-                                        style={{
-                                            left: `calc(${(slide / maxAnswer) * 100}% - ${
-                                                (slide / maxAnswer) * 32
-                                            }px)`,
-                                        }}
-                                        aria-hidden="true"
+                                <div className="flex items-center justify-between bg-[#4285f4] px-3 py-2 text-white">
+                                    <span className="text-[13px]">请完成验证</span>
+                                    <button
+                                        type="button"
+                                        aria-label="刷新验证码"
+                                        onClick={() => void refresh()}
+                                        disabled={loading}
+                                        className="rounded p-0.5 hover:bg-white/15 disabled:opacity-60"
                                     >
-                                        <GripVertical className="size-4" />
-                                    </span>
+                                        <RefreshCw
+                                            className={`size-4 ${loading ? 'animate-spin' : ''}`}
+                                            aria-hidden="true"
+                                        />
+                                    </button>
                                 </div>
-                                <p className="text-xs text-ink-faint">
-                                    按住拼图块或下方滑块拖动，把图片拼回缺口位置。
-                                </p>
+                                <div className="bg-white p-3 text-[#202124] dark:bg-[#222] dark:text-[#e8eaed]">
+                                    {challenge.provider === 'slider' ? (
+                                        <div className="grid gap-2">
+                                            {challenge.image && challenge.piece ? (
+                                                <>
+                                                    <div
+                                                        ref={stageRef}
+                                                        className="relative aspect-[2/1] w-full touch-none select-none overflow-hidden rounded-[2px] border border-[#d3d3d3] dark:border-[#5f6368]"
+                                                    >
+                                                        <img
+                                                            src={challenge.image}
+                                                            alt=""
+                                                            aria-hidden="true"
+                                                            draggable={false}
+                                                            className="absolute inset-0 size-full object-cover"
+                                                        />
+                                                        <img
+                                                            src={challenge.piece}
+                                                            alt=""
+                                                            aria-hidden="true"
+                                                            draggable={false}
+                                                            onPointerDown={beginSlideDrag}
+                                                            className={`absolute touch-none drop-shadow-[0_2px_5px_rgba(0,0,0,0.28)] ${
+                                                                dragging
+                                                                    ? 'cursor-grabbing'
+                                                                    : 'cursor-grab'
+                                                            }`}
+                                                            style={{
+                                                                left: `${slide}%`,
+                                                                top: `${challenge.pieceTop ?? 30}%`,
+                                                                width: `${pieceWidth}%`,
+                                                            }}
+                                                        />
+                                                    </div>
+                                                    <div
+                                                        role="slider"
+                                                        tabIndex={0}
+                                                        aria-label="拖动滑块完成图片拼图"
+                                                        aria-valuemin={0}
+                                                        aria-valuemax={Math.round(maxAnswer)}
+                                                        aria-valuenow={Math.round(slide)}
+                                                        aria-valuetext={`已拖动 ${Math.round((slide / maxAnswer) * 100)}%`}
+                                                        onPointerDown={beginSlideDrag}
+                                                        onKeyDown={handleSlideKey}
+                                                        className={`relative h-10 w-full touch-none select-none overflow-hidden rounded-[2px] border border-[#d3d3d3] bg-[#f1f3f4] outline-none focus-visible:ring-2 focus-visible:ring-[#4285f4]/40 dark:border-[#5f6368] dark:bg-[#2d2d2d] ${
+                                                            dragging
+                                                                ? 'cursor-grabbing'
+                                                                : 'cursor-grab'
+                                                        }`}
+                                                    >
+                                                        <span
+                                                            className="absolute inset-y-0 left-0 bg-[#4285f4]/20"
+                                                            style={{ width: `${(slide / maxAnswer) * 100}%` }}
+                                                            aria-hidden="true"
+                                                        />
+                                                        <span className="pointer-events-none absolute inset-0 grid place-items-center text-[11px] text-[#5f6368] dark:text-[#9aa0a6]">
+                                                            拖动滑块完成拼图
+                                                        </span>
+                                                        <span
+                                                            className="absolute top-1/2 grid size-8 -translate-y-1/2 place-items-center rounded-full bg-[#4285f4] text-white shadow-sm"
+                                                            style={{
+                                                                left: `calc(${(slide / maxAnswer) * 100}% - ${
+                                                                    (slide / maxAnswer) * 32
+                                                                }px)`,
+                                                            }}
+                                                            aria-hidden="true"
+                                                        >
+                                                            <GripVertical className="size-4" />
+                                                        </span>
+                                                    </div>
+                                                    <p className="text-[11px] text-[#5f6368] dark:text-[#9aa0a6]">
+                                                        按住拼图块或下方滑块拖动，把图片拼回缺口位置后点击“验证”。
+                                                    </p>
+                                                </>
+                                            ) : (
+                                                <p className="text-[11px] text-[#5f6368] dark:text-[#9aa0a6]">
+                                                    验证码图片加载失败，请点击刷新重试。
+                                                </p>
+                                            )}
+                                        </div>
+                                    ) : challenge.provider === 'image_select' ? (
+                                        <div className="grid gap-2.5">
+                                            {challenge.target ? (
+                                                <div className="flex items-center gap-2 rounded-[2px] border border-[#e5e5e5] bg-[#f9f9f9] p-2 dark:border-[#3c4043] dark:bg-[#2d2d2d]">
+                                                    <img
+                                                        src={challenge.target}
+                                                        alt="示例图片"
+                                                        draggable={false}
+                                                        className="size-14 shrink-0 rounded-[2px] object-contain"
+                                                    />
+                                                    <p className="text-[11px] leading-4 text-[#5f6368] dark:text-[#9aa0a6]">
+                                                        示例图片
+                                                    </p>
+                                                </div>
+                                            ) : null}
+                                            <p className="text-[13px]">
+                                                {challenge.prompt ?? '请选择符合提示的图片'}
+                                            </p>
+                                            <div className="grid grid-cols-3 gap-2">
+                                                {(challenge.options ?? []).map((option) => {
+                                                    const selected = answer === option.id;
+
+                                                    return (
+                                                        <button
+                                                            key={option.id}
+                                                            type="button"
+                                                            aria-pressed={selected}
+                                                            aria-label={
+                                                                selected ? '已选择该图片' : '选择该图片'
+                                                            }
+                                                            className={`relative aspect-square overflow-hidden rounded-[2px] border bg-white transition dark:bg-[#2d2d2d] ${
+                                                                selected
+                                                                    ? 'border-[#4285f4] ring-2 ring-[#4285f4]/40'
+                                                                    : 'border-[#d3d3d3] hover:border-[#4285f4]/60 dark:border-[#5f6368]'
+                                                            }`}
+                                                            onClick={() => submitBuiltin(option.id)}
+                                                        >
+                                                            <img
+                                                                src={option.image}
+                                                                alt=""
+                                                                aria-hidden="true"
+                                                                draggable={false}
+                                                                className="size-full object-contain p-1"
+                                                            />
+                                                        </button>
+                                                    );
+                                                })}
+                                            </div>
+                                            <p className="text-[11px] text-[#5f6368] dark:text-[#9aa0a6]">
+                                                选择后点击右下角“验证”。
+                                            </p>
+                                        </div>
+                                    ) : challenge.provider === 'image_text' ? (
+                                        <div className="grid gap-2.5">
+                                            {challenge.image ? (
+                                                <img
+                                                    src={challenge.image}
+                                                    alt="图片验证码"
+                                                    draggable={false}
+                                                    className="w-full rounded-[2px] border border-[#d3d3d3] bg-white dark:border-[#5f6368] dark:bg-[#2d2d2d]"
+                                                />
+                                            ) : (
+                                                <p className="text-[11px] text-[#5f6368] dark:text-[#9aa0a6]">
+                                                    验证码图片加载失败，请点击刷新重试。
+                                                </p>
+                                            )}
+                                            <div className="flex flex-wrap items-center gap-2">
+                                                <Input
+                                                    type="text"
+                                                    autoComplete="off"
+                                                    autoCapitalize="characters"
+                                                    value={answer}
+                                                    maxLength={challenge.length ?? 6}
+                                                    aria-label="图片字符验证码"
+                                                    placeholder="输入图中字符"
+                                                    className="h-9 w-40 rounded-[2px] border-[#d3d3d3] bg-white font-mono text-[#202124] tracking-[0.2em] uppercase focus-visible:border-[#4285f4] focus-visible:ring-1 focus-visible:ring-[#4285f4] dark:border-[#5f6368] dark:bg-[#2d2d2d] dark:text-[#e8eaed]"
+                                                    onChange={(event) =>
+                                                        submitBuiltin(
+                                                            event.target.value
+                                                                .replace(/[^a-zA-Z0-9]/g, '')
+                                                                .toUpperCase()
+                                                                .slice(0, challenge.length ?? 6)
+                                                        )
+                                                    }
+                                                    onKeyDown={(event) => {
+                                                        if (
+                                                            event.key === 'Enter'
+                                                            && answer.trim() !== ''
+                                                        ) {
+                                                            event.preventDefault();
+                                                            submitBuiltin(answer, true);
+                                                        }
+                                                    }}
+                                                />
+                                            </div>
+                                            <p className="text-[11px] text-[#5f6368] dark:text-[#9aa0a6]">
+                                                {challenge.prompt
+                                                    ?? '请输入图片中的字符（不区分大小写）。'}
+                                                输入后按 Enter，或点击“验证”。
+                                            </p>
+                                        </div>
+                                    ) : (
+                                        <div className="flex flex-wrap items-center gap-2">
+                                            <span className="rounded-[2px] border border-[#d3d3d3] bg-[#f9f9f9] px-3 py-2 font-mono text-sm text-[#202124] dark:border-[#5f6368] dark:bg-[#2d2d2d] dark:text-[#e8eaed]">
+                                                {challenge.question}
+                                            </span>
+                                            <Input
+                                                type="text"
+                                                inputMode="numeric"
+                                                autoComplete="off"
+                                                value={answer}
+                                                aria-label="验证码答案"
+                                                placeholder="输入结果"
+                                                className="h-9 w-28 rounded-[2px] border-[#d3d3d3] bg-white text-[#202124] focus-visible:border-[#4285f4] focus-visible:ring-1 focus-visible:ring-[#4285f4] dark:border-[#5f6368] dark:bg-[#2d2d2d] dark:text-[#e8eaed]"
+                                                onChange={(event) => {
+                                                    const raw = event.target.value.replace(
+                                                        /[^\d-]/g,
+                                                        ''
+                                                    );
+                                                    const digits = raw
+                                                        .replace(/-/g, '')
+                                                        .slice(0, 3);
+                                                    submitBuiltin(
+                                                        (raw.startsWith('-') ? '-' : '') + digits
+                                                    );
+                                                }}
+                                                onKeyDown={(event) => {
+                                                    if (
+                                                        event.key === 'Enter'
+                                                        && answer.trim() !== ''
+                                                    ) {
+                                                        event.preventDefault();
+                                                        submitBuiltin(answer, true);
+                                                    }
+                                                }}
+                                            />
+                                        </div>
+                                    )}
+                                </div>
+                                <div className="flex items-center justify-between border-t border-[#e5e5e5] bg-[#f9f9f9] px-3 py-2 dark:border-[#3c4043] dark:bg-[#2d2d2d]">
+                                    <button
+                                        type="button"
+                                        aria-label="换一张"
+                                        onClick={() => void refresh()}
+                                        disabled={loading}
+                                        className="rounded p-1 text-[#5f6368] hover:bg-black/5 disabled:opacity-50 dark:text-[#9aa0a6] dark:hover:bg-white/10"
+                                    >
+                                        <RefreshCw
+                                            className={`size-[18px] ${loading ? 'animate-spin' : ''}`}
+                                            aria-hidden="true"
+                                        />
+                                    </button>
+                                    <Button
+                                        type="button"
+                                        size="sm"
+                                        onClick={verify}
+                                        disabled={!canVerify || loading}
+                                        className="h-8 rounded-[2px] bg-[#4285f4] px-5 text-white hover:bg-[#3367d6] disabled:opacity-50"
+                                    >
+                                        验证
+                                    </Button>
+                                </div>
                             </>
                         ) : (
-                            <p className="text-xs text-ink-faint">验证码图片加载失败，请点击刷新重试。</p>
-                        )}
-                    </div>
-                ) : (
-                    <div className="flex flex-wrap items-center gap-2">
-                        <span className="rounded-md border border-line bg-surface px-3 py-2 font-mono text-sm text-ink">
-                            {challenge.question}
-                        </span>
-                        <Input
-                            type="text"
-                            inputMode="numeric"
-                            autoComplete="off"
-                            value={answer}
-                            aria-label="验证码答案"
-                            placeholder="输入结果"
-                            className="w-28"
-                            onChange={(event) => submitBuiltin(event.target.value.replace(/\D/g, '').slice(0, 3))}
-                            onKeyDown={(event) => {
-                                if (event.key === 'Enter' && answer.trim() !== '') {
-                                    event.preventDefault();
-                                    submitBuiltin(answer, true);
-                                }
-                            }}
-                        />
-                    </div>
-                )
-            ) : builtin ? (
-                <p className="text-xs text-ink-faint">{loading ? '正在加载验证码…' : '验证码暂不可用'}</p>
-            ) : (
-                <div id="ttdf-aliyun-captcha" className="min-h-9 text-xs text-ink-faint">
-                    {loading ? '正在加载验证服务…' : '请完成服务商人机校验。'}
+                            <div className="flex items-center justify-between gap-3 px-3 py-3 text-xs text-[#5f6368] dark:text-[#9aa0a6]">
+                                <span>
+                                    {loading ? '正在加载验证码…' : '验证码暂不可用，请重试。'}
+                                </span>
+                                {loading ? null : (
+                                    <button
+                                        type="button"
+                                        onClick={start}
+                                        className="text-[#4285f4] hover:underline"
+                                    >
+                                        重试
+                                    </button>
+                                )}
+                            </div>
+                        )
+                    ) : (
+                        <>
+                            <div className="flex items-center justify-between bg-[#4285f4] px-3 py-2 text-white">
+                                <span className="text-[13px]">请完成验证</span>
+                                <span className="text-[11px] text-white/80">
+                                    {provider === 'geetest'
+                                        ? 'Geetest'
+                                        : provider === 'tencent'
+                                          ? 'Tencent'
+                                          : 'Aliyun'}
+                                </span>
+                            </div>
+                            <div className="bg-white p-3 text-[#202124] dark:bg-[#222] dark:text-[#e8eaed]">
+                                <p className="text-[12px] leading-5 text-[#5f6368] dark:text-[#9aa0a6]">
+                                    {loading
+                                        ? '正在加载验证服务…'
+                                        : '验证窗口会在本页打开，完成后自动继续。'}
+                                </p>
+                                <div
+                                    id="ttdf-aliyun-captcha"
+                                    className="mt-2 min-h-8"
+                                />
+                            </div>
+                        </>
+                    )}
                 </div>
-            )}
-            {started && (error !== '' || (!challenge && !loading && !cloudBusy)) ? (
-                <Button type="button" size="sm" variant="outline" onClick={start}>
-                    重新验证
-                </Button>
             ) : null}
             {error !== '' ? (
-                <p className="text-xs text-danger" role="alert">{error}</p>
+                <div
+                    className="border-t border-[#e5e5e5] px-3 py-2 text-xs text-[#d93025] dark:border-[#3c4043] dark:text-[#f28b82]"
+                    role="alert"
+                >
+                    {error}
+                </div>
             ) : null}
         </div>
     );

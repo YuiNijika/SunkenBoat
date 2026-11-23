@@ -7,6 +7,7 @@ namespace SunkenBoat\Support;
 use TTDF\Ajax\Endpoint;
 use TTDF\Hooks\Hooks;
 use TTDF\Http\Response;
+use TTDF\Theme\Media;
 use TTDF\Theme\Settings;
 use Typecho\Db;
 
@@ -27,9 +28,30 @@ final class Captcha
 
     private const RATE_PREFIX = 'sunken_caprl_';
 
-    private const PROVIDERS = ['math', 'slider', 'geetest', 'tencent', 'aliyun'];
+    private const PROVIDERS = ['math', 'slider', 'image_text', 'image_select', 'geetest', 'tencent', 'aliyun'];
+
+    private const BUILTIN = ['math', 'slider', 'image_text', 'image_select'];
 
     private const SCENES = ['login', 'register', 'comment', 'checkin'];
+
+    private const SELECT_SOURCES = ['builtin', 'custom'];
+
+    /** @var array<string, string> */
+    private const IMAGE_CHARSETS = [
+        'alnum' => 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789',
+        'letters' => 'ABCDEFGHJKLMNPQRSTUVWXYZ',
+        'digits' => '23456789',
+    ];
+
+    /** @var array<string, string> */
+    private const SHAPES = [
+        'circle' => '圆形',
+        'triangle' => '三角形',
+        'square' => '正方形',
+        'star' => '星形',
+        'diamond' => '菱形',
+        'hexagon' => '六边形',
+    ];
 
     public static function register(): void
     {
@@ -102,14 +124,12 @@ final class Captcha
         if (!self::enabled()) {
             Response::error('验证码服务未开启', 403);
         }
-        if (self::provider() === 'slider') {
-            return ['challenge' => self::issue('slider')];
-        }
-        if (self::provider() !== 'math') {
-            return ['challenge' => null, 'provider' => self::provider()];
+        $provider = self::provider();
+        if (!in_array($provider, self::BUILTIN, true)) {
+            return ['challenge' => null, 'provider' => $provider];
         }
 
-        return ['challenge' => self::issue('math')];
+        return ['challenge' => self::issue($provider)];
     }
 
     /**
@@ -191,7 +211,7 @@ final class Captcha
             ];
         }
         $provider = self::provider();
-        if ($provider === 'math' || $provider === 'slider') {
+        if (in_array($provider, self::BUILTIN, true)) {
             return self::verifyBuiltin($data, $provider, $scene);
         }
 
@@ -220,26 +240,150 @@ final class Captcha
         ];
         if ($provider === 'slider') {
             $scene = self::sliderScene();
-            $pieceX = random_int(92, 222);
-            $pieceY = random_int(18, 100);
+            $pieceWidth = random_int(48, 62);
+            $pieceHeight = 48;
+            $pieceX = random_int(72, 320 - $pieceWidth - 6);
+            $pieceY = random_int(18, 160 - $pieceHeight - 10);
             $record['target'] = round($pieceX / 320 * 100, 2);
             $payload = [
                 'id' => $id,
                 'provider' => 'slider',
-                'image' => self::svgDataUrl(self::sliderSvg($scene, $pieceX, $pieceY, true)),
-                'piece' => self::svgDataUrl(self::sliderSvg($scene, $pieceX, $pieceY, false)),
+                'image' => self::svgDataUrl(self::sliderSvg($scene, $pieceX, $pieceY, $pieceWidth, $pieceHeight, true)),
+                'piece' => self::svgDataUrl(self::sliderSvg($scene, $pieceX, $pieceY, $pieceWidth, $pieceHeight, false)),
                 'pieceTop' => round($pieceY / 160 * 100, 2),
-                'pieceWidth' => round(55 / 320 * 100, 2),
+                'pieceWidth' => round($pieceWidth / 320 * 100, 2),
                 'expiresIn' => self::ttl(),
             ];
+        } elseif ($provider === 'image_text') {
+            $charset = self::imageCharset();
+            $length = self::imageLength();
+            $code = '';
+            $seedMax = strlen($charset) - 1;
+            for ($index = 0; $index < $length; $index++) {
+                $code .= $charset[random_int(0, $seedMax)];
+            }
+            $record['answer'] = hash('sha256', self::normalizeText($code));
+            $payload = [
+                'id' => $id,
+                'provider' => 'image_text',
+                'prompt' => '请输入图片中的字符（不区分大小写）',
+                'image' => self::svgDataUrl(self::imageTextSvg($code, self::imageNoise())),
+                'length' => $length,
+                'expiresIn' => self::ttl(),
+            ];
+        } elseif ($provider === 'image_select') {
+            $groups = self::selectSource() === 'custom' ? self::customSelectGroups() : [];
+            $customImages = [];
+            foreach ($groups as $urls) {
+                foreach ($urls as $image) {
+                    $customImages[] = $image;
+                }
+            }
+            $customImages = array_values(array_unique($customImages));
+            if (count($customImages) >= 2) {
+                $labels = array_keys($groups);
+                $semantic = count($labels) >= 2;
+                $count = min(self::selectCount(), count($customImages));
+                if ($semantic) {
+                    $targetLabel = $labels[random_int(0, count($labels) - 1)];
+                    $pool = $groups[$targetLabel];
+                    $targetImage = $pool[random_int(0, count($pool) - 1)];
+                    $decoys = [];
+                    foreach ($groups as $label => $urls) {
+                        if ($label === $targetLabel) {
+                            continue;
+                        }
+                        foreach ($urls as $image) {
+                            $decoys[] = $image;
+                        }
+                    }
+                    $decoys = array_values(array_unique($decoys));
+                    self::shuffleList($decoys);
+                    $count = min($count, count($decoys) + 1);
+                    $images = array_merge([$targetImage], array_slice($decoys, 0, $count - 1));
+                } else {
+                    $targetImage = $customImages[random_int(0, count($customImages) - 1)];
+                    $decoys = array_values(array_filter(
+                        $customImages,
+                        static fn (string $image): bool => $image !== $targetImage
+                    ));
+                    self::shuffleList($decoys);
+                    $images = array_merge([$targetImage], array_slice($decoys, 0, $count - 1));
+                }
+                self::shuffleList($images);
+                $options = [];
+                $used = [];
+                $correctId = '';
+                foreach ($images as $image) {
+                    do {
+                        $optionId = bin2hex(random_bytes(4));
+                    } while (isset($used[$optionId]));
+                    $used[$optionId] = true;
+                    $options[] = [
+                        'id' => $optionId,
+                        'image' => $image,
+                    ];
+                    if ($image === $targetImage) {
+                        $correctId = $optionId;
+                    }
+                }
+                $record['answer'] = hash('sha256', $correctId);
+                $payload = [
+                    'id' => $id,
+                    'provider' => 'image_select',
+                    'source' => 'custom',
+                    'prompt' => $semantic
+                        ? '请选择包含「' . $targetLabel . '」的图片'
+                        : '请选择与示例完全相同的图片',
+                    'target' => $semantic ? null : $targetImage,
+                    'options' => $options,
+                    'expiresIn' => self::ttl(),
+                ];
+            } else {
+                $count = self::selectCount();
+                $shapes = array_keys(self::SHAPES);
+                $target = $shapes[random_int(0, count($shapes) - 1)];
+                $decoys = array_values(array_filter(
+                    $shapes,
+                    static fn (string $shape): bool => $shape !== $target
+                ));
+                $correctIndex = random_int(0, $count - 1);
+                $options = [];
+                $used = [];
+                $correctId = '';
+                for ($index = 0; $index < $count; $index++) {
+                    do {
+                        $optionId = bin2hex(random_bytes(4));
+                    } while (isset($used[$optionId]));
+                    $used[$optionId] = true;
+                    $shape = $index === $correctIndex
+                        ? $target
+                        : $decoys[random_int(0, count($decoys) - 1)];
+                    $options[] = [
+                        'id' => $optionId,
+                        'image' => self::svgDataUrl(self::shapeCardSvg($shape)),
+                    ];
+                    if ($index === $correctIndex) {
+                        $correctId = $optionId;
+                    }
+                }
+                $record['answer'] = hash('sha256', $correctId);
+                $payload = [
+                    'id' => $id,
+                    'provider' => 'image_select',
+                    'source' => 'builtin',
+                    'prompt' => '请选择包含「' . self::SHAPES[$target] . '」的图片',
+                    'options' => $options,
+                    'expiresIn' => self::ttl(),
+                ];
+            }
         } else {
-            $left = random_int(2, 19);
-            $right = random_int(2, 19);
-            $record['answer'] = hash('sha256', (string) ($left + $right));
+            [$left, $right, $symbol, $result] = self::mathQuestion();
+            $record['answer'] = hash('sha256', (string) $result);
             $payload = [
                 'id' => $id,
                 'provider' => 'math',
-                'question' => $left . ' + ' . $right . ' = ?',
+                'question' => $left . ' ' . $symbol . ' ' . $right . ' = ?',
                 'expiresIn' => self::ttl(),
             ];
         }
@@ -313,7 +457,14 @@ final class Captcha
      *
      * @param array<string, mixed> $scene
      */
-    private static function sliderSvg(array $scene, int $pieceX, int $pieceY, bool $withSlot): string
+    private static function sliderSvg(
+        array $scene,
+        int $pieceX,
+        int $pieceY,
+        int $pieceWidth,
+        int $pieceHeight,
+        bool $withSlot
+    ): string
     {
         $palette = is_array($scene['palette'] ?? null) ? $scene['palette'] : [];
         $skyTop = (string) ($palette['sky'][0] ?? '#dff1fb');
@@ -333,6 +484,10 @@ final class Captcha
         $wave = (int) ($scene['wave'] ?? 120);
         $maskX = $pieceX;
         $maskY = $pieceY;
+        $bodyW = max(40, $pieceWidth - 7);
+        $bodyH = $pieceHeight;
+        $knobX = $maskX + $bodyW;
+        $knobY = round($maskY + $bodyH / 2, 2);
 
         $defs = '<defs>'
             . '<linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">'
@@ -347,9 +502,9 @@ final class Captcha
             . '<stop offset="0" stop-color="' . $glow . '" stop-opacity=".95"/>'
             . '<stop offset="1" stop-color="' . $glow . '" stop-opacity="0"/>'
             . '</radialGradient>'
-            . '<mask id="pieceMask" maskUnits="userSpaceOnUse" x="' . $maskX . '" y="' . $maskY . '" width="55" height="48">'
-            . '<rect x="' . $maskX . '" y="' . $maskY . '" width="48" height="48" rx="11" fill="#fff"/>'
-            . '<circle cx="' . ($maskX + 48) . '" cy="' . ($maskY + 24) . '" r="7" fill="#fff"/>'
+            . '<mask id="pieceMask" maskUnits="userSpaceOnUse" x="' . $maskX . '" y="' . $maskY . '" width="' . $pieceWidth . '" height="' . $pieceHeight . '">'
+            . '<rect x="' . $maskX . '" y="' . $maskY . '" width="' . $bodyW . '" height="' . $bodyH . '" rx="11" fill="#fff"/>'
+            . '<circle cx="' . $knobX . '" cy="' . $knobY . '" r="7" fill="#fff"/>'
             . '</mask>'
             . '</defs>';
 
@@ -372,18 +527,18 @@ final class Captcha
 
         if ($withSlot) {
             $body .= '<g mask="url(#pieceMask)">'
-                . '<rect x="' . $maskX . '" y="' . $maskY . '" width="55" height="48" fill="#07111f" fill-opacity=".56"/>'
+                . '<rect x="' . $maskX . '" y="' . $maskY . '" width="' . $pieceWidth . '" height="' . $pieceHeight . '" fill="#07111f" fill-opacity=".56"/>'
                 . '</g>'
-                . '<rect x="' . ($maskX + 0.75) . '" y="' . ($maskY + 0.75) . '" width="46.5" height="46.5" rx="10.5" fill="none" stroke="#fff" stroke-opacity=".9" stroke-width="1.5"/>'
-                . '<circle cx="' . ($maskX + 48) . '" cy="' . ($maskY + 24) . '" r="6.25" fill="none" stroke="#fff" stroke-opacity=".9" stroke-width="1.5"/>';
+                . '<rect x="' . ($maskX + 0.75) . '" y="' . ($maskY + 0.75) . '" width="' . ($bodyW - 1.5) . '" height="' . ($bodyH - 1.5) . '" rx="10.5" fill="none" stroke="#fff" stroke-opacity=".9" stroke-width="1.5"/>'
+                . '<circle cx="' . $knobX . '" cy="' . $knobY . '" r="6.25" fill="none" stroke="#fff" stroke-opacity=".9" stroke-width="1.5"/>';
             $viewBox = '0 0 320 160';
             $size = '<svg xmlns="http://www.w3.org/2000/svg" width="320" height="160" viewBox="' . $viewBox . '">';
         } else {
             $body = '<g mask="url(#pieceMask)">' . $body . '</g>'
-                . '<rect x="' . ($maskX + 0.75) . '" y="' . ($maskY + 0.75) . '" width="46.5" height="46.5" rx="10.5" fill="none" stroke="#fff" stroke-opacity=".8" stroke-width="1.5"/>'
-                . '<circle cx="' . ($maskX + 48) . '" cy="' . ($maskY + 24) . '" r="6.25" fill="none" stroke="#fff" stroke-opacity=".8" stroke-width="1.5"/>';
-            $viewBox = $maskX . ' ' . $maskY . ' 55 48';
-            $size = '<svg xmlns="http://www.w3.org/2000/svg" width="55" height="48" viewBox="' . $viewBox . '">';
+                . '<rect x="' . ($maskX + 0.75) . '" y="' . ($maskY + 0.75) . '" width="' . ($bodyW - 1.5) . '" height="' . ($bodyH - 1.5) . '" rx="10.5" fill="none" stroke="#fff" stroke-opacity=".8" stroke-width="1.5"/>'
+                . '<circle cx="' . $knobX . '" cy="' . $knobY . '" r="6.25" fill="none" stroke="#fff" stroke-opacity=".8" stroke-width="1.5"/>';
+            $viewBox = $maskX . ' ' . $maskY . ' ' . $pieceWidth . ' ' . $pieceHeight;
+            $size = '<svg xmlns="http://www.w3.org/2000/svg" width="' . $pieceWidth . '" height="' . $pieceHeight . '" viewBox="' . $viewBox . '">';
         }
 
         return $size . $defs . $body . '</svg>';
@@ -392,6 +547,297 @@ final class Captcha
     private static function svgDataUrl(string $svg): string
     {
         return 'data:image/svg+xml;base64,' . base64_encode($svg);
+    }
+
+    /**
+     * Render a noisy character captcha. Every glyph comes from the server-side
+     * charset, so no user supplied text or markup ever reaches the SVG.
+     */
+    private static function imageTextSvg(string $code, int $noise): string
+    {
+        $palettes = [
+            ['#eef2ff', '#c7d2fe'],
+            ['#fef2f2', '#fecaca'],
+            ['#f0fdf4', '#bbf7d0'],
+            ['#fff7ed', '#fed7aa'],
+            ['#f8fafc', '#cbd5e1'],
+            ['#faf5ff', '#e9d5ff'],
+        ];
+        $inks = ['#1e293b', '#334155', '#0f172a', '#1f2937', '#3f3f46', '#1e3a5f'];
+        $palette = $palettes[random_int(0, count($palettes) - 1)];
+        $bgTop = $palette[0];
+        $bgBottom = $palette[1];
+        $chars = preg_split('//u', $code, -1, PREG_SPLIT_NO_EMPTY) ?: [$code];
+        $count = max(1, count($chars));
+        $step = (300 - 64) / $count;
+        $noise = max(0, min(10, $noise));
+
+        $svg = '<svg xmlns="http://www.w3.org/2000/svg" width="300" height="100" viewBox="0 0 300 100">'
+            . '<defs><linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">'
+            . '<stop offset="0" stop-color="' . $bgTop . '"/>'
+            . '<stop offset="1" stop-color="' . $bgBottom . '"/>'
+            . '</linearGradient></defs>'
+            . '<rect width="300" height="100" fill="url(#bg)"/>';
+
+        for ($index = 0; $index < $noise * 9; $index++) {
+            $svg .= '<circle cx="' . random_int(2, 298) . '" cy="' . random_int(2, 98) . '" r="'
+                . round(random_int(4, 22) / 10, 1) . '" fill="' . $inks[random_int(0, count($inks) - 1)]
+                . '" opacity="' . round(random_int(8, 30) / 100, 2) . '"/>';
+        }
+
+        for ($index = 0; $index < max(2, $noise); $index++) {
+            $y1 = random_int(10, 90);
+            $y2 = random_int(10, 90);
+            $svg .= '<path d="M' . random_int(0, 40) . ' ' . $y1
+                . ' Q' . random_int(100, 200) . ' ' . random_int(0, 100) . ' ' . random_int(260, 300) . ' ' . $y2
+                . '" fill="none" stroke="' . $inks[random_int(0, count($inks) - 1)] . '" stroke-width="'
+                . round(random_int(8, 16) / 10, 1) . '" opacity=".22" stroke-linecap="round"/>';
+        }
+
+        foreach ($chars as $index => $char) {
+            $x = (int) round(34 + $index * $step + random_int(-3, 3));
+            $y = 64 + random_int(-8, 8);
+            $rotate = random_int(-20, 20);
+            $size = random_int(38, 46);
+            $svg .= '<text x="' . $x . '" y="' . $y . '" font-family="ui-monospace, SFMono-Regular, Menlo, monospace"'
+                . ' font-size="' . $size . '" font-weight="700" fill="' . $inks[random_int(0, count($inks) - 1)] . '"'
+                . ' transform="rotate(' . $rotate . ' ' . $x . ' ' . $y . ')" opacity=".94">'
+                . htmlspecialchars($char, ENT_QUOTES | ENT_XML1, 'UTF-8')
+                . '</text>';
+        }
+
+        for ($index = 0; $index < $noise * 3; $index++) {
+            $svg .= '<circle cx="' . random_int(2, 298) . '" cy="' . random_int(2, 98) . '" r="'
+                . round(random_int(5, 16) / 10, 1) . '" fill="#0f172a" opacity=".12"/>';
+        }
+
+        return $svg . '<rect x="1" y="1" width="298" height="98" rx="8" fill="none" stroke="#0f172a" stroke-opacity=".08"/></svg>';
+    }
+
+    /**
+     * Render one selectable card for the image-selection captcha.
+     */
+    private static function shapeCardSvg(string $shape): string
+    {
+        $palettes = [
+            ['#fef3c7', '#f59e0b'],
+            ['#dbeafe', '#3b82f6'],
+            ['#dcfce7', '#22c55e'],
+            ['#fae8ff', '#a855f7'],
+            ['#ffe4e6', '#f43f5e'],
+            ['#ccfbf1', '#14b8a6'],
+            ['#ffedd5', '#fb923c'],
+        ];
+        $palette = $palettes[random_int(0, count($palettes) - 1)];
+        $background = $palette[0];
+        $foreground = $palette[1];
+        $rotate = random_int(-16, 16);
+        $figure = match ($shape) {
+            'circle' => '<circle cx="48" cy="48" r="26" fill="' . $foreground . '"/>',
+            'triangle' => '<path d="M48 20 L74 72 L22 72 Z" fill="' . $foreground . '"/>',
+            'square' => '<rect x="24" y="24" width="48" height="48" rx="7" fill="' . $foreground . '"/>',
+            'diamond' => '<path d="M48 18 L78 48 L48 78 L18 48 Z" fill="' . $foreground . '"/>',
+            'hexagon' => '<path d="M48 18 L72 32 L72 64 L48 78 L24 64 L24 32 Z" fill="' . $foreground . '"/>',
+            default => '<path d="M48 16 L58.6 38.2 L83 41.2 L64.5 58.1 L69.6 82 L48 70.2 L26.4 82 L31.5 58.1 L13 41.2 L37.4 38.2 Z" fill="' . $foreground . '"/>',
+        };
+
+        return '<svg xmlns="http://www.w3.org/2000/svg" width="96" height="96" viewBox="0 0 96 96">'
+            . '<rect width="96" height="96" rx="14" fill="' . $background . '"/>'
+            . '<circle cx="48" cy="48" r="38" fill="#fff" fill-opacity=".55"/>'
+            . '<g transform="rotate(' . $rotate . ' 48 48)">' . $figure . '</g>'
+            . '</svg>';
+    }
+
+    /**
+     * Pick a random operator from the configured whitelist and build a
+     * question whose result is always an integer.
+     *
+     * @return array{0: int, 1: int, 2: string, 3: int}
+     */
+    private static function mathQuestion(): array
+    {
+        $operations = self::mathOperations();
+        $operation = $operations[random_int(0, count($operations) - 1)];
+        if ($operation === 'mul') {
+            $left = random_int(2, 12);
+            $right = random_int(2, 12);
+
+            return [$left, $right, '×', $left * $right];
+        }
+        if ($operation === 'sub') {
+            $left = random_int(6, 20);
+            $right = random_int(1, $left);
+
+            return [$left, $right, '-', $left - $right];
+        }
+        $left = random_int(2, 19);
+        $right = random_int(2, 19);
+
+        return [$left, $right, '+', $left + $right];
+    }
+
+    /**
+     * @return list<string>
+     */
+    private static function mathOperations(): array
+    {
+        $configured = Settings::values()['Captcha_Math_Operations'] ?? [];
+        $allowed = ['add', 'sub', 'mul'];
+        $operations = is_array($configured)
+            ? array_values(array_filter(
+                array_map('strval', $configured),
+                static fn (string $item): bool => in_array($item, $allowed, true)
+            ))
+            : [];
+
+        return $operations === [] ? ['add', 'sub'] : $operations;
+    }
+
+    private static function imageCharset(): string
+    {
+        $key = (string) (Settings::values()['Captcha_Image_Charset'] ?? 'alnum');
+
+        return self::IMAGE_CHARSETS[$key] ?? self::IMAGE_CHARSETS['alnum'];
+    }
+
+    private static function imageLength(): int
+    {
+        return max(4, min(6, (int) (Settings::values()['Captcha_Image_Length'] ?? 5)));
+    }
+
+    private static function imageNoise(): int
+    {
+        return max(0, min(10, (int) (Settings::values()['Captcha_Image_Noise'] ?? 5)));
+    }
+
+    private static function selectCount(): int
+    {
+        return max(4, min(8, (int) (Settings::values()['Captcha_Select_Count'] ?? 6)));
+    }
+
+    private static function selectSource(): string
+    {
+        $source = (string) (Settings::values()['Captcha_Select_Source'] ?? 'builtin');
+
+        return in_array($source, self::SELECT_SOURCES, true) ? $source : 'builtin';
+    }
+
+    /**
+     * Pair the custom image pool with its label list line by line.
+     *
+     * Images without a label are ignored once labels are supplied so a
+     * generated question never targets an unnamed group. When no labels are
+     * configured every image shares one group and the challenge falls back to
+     * the "pick the matching sample" mode.
+     *
+     * @return array<string, list<string>>
+     */
+    private static function customSelectGroups(): array
+    {
+        $values = Settings::values();
+        $labels = self::settingLines($values['Captcha_Select_Labels'] ?? '');
+        $hasLabels = false;
+        foreach ($labels as $label) {
+            if ($label !== '') {
+                $hasLabels = true;
+                break;
+            }
+        }
+
+        $lines = self::settingLines($values['Captcha_Select_Images'] ?? '');
+        $groups = [];
+        $total = 0;
+        foreach ($lines as $index => $line) {
+            if ($line === '') {
+                continue;
+            }
+            $label = $labels[$index] ?? '';
+            if (str_contains($line, '|')) {
+                [$inlineLabel, $line] = explode('|', $line, 2);
+                $line = trim($line);
+                if ($label === '') {
+                    $label = trim($inlineLabel);
+                }
+            }
+            if (!$hasLabels) {
+                $label = '图片';
+            } elseif ($label === '') {
+                continue;
+            }
+            $url = Media::normalizeUrl($line);
+            if ($url === '') {
+                continue;
+            }
+            if (ctype_digit($url)) {
+                $url = Media::url((int) $url);
+            }
+            if ($url === '') {
+                continue;
+            }
+            $label = preg_replace('/[\x00-\x1F\x7F]/u', '', $label) ?? '';
+            $label = trim(mb_substr($label, 0, 24, 'UTF-8'));
+            if ($label === '') {
+                continue;
+            }
+            if (!isset($groups[$label])) {
+                $groups[$label] = [];
+            }
+            if (in_array($url, $groups[$label], true)) {
+                continue;
+            }
+            $groups[$label][] = $url;
+            $total++;
+            if ($total >= 30) {
+                break;
+            }
+        }
+
+        return $groups;
+    }
+
+    /**
+     * Split a textarea setting into trimmed lines while keeping empty rows so
+     * label/image indexes stay aligned.
+     *
+     * @return list<string>
+     */
+    private static function settingLines(mixed $value): array
+    {
+        if (!is_string($value)) {
+            $value = is_array($value) ? implode("\n", array_map('strval', $value)) : '';
+        }
+        $lines = preg_split('/\r\n|\r|\n/', $value);
+        if (!is_array($lines)) {
+            return [];
+        }
+
+        return array_map(
+            static fn (string $line): string => trim($line),
+            $lines
+        );
+    }
+
+    /**
+     * @param list<string> $items
+     */
+    private static function shuffleList(array &$items): void
+    {
+        for ($index = count($items) - 1; $index > 0; $index--) {
+            $swap = random_int(0, $index);
+            [$items[$index], $items[$swap]] = [$items[$swap], $items[$index]];
+        }
+    }
+
+    private static function sliderTolerance(): float
+    {
+        return (float) max(2, min(10, (int) (Settings::values()['Captcha_Slider_Tolerance'] ?? 4)));
+    }
+
+    private static function normalizeText(string $value): string
+    {
+        $upper = mb_strtoupper(trim($value), 'UTF-8');
+
+        return preg_replace('/\s+/u', '', $upper) ?? '';
     }
 
     /**
@@ -419,21 +865,48 @@ final class Captcha
         $valid = false;
         if ($provider === 'math') {
             $answer = is_scalar($answer) ? trim((string) $answer) : '';
-            $valid = preg_match('/^\d{1,3}$/D', $answer) === 1
-                && hash_equals((string) ($record['answer'] ?? ''), hash('sha256', $answer));
-        } else {
+            $valid = preg_match('/^-?\d{1,4}$/D', $answer) === 1
+                && hash_equals(
+                    (string) ($record['answer'] ?? ''),
+                    hash('sha256', (string) (int) $answer)
+                );
+        } elseif ($provider === 'slider') {
             $position = is_numeric($answer) ? (float) $answer : -1.0;
             $target = (float) ($record['target'] ?? -1.0);
+            $tolerance = self::sliderTolerance();
             $valid = $position >= 0.0
                 && $position <= 100.0
                 && $target >= 0.0
-                && abs($position - $target) <= 4.0;
+                && abs($position - $target) <= $tolerance;
+        } elseif ($provider === 'image_text') {
+            $text = is_scalar($answer) ? self::normalizeText((string) $answer) : '';
+            $valid = $text !== ''
+                && mb_strlen($text, 'UTF-8') <= 8
+                && hash_equals(
+                    (string) ($record['answer'] ?? ''),
+                    hash('sha256', $text)
+                );
+        } elseif ($provider === 'image_select') {
+            $optionId = is_scalar($answer) ? trim((string) $answer) : '';
+            $valid = preg_match('/^[a-f0-9]{8}$/D', $optionId) === 1
+                && hash_equals(
+                    (string) ($record['answer'] ?? ''),
+                    hash('sha256', $optionId)
+                );
         }
 
         if ($valid) {
             self::deleteRecord($id);
 
             return true;
+        }
+
+        // A selection captcha has only one correct card, so a wrong pick burns
+        // the challenge instead of granting extra brute-force attempts.
+        if ($provider === 'image_select') {
+            self::deleteRecord($id);
+
+            return false;
         }
 
         $record['tries'] = $tries;

@@ -170,7 +170,15 @@ export interface UserEconomyEndpoints {
 
 export interface UserCaptchaConfig {
     enabled: boolean;
-    provider: 'math' | 'slider' | 'geetest' | 'tencent' | 'aliyun' | string;
+    provider:
+        | 'math'
+        | 'slider'
+        | 'image_text'
+        | 'image_select'
+        | 'geetest'
+        | 'tencent'
+        | 'aliyun'
+        | string;
     scenes: string[];
     challenge: string;
     geetestId: string;

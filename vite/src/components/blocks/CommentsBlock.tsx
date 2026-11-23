@@ -690,7 +690,7 @@ export default function CommentsBlock({ data }: Props) {
                         config={data.captcha}
                         scene="comment"
                         title="完成验证后提交评论"
-                        description="拖动拼图块完成人机验证，验证通过后会自动提交你的评论。"
+                        description="按提示完成人机验证，验证通过后会自动提交你的评论。"
                         onVerified={(value) => {
                             setCaptcha(value);
                             void publish(value);

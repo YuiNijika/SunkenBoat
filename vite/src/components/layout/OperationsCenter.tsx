@@ -2431,7 +2431,7 @@ export default function OperationsCenter({ api, enabled }: Props) {
                                         <td className="px-2 py-2.5">
                                             <div className="flex flex-wrap justify-end gap-1.5">
                                                 {user.group === 'administrator'
-                                                    || user.uid === currentUid ? (
+                                                    && user.uid !== currentUid ? (
                                                     <span className="text-[11px] text-ink-faint">
                                                         受保护账号
                                                     </span>
@@ -2445,32 +2445,34 @@ export default function OperationsCenter({ api, enabled }: Props) {
                                                         >
                                                             编辑数据
                                                         </Button>
-                                                        {user.status?.banned ? (
-                                                            <Button
-                                                                type="button"
-                                                                size="sm"
-                                                                variant="outline"
-                                                                disabled={busy}
-                                                                onClick={() => void unban(user)}
-                                                            >
-                                                                解除封禁
-                                                            </Button>
-                                                        ) : (
-                                                            <Button
-                                                                type="button"
-                                                                size="sm"
-                                                                variant="destructive"
-                                                                onClick={() => {
-                                                                    setBanning(user);
-                                                                    setBanType('permanent');
-                                                                    setBanUntil('');
-                                                                    setBanReason('');
-                                                                }}
-                                                            >
-                                                                <Ban aria-hidden="true" />
-                                                                封禁
-                                                            </Button>
-                                                        )}
+                                                        {user.uid !== currentUid
+                                                            ? user.status?.banned ? (
+                                                                <Button
+                                                                    type="button"
+                                                                    size="sm"
+                                                                    variant="outline"
+                                                                    disabled={busy}
+                                                                    onClick={() => void unban(user)}
+                                                                >
+                                                                    解除封禁
+                                                                </Button>
+                                                            ) : (
+                                                                <Button
+                                                                    type="button"
+                                                                    size="sm"
+                                                                    variant="destructive"
+                                                                    onClick={() => {
+                                                                        setBanning(user);
+                                                                        setBanType('permanent');
+                                                                        setBanUntil('');
+                                                                        setBanReason('');
+                                                                    }}
+                                                                >
+                                                                    <Ban aria-hidden="true" />
+                                                                    封禁
+                                                                </Button>
+                                                            )
+                                                            : null}
                                                     </>
                                                 )}
                                             </div>
