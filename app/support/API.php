@@ -76,6 +76,24 @@ final class API
             ]);
         }
 
+        if ($endpoint === 'payment/go') {
+            if ($method !== 'GET') {
+                Response::error('Method not allowed', 405);
+            }
+
+            Downloads::paymentGo();
+        }
+
+        if ($endpoint === 'payment/paypal/return' || $endpoint === 'payment/stripe/return') {
+            if ($method !== 'GET') {
+                Response::error('Method not allowed', 405);
+            }
+
+            Downloads::paymentProviderReturn(
+                str_ends_with($endpoint, '/paypal/return') ? 'paypal' : 'stripe'
+            );
+        }
+
         if ($method !== 'GET') {
             Response::error('Method not allowed', 405);
         }

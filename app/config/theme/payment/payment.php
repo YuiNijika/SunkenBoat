@@ -7,10 +7,13 @@ if (!defined('__TYPECHO_ROOT_DIR__')) {
 }
 
 /**
- * 易支付 / 彩虹易支付 / 码支付共用同一套提交协议：pid、type、out_trade_no、
- * name、money、notify_url、return_url 与 MD5 签名。每个通道可以单独设置
- * 接口地址、商户号、密钥与支持的支付方式，因此同一个站点可以同时接入多套
- * 易支付或码支付账号。
+ * 每个「通道」对应一套独立的支付适配器：
+ * - 易支付 / 彩虹易支付 / 码支付（易支付协议）共用 pid 协议，支持商户密钥
+ *   MD5 与证书模式 SHA256WithRSA；
+ * - 支付宝官方直连使用 RSA2；
+ * - 虎皮椒 V3、迅虎 PAY、PAYJS、V免签、码支付（官方协议）各自使用
+ *   不同的签名与提交方式，由 DownloadPayment 在服务端完成。
+ * 同一个站点可以同时接入多套通道，结算页会按支付方式分别列出入口。
  */
 $compatibleChannel = static function (string $label, string $description): array {
     return [
@@ -50,8 +53,19 @@ $compatibleChannel = static function (string $label, string $description): array
                 'name' => 'endpoint',
                 'value' => 'submit.php',
                 'label' => '接口路径',
-                'description' => '相对路径，例如 submit.php 或 pay/submit.php。',
+                'description' => '相对路径，例如 submit.php 或 pay/submit.php。证书模式下若平台要求 API 提交，可填写 api/pay/submit。',
                 'placeholder' => 'submit.php',
+            ],
+            [
+                'type' => 'Select',
+                'name' => 'sign_mode',
+                'value' => 'md5',
+                'label' => '签名方式',
+                'description' => '商户密钥模式使用 MD5 签名；证书模式使用商户私钥做 SHA256WithRSA 签名，并用平台公钥校验回调。证书模式需要平台支持 V2/RSA。',
+                'options' => [
+                    'md5' => '商户密钥（MD5）',
+                    'rsa' => '证书模式（RSA2）',
+                ],
             ],
             [
                 'type' => 'Text',
@@ -68,7 +82,23 @@ $compatibleChannel = static function (string $label, string $description): array
                 'inline' => true,
                 'inline_group' => 'merchant',
                 'label' => '商户密钥',
-                'description' => '直接填写平台给出的商户密钥，保存在主题设置中。',
+                'description' => '商户密钥模式必填；证书模式下可留空，仅用于兼容仍以 MD5 回调的平台。',
+            ],
+            [
+                'type' => 'Textarea',
+                'name' => 'merchant_private_key',
+                'value' => '',
+                'rows' => 6,
+                'label' => '商户私钥（证书模式）',
+                'description' => '证书模式必填。粘贴商户 RSA 私钥 PEM 或纯 Base64，支持 PKCS#8 / PKCS#1；不会输出到前台。',
+            ],
+            [
+                'type' => 'Textarea',
+                'name' => 'platform_public_key',
+                'value' => '',
+                'rows' => 6,
+                'label' => '平台公钥（证书模式）',
+                'description' => '证书模式必填。粘贴易支付平台公钥，用于验证异步通知签名。',
             ],
             [
                 'type' => 'Text',
@@ -130,6 +160,447 @@ $officialChannel = [
     ],
 ];
 
+$xunhupayChannel = [
+    'label' => '虎皮椒 V3（迅虎）',
+    'description' => '虎皮椒 / 迅虎 V3 接口，支持支付宝与微信；接口为 JSON POST，支付地址由服务器端换取，密钥不会下发到浏览器。',
+    'fields' => [
+        [
+            'type' => 'Text',
+            'name' => 'label',
+            'value' => '',
+            'label' => '通道名称',
+            'description' => '用于在后台和结算页区分不同通道，留空则显示「虎皮椒 V3 · 支付方式」。',
+            'placeholder' => '例如：虎皮椒 A',
+        ],
+        [
+            'type' => 'Checkbox',
+            'name' => 'methods',
+            'value' => ['alipay', 'wxpay'],
+            'label' => '支持的支付方式',
+            'description' => '该通道实际开通的方式；结算页只会列出勾选的付款入口。',
+            'options' => [
+                'alipay' => '支付宝',
+                'wxpay' => '微信支付',
+            ],
+        ],
+        [
+            'type' => 'Text',
+            'name' => 'appid',
+            'value' => '',
+            'inline' => true,
+            'inline_group' => 'xunhupay-app',
+            'label' => 'APPID',
+            'placeholder' => '虎皮椒后台的 APPID',
+        ],
+        [
+            'type' => 'Password',
+            'name' => 'appsecret',
+            'value' => '',
+            'inline' => true,
+            'inline_group' => 'xunhupay-app',
+            'label' => 'APP Secret',
+            'description' => '至少 16 位，保存在主题设置中，不会输出到前台。',
+        ],
+        [
+            'type' => 'Text',
+            'name' => 'gateway',
+            'value' => 'https://api.xunhupay.com/payment/do.html',
+            'label' => '接口地址',
+            'description' => '虎皮椒 V3 的支付接口完整地址，通常保持默认即可。',
+        ],
+        [
+            'type' => 'Text',
+            'name' => 'site_name',
+            'value' => '',
+            'label' => '网站名称（可选）',
+            'description' => '微信 WAP 支付时显示的名称，留空则使用「付费下载」。',
+        ],
+    ],
+];
+
+$xhpayChannel = [
+    'label' => '迅虎 PAY（虎皮椒 V4）',
+    'description' => '迅虎 PAY 收银台接口，支持支付宝与微信；金额按分提交，异步通知使用 JSON。',
+    'fields' => [
+        [
+            'type' => 'Text',
+            'name' => 'label',
+            'value' => '',
+            'label' => '通道名称',
+            'description' => '用于在后台和结算页区分不同通道，留空则显示「迅虎 PAY · 支付方式」。',
+            'placeholder' => '例如：迅虎 PAY A',
+        ],
+        [
+            'type' => 'Checkbox',
+            'name' => 'methods',
+            'value' => ['alipay', 'wxpay'],
+            'label' => '支持的支付方式',
+            'description' => '该通道实际开通的方式；结算页只会列出勾选的付款入口。',
+            'options' => [
+                'alipay' => '支付宝',
+                'wxpay' => '微信支付',
+            ],
+        ],
+        [
+            'type' => 'Text',
+            'name' => 'merchant_id',
+            'value' => '',
+            'inline' => true,
+            'inline_group' => 'xhpay-merchant',
+            'label' => '商户号',
+        ],
+        [
+            'type' => 'Password',
+            'name' => 'key',
+            'value' => '',
+            'inline' => true,
+            'inline_group' => 'xhpay-merchant',
+            'label' => 'API 密钥',
+            'description' => '至少 16 位，保存在主题设置中。',
+        ],
+        [
+            'type' => 'Text',
+            'name' => 'gateway',
+            'value' => 'https://admin.xunhuweb.com',
+            'label' => '接口地址',
+            'description' => '迅虎 PAY 网关根地址，通常保持默认即可。',
+        ],
+    ],
+];
+
+$payjsChannel = [
+    'label' => 'PAYJS',
+    'description' => 'PAYJS 收银台接口，金额按分提交；支持微信，支付宝是否可用取决于 PAYJS 账户开通情况。',
+    'fields' => [
+        [
+            'type' => 'Text',
+            'name' => 'label',
+            'value' => '',
+            'label' => '通道名称',
+            'description' => '用于在后台和结算页区分不同通道，留空则显示「PAYJS · 支付方式」。',
+            'placeholder' => '例如：PAYJS A',
+        ],
+        [
+            'type' => 'Checkbox',
+            'name' => 'methods',
+            'value' => ['wxpay', 'alipay'],
+            'label' => '支持的支付方式',
+            'description' => '该通道实际开通的方式；结算页只会列出勾选的付款入口。',
+            'options' => [
+                'wxpay' => '微信支付',
+                'alipay' => '支付宝',
+            ],
+        ],
+        [
+            'type' => 'Text',
+            'name' => 'merchant_id',
+            'value' => '',
+            'inline' => true,
+            'inline_group' => 'payjs-merchant',
+            'label' => '商户号 MCHID',
+        ],
+        [
+            'type' => 'Password',
+            'name' => 'key',
+            'value' => '',
+            'inline' => true,
+            'inline_group' => 'payjs-merchant',
+            'label' => '通信密钥',
+            'description' => '至少 16 位，保存在主题设置中。',
+        ],
+        [
+            'type' => 'Text',
+            'name' => 'gateway',
+            'value' => 'https://payjs.cn/api/cashier',
+            'label' => '收银台地址',
+            'description' => 'PAYJS 收银台接口完整地址，通常保持默认即可。',
+        ],
+    ],
+];
+
+$vmqChannel = [
+    'label' => 'V免签',
+    'description' => 'V免签监控端接口，支持支付宝与微信；监控端可以是 http(s)，建议使用 HTTPS 域名。',
+    'fields' => [
+        [
+            'type' => 'Text',
+            'name' => 'label',
+            'value' => '',
+            'label' => '通道名称',
+            'description' => '用于在后台和结算页区分不同通道，留空则显示「V免签 · 支付方式」。',
+            'placeholder' => '例如：V免签 A',
+        ],
+        [
+            'type' => 'Checkbox',
+            'name' => 'methods',
+            'value' => ['alipay', 'wxpay'],
+            'label' => '支持的支付方式',
+            'description' => '该通道实际开通的方式；结算页只会列出勾选的付款入口。',
+            'options' => [
+                'alipay' => '支付宝',
+                'wxpay' => '微信支付',
+            ],
+        ],
+        [
+            'type' => 'Text',
+            'name' => 'gateway',
+            'value' => '',
+            'label' => '监控端地址',
+            'description' => 'V免签监控端的根地址，例如 https://vmq.example.com，不需要带 /createOrder。',
+            'placeholder' => 'https://vmq.example.com',
+        ],
+        [
+            'type' => 'Password',
+            'name' => 'key',
+            'value' => '',
+            'label' => '通信密钥',
+            'description' => 'V免签后台配置的通信密钥，至少 16 位。',
+        ],
+    ],
+];
+
+$codepayChannel = [
+    'label' => '码支付（官方协议）',
+    'description' => '码支付官方 creat_order 协议，支持支付宝、微信与 QQ 钱包；返回二维码后在站内展示。',
+    'fields' => [
+        [
+            'type' => 'Text',
+            'name' => 'label',
+            'value' => '',
+            'label' => '通道名称',
+            'description' => '用于在后台和结算页区分不同通道，留空则显示「码支付 · 支付方式」。',
+            'placeholder' => '例如：码支付 A',
+        ],
+        [
+            'type' => 'Checkbox',
+            'name' => 'methods',
+            'value' => ['alipay', 'wxpay'],
+            'label' => '支持的支付方式',
+            'description' => '该通道实际开通的方式；结算页只会列出勾选的付款入口。',
+            'options' => [
+                'alipay' => '支付宝',
+                'wxpay' => '微信支付',
+                'qqpay' => 'QQ 钱包',
+            ],
+        ],
+        [
+            'type' => 'Text',
+            'name' => 'merchant_id',
+            'value' => '',
+            'inline' => true,
+            'inline_group' => 'codepay-merchant',
+            'label' => '码支付 ID',
+        ],
+        [
+            'type' => 'Password',
+            'name' => 'key',
+            'value' => '',
+            'inline' => true,
+            'inline_group' => 'codepay-merchant',
+            'label' => '通信密钥',
+            'description' => '至少 16 位，保存在主题设置中。',
+        ],
+        [
+            'type' => 'Password',
+            'name' => 'token',
+            'value' => '',
+            'label' => '接口 Token',
+            'description' => '码支付后台的接口 Token，与通信密钥分开填写。',
+        ],
+        [
+            'type' => 'Select',
+            'name' => 'version',
+            'value' => 'auto',
+            'label' => '回调协议版本',
+            'description' => '自动模式会同时兼容 V1 与 V2 的字段名和签名算法；只在平台明确要求时手动指定。',
+            'options' => [
+                'auto' => '自动识别（推荐）',
+                'v1' => 'V1',
+                'v2' => 'V2',
+            ],
+        ],
+        [
+            'type' => 'Text',
+            'name' => 'gateway',
+            'value' => 'https://api.xiuxiu888.com',
+            'label' => '接口地址',
+            'description' => '码支付网关根地址，通常保持默认即可。',
+        ],
+    ],
+];
+
+$wechatChannel = [
+    'label' => '微信支付（官方 V3）',
+    'description' => '微信支付 API v3 Native 下单，服务端签名并生成站内二维码；回调使用平台证书验签与 AES-256-GCM 解密。需要 PHP OpenSSL 与 cURL 扩展。',
+    'fields' => [
+        [
+            'type' => 'Text',
+            'name' => 'label',
+            'value' => '',
+            'label' => '通道名称',
+            'description' => '用于在后台和结算页区分不同通道，留空则显示「微信支付（官方 V3） · 微信支付」。',
+            'placeholder' => '例如：微信官方 A',
+        ],
+        [
+            'type' => 'Text',
+            'name' => 'app_id',
+            'value' => '',
+            'inline' => true,
+            'inline_group' => 'wechat-app',
+            'label' => 'AppID',
+            'placeholder' => 'wx0000000000000000',
+        ],
+        [
+            'type' => 'Text',
+            'name' => 'mch_id',
+            'value' => '',
+            'inline' => true,
+            'inline_group' => 'wechat-app',
+            'label' => '商户号 MchID',
+            'placeholder' => '1900000001',
+        ],
+        [
+            'type' => 'Text',
+            'name' => 'serial_no',
+            'value' => '',
+            'label' => '商户 API 证书序列号',
+            'description' => '微信支付商户平台下载的 API 证书序列号，用于请求签名。',
+            'placeholder' => '例如：5157F09EFDC096DE15EBE81A47057A7232F1B8E1',
+        ],
+        [
+            'type' => 'Textarea',
+            'name' => 'private_key',
+            'value' => '',
+            'rows' => 6,
+            'label' => '商户 API 私钥',
+            'description' => '粘贴 apiclient_key.pem 的完整 PEM 内容；支持 \\n 转义的 JSON 导出格式。',
+        ],
+        [
+            'type' => 'Password',
+            'name' => 'api_v3_key',
+            'value' => '',
+            'label' => 'APIv3 密钥',
+            'description' => '微信支付商户平台设置的 32 位 APIv3 密钥，用于解密回调 resource。',
+        ],
+        [
+            'type' => 'Textarea',
+            'name' => 'platform_public_key',
+            'value' => '',
+            'rows' => 6,
+            'label' => '微信支付平台证书 / 公钥',
+            'description' => '用于验证微信支付回调签名，可粘贴平台证书 PEM 或平台公钥。',
+        ],
+    ],
+];
+
+$paypalChannel = [
+    'label' => 'PayPal',
+    'description' => 'PayPal Orders v2 收银台，支持沙箱与正式环境；回调将在服务端二次校验 Webhook 签名与订单金额。',
+    'fields' => [
+        [
+            'type' => 'Text',
+            'name' => 'label',
+            'value' => '',
+            'label' => '通道名称',
+            'description' => '用于在后台和结算页区分不同通道，留空则显示「PayPal」。',
+            'placeholder' => '例如：PayPal 国际',
+        ],
+        [
+            'type' => 'Text',
+            'name' => 'client_id',
+            'value' => '',
+            'inline' => true,
+            'inline_group' => 'paypal-app',
+            'label' => 'Client ID',
+        ],
+        [
+            'type' => 'Password',
+            'name' => 'client_secret',
+            'value' => '',
+            'inline' => true,
+            'inline_group' => 'paypal-app',
+            'label' => 'Client Secret',
+            'description' => '保存在主题设置中，不会输出到前台。',
+        ],
+        [
+            'type' => 'Switch',
+            'name' => 'sandbox',
+            'value' => false,
+            'label' => '使用沙箱环境',
+            'description' => '调试时开启；正式收款请关闭并使用正式环境的 Client ID / Secret。',
+        ],
+        [
+            'type' => 'Select',
+            'name' => 'currency',
+            'value' => 'USD',
+            'label' => '结算币种',
+            'description' => 'PayPal 账户支持的币种，订单金额会按该币种提交。',
+            'options' => [
+                'USD' => 'USD 美元',
+                'EUR' => 'EUR 欧元',
+                'GBP' => 'GBP 英镑',
+                'CAD' => 'CAD 加元',
+                'AUD' => 'AUD 澳元',
+                'HKD' => 'HKD 港币',
+                'SGD' => 'SGD 新加坡元',
+            ],
+        ],
+        [
+            'type' => 'Text',
+            'name' => 'webhook_id',
+            'value' => '',
+            'label' => 'Webhook ID（可选）',
+            'description' => '创建 PayPal Webhook 后填写其 ID；回调地址使用「支付设置」页展示的异步通知地址。留空时仍可通过同步返回完成扣款校验。',
+        ],
+    ],
+];
+
+$stripeChannel = [
+    'label' => 'Stripe Checkout',
+    'description' => 'Stripe Checkout 托管收银台，支持银行卡与 Stripe 已启用的本地支付方式；Webhook 与同步返回都会在服务端核对金额和币种。',
+    'fields' => [
+        [
+            'type' => 'Text',
+            'name' => 'label',
+            'value' => '',
+            'label' => '通道名称',
+            'description' => '用于在后台和结算页区分不同通道，留空则显示「Stripe Checkout · 银行卡 / 信用卡」。',
+            'placeholder' => '例如：Stripe 国际',
+        ],
+        [
+            'type' => 'Password',
+            'name' => 'secret_key',
+            'value' => '',
+            'label' => 'Secret Key',
+            'description' => 'Stripe 后台的 sk_live_ 或 sk_test_ 密钥，只保存在服务端。',
+        ],
+        [
+            'type' => 'Password',
+            'name' => 'webhook_secret',
+            'value' => '',
+            'label' => 'Webhook Signing Secret',
+            'description' => 'Stripe Webhook 的 whsec_ 密钥；留空时只能通过同步返回结算，建议填写。',
+        ],
+        [
+            'type' => 'Select',
+            'name' => 'currency',
+            'value' => 'USD',
+            'label' => '结算币种',
+            'description' => 'Stripe 账户支持的币种，订单金额会按该币种提交。',
+            'options' => [
+                'USD' => 'USD 美元',
+                'CNY' => 'CNY 人民币',
+                'EUR' => 'EUR 欧元',
+                'GBP' => 'GBP 英镑',
+                'CAD' => 'CAD 加元',
+                'AUD' => 'AUD 澳元',
+                'HKD' => 'HKD 港币',
+                'SGD' => 'SGD 新加坡元',
+            ],
+        ],
+    ],
+];
+
 $notifyPath = '/ttdf/sunken/payment/notify';
 $notifyUrl = '';
 $notifyFallback = '';
@@ -161,7 +632,7 @@ if ($notifyUrl !== '' && $notifyFallback === $notifyUrl) {
 
 return [
     'title' => '支付设置',
-    'description' => '下载开关、每日免费额度、最低支付金额与收款通道都在这里配置；付费下载记录在用户中心「下载记录」中查看。支付平台的异步通知必须能公网访问下方回调地址。',
+    'description' => '下载开关、每日免费额度、最低支付金额与收款通道都在这里配置；支持支付宝官方、微信支付官方 V3、PayPal、Stripe、易支付 / 彩虹易支付（商户密钥或证书模式）、码支付、虎皮椒 V3、迅虎 PAY、PAYJS、V免签等常见通道。付费下载记录在用户中心「下载记录」中查看。支付平台的异步通知必须能公网访问下方回调地址。',
     'fields' => [
         [
             'type' => 'Switch',
@@ -214,18 +685,26 @@ return [
             'show_when' => ['Downloads_Payment_Enabled' => true],
             'label' => '付款方式',
             'item_label' => '通道',
-            'description' => '按「通道」配置收款：可以同时添加多套官方直连、易支付或码支付，每套通道单独填写商户号与密钥，并勾选它支持的支付方式。官方直连当前支持支付宝电脑网站支付；微信 / QQ 请使用易支付或码支付通道。结算页会按这些通道分别列出付款入口。',
+            'description' => '按「通道」配置收款：可以同时添加支付宝官方、微信支付官方 V3、PayPal、Stripe、易支付、码支付、虎皮椒 V3、迅虎 PAY、PAYJS、V免签或码支付官方协议。官方直连当前支持支付宝电脑网站支付；微信官方通道使用 Native 扫码，PayPal 与 Stripe 使用托管收银台。结算页会按这些通道分别列出付款入口。',
             'reorder' => ['drag', 'buttons'],
             'options' => [
                 'official' => $officialChannel,
                 'epay' => $compatibleChannel(
                     '易支付 / 彩虹易支付',
-                    '适用于易支付、彩虹易支付及同协议的聚合支付平台。'
+                    '适用于易支付、彩虹易支付及同协议的聚合支付平台；支持商户密钥（MD5）与证书模式（RSA2）。'
                 ),
                 'mapay' => $compatibleChannel(
-                    '码支付',
-                    '适用于码支付及同协议的聚合支付平台。'
+                    '码支付（易支付协议）',
+                    '适用于码支付及同协议的聚合支付平台（易支付协议）。'
                 ),
+                'xunhupay' => $xunhupayChannel,
+                'xhpay' => $xhpayChannel,
+                'payjs' => $payjsChannel,
+                'vmq' => $vmqChannel,
+                'codepay' => $codepayChannel,
+                'wechat' => $wechatChannel,
+                'paypal' => $paypalChannel,
+                'stripe' => $stripeChannel,
             ],
         ],
         [
@@ -272,7 +751,7 @@ return [
                 . ($pingUrl === '' ? '' : '<p><a href="'
                     . \TTDF\Support\Escaper::html($pingUrl)
                     . '" target="_blank" rel="noopener noreferrer">测试回调地址</a>，打开后应返回 JSON 且 reachable 为 true。</p>')
-                . '<p>该地址必须能被支付平台公网访问，支持 GET / POST 回调；易支付 / 码支付请在商户后台填写异步通知地址，支付宝官方直连会在每笔请求中自动携带该地址。同步跳转地址由每笔订单自动生成。</p>'
+                . '<p>该地址必须能被支付平台公网访问，支持 GET / POST / JSON 回调；易支付、码支付、虎皮椒、迅虎 PAY、PAYJS、V免签、微信官方与 Stripe 请在商户后台填写异步通知地址，支付宝官方直连会在每笔请求中自动携带该地址。PayPal 请把同一地址配置为 Webhook，并填写 Webhook ID。同步跳转地址由每笔订单自动生成。</p>'
                 . '</div>',
         ],
     ],

@@ -642,9 +642,11 @@ final class Downloads
     public static function paymentNotify(): never
     {
         $input = self::notificationInput();
+        $rawBody = self::notificationRawBody();
+        $headers = self::notificationHeaders();
 
         try {
-            $result = DownloadPayment::verify($input);
+            $result = DownloadPayment::verify($input, $rawBody, $headers);
             if ($result === null) {
                 $claimed = self::notificationNumber($input);
                 if (preg_match('/^SK[0-9]{14}[A-F0-9]{16}$/D', $claimed) === 1) {
@@ -702,6 +704,42 @@ final class Downloads
         exit;
     }
 
+    public static function paymentGo(): never
+    {
+        DownloadPayment::launch($_GET);
+    }
+
+    public static function paymentProviderReturn(string $platform): never
+    {
+        $result = DownloadPayment::providerReturn($platform, $_GET);
+        $order = DownloadStore::orderByNumber(trim((string) ($_GET['order'] ?? '')));
+        if ($order !== null && $result !== null) {
+            try {
+                $order = self::settleGatewayOrder($result) ?? $order;
+            } catch (\Throwable $exception) {
+                error_log('SunkenBoat provider return settlement failed: ' . $exception->getMessage());
+            }
+        }
+
+        $redirect = $order === null ? (Typecho::siteUrl() ?: '/') : self::returnUrl($order);
+        $paid = $order !== null && (string) ($order['status'] ?? '') === 'paid';
+        if (!headers_sent()) {
+            header('Cache-Control: no-store');
+            header('Referrer-Policy: no-referrer');
+            header('Location: ' . self::appendPaymentStatus($redirect, $paid ? 'success' : 'pending'), true, 302);
+        }
+        exit;
+    }
+
+    private static function appendPaymentStatus(string $url, string $status): string
+    {
+        if ($url === '') {
+            return '/';
+        }
+
+        return $url . (str_contains($url, '?') ? '&' : '?') . 'payment=' . rawurlencode($status);
+    }
+
     /**
      * Dispatch a verified gateway notification by the stored order kind.
      * Downloads and paid-content blocks share the order table, but their
@@ -746,18 +784,13 @@ final class Downloads
             return is_array($input) ? $input : [];
         }
 
-        $declared = (int) ($_SERVER['CONTENT_LENGTH'] ?? 0);
-        if ($declared > Request::MAX_BODY_BYTES) {
-            return [];
-        }
-
-        $raw = file_get_contents('php://input');
-        if (!is_string($raw) || $raw === '' || strlen($raw) > Request::MAX_BODY_BYTES) {
+        $raw = self::notificationRawBody();
+        if ($raw === '') {
             return [];
         }
 
         $contentType = strtolower((string) ($_SERVER['CONTENT_TYPE'] ?? ''));
-        if (str_contains($contentType, 'json')) {
+        if (str_contains($contentType, 'json') || str_starts_with(ltrim($raw), '{')) {
             $decoded = json_decode($raw, true);
 
             return is_array($decoded) ? $decoded : [];
@@ -766,6 +799,50 @@ final class Downloads
         parse_str($raw, $parsed);
 
         return is_array($parsed) ? $parsed : [];
+    }
+
+    private static function notificationRawBody(): string
+    {
+        static $cached = null;
+        if (is_string($cached)) {
+            return $cached;
+        }
+
+        $declared = (int) ($_SERVER['CONTENT_LENGTH'] ?? 0);
+        if ($declared > Request::MAX_BODY_BYTES) {
+            return $cached = '';
+        }
+
+        $raw = file_get_contents('php://input');
+        if (!is_string($raw) || strlen($raw) > Request::MAX_BODY_BYTES) {
+            return $cached = '';
+        }
+
+        return $cached = $raw;
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    private static function notificationHeaders(): array
+    {
+        $headers = [];
+        foreach ($_SERVER as $name => $value) {
+            if (!is_scalar($value)) {
+                continue;
+            }
+            $name = strtoupper((string) $name);
+            if (str_starts_with($name, 'HTTP_')) {
+                $header = strtolower(str_replace('_', '-', substr($name, 5)));
+            } elseif (in_array($name, ['CONTENT_TYPE', 'CONTENT_LENGTH'], true)) {
+                $header = strtolower(str_replace('_', '-', $name));
+            } else {
+                continue;
+            }
+            $headers[$header] = trim((string) $value);
+        }
+
+        return $headers;
     }
 
     /**
@@ -777,7 +854,19 @@ final class Downloads
     private static function notificationFields(array $input): string
     {
         $safe = [];
-        foreach (['pid', 'merchant_id', 'mch_id', 'type', 'pay_type', 'trade_status', 'status', 'sign_type'] as $name) {
+        foreach ([
+            'pid',
+            'merchant_id',
+            'mch_id',
+            'mchid',
+            'type',
+            'pay_type',
+            'trade_status',
+            'status',
+            'return_code',
+            'sign_type',
+            'attach',
+        ] as $name) {
             if (!array_key_exists($name, $input) || !is_scalar($input[$name])) {
                 continue;
             }
@@ -795,7 +884,16 @@ final class Downloads
      */
     private static function notificationNumber(array $input): string
     {
-        foreach (['out_trade_no', 'order_no', 'order_id', 'orderid', 'trade_order_no'] as $name) {
+        foreach ([
+            'out_trade_no',
+            'order_no',
+            'order_id',
+            'orderid',
+            'trade_order_no',
+            'trade_order_id',
+            'pay_id',
+            'payId',
+        ] as $name) {
             if (!array_key_exists($name, $input) || !is_scalar($input[$name])) {
                 continue;
             }
