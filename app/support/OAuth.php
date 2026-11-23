@@ -94,16 +94,12 @@ final class OAuth
         $method = strtoupper((string) ($_SERVER['REQUEST_METHOD'] ?? 'GET'));
         $step = (string) ($params['step'] ?? '');
         if ($step === 'start' && $method !== 'GET') {
-            http_response_code(405);
-            header('Allow: GET');
-            exit;
+            Response::text('', 405, 'text/plain; charset=UTF-8', ['Allow' => 'GET']);
         }
 
         $provider = (string) ($params['provider'] ?? '');
         if ($step === 'callback' && !in_array($method, ['GET', 'POST'], true)) {
-            http_response_code(405);
-            header('Allow: GET, POST');
-            exit;
+            Response::text('', 405, 'text/plain; charset=UTF-8', ['Allow' => 'GET, POST']);
         }
 
         if ($step === 'start') {
@@ -303,9 +299,7 @@ final class OAuth
 
         $method = strtoupper((string) ($_SERVER['REQUEST_METHOD'] ?? 'GET'));
         if (!in_array($method, ['GET', 'POST'], true)) {
-            http_response_code(405);
-            header('Allow: GET, POST');
-            exit;
+            Response::text('', 405, 'text/plain; charset=UTF-8', ['Allow' => 'GET, POST']);
         }
 
         $pending = self::readPending();
@@ -646,10 +640,6 @@ final class OAuth
         int $status = 200,
         string $notice = ''
     ): never {
-        http_response_code($status);
-        header('Content-Type: text/html; charset=UTF-8');
-        header('Cache-Control: no-store');
-
         $site = Typecho::options();
         $siteTitle = is_scalar($site?->title ?? null) ? trim((string) $site->title) : '';
         $siteTitle = $siteTitle !== '' ? $siteTitle : '站点';
@@ -666,7 +656,7 @@ final class OAuth
             ? '<p class="notice" role="status">' . self::e($notice) . '</p>'
             : '';
 
-        echo '<!doctype html><html lang="zh-CN"><head><meta charset="utf-8">'
+        $html = '<!doctype html><html lang="zh-CN"><head><meta charset="utf-8">'
             . '<meta name="viewport" content="width=device-width,initial-scale=1">'
             . '<meta name="robots" content="noindex,nofollow">'
             . '<meta name="description" content="' . self::e('验证已有账号并绑定第三方登录。') . '">'
@@ -713,19 +703,20 @@ final class OAuth
             . '<a class="cancel" href="' . self::e($cancel) . '">取消</a></div>'
             . '</form></main></body></html>';
 
-        exit;
+        Response::text(
+            $html,
+            $status,
+            'text/html; charset=UTF-8',
+            ['Cache-Control' => 'no-store']
+        );
     }
 
     private static function renderCompleteError(string $message, int $status): never
     {
-        http_response_code($status);
-        header('Content-Type: text/html; charset=UTF-8');
-        header('Cache-Control: no-store');
-
         $site = Typecho::options();
         $siteTitle = is_scalar($site?->title ?? null) ? trim((string) $site->title) : '';
         $login = self::userUrl('social');
-        echo '<!doctype html><html lang="zh-CN"><head><meta charset="utf-8">'
+        $html = '<!doctype html><html lang="zh-CN"><head><meta charset="utf-8">'
             . '<meta name="viewport" content="width=device-width,initial-scale=1">'
             . '<meta name="robots" content="noindex,nofollow">'
             . '<meta name="description" content="' . self::e('第三方账号绑定未完成。') . '">'
@@ -740,7 +731,12 @@ final class OAuth
             . '<main class="card"><h1>无法完成绑定</h1><p>' . self::e($message) . '</p>'
             . '<a href="' . self::e($login) . '">返回用户中心</a></main></body></html>';
 
-        exit;
+        Response::text(
+            $html,
+            $status,
+            'text/html; charset=UTF-8',
+            ['Cache-Control' => 'no-store']
+        );
     }
 
     private static function completeUrl(): string
@@ -1068,15 +1064,7 @@ final class OAuth
 
     private static function redirect(string $url): never
     {
-        if (class_exists('Typecho\\Response')) {
-            $response = \Typecho\Response::getInstance();
-            $response->setStatus(302);
-            $response->setHeader('Location', $url);
-            $response->respond();
-        }
-
-        header('Location: ' . $url, true, 302);
-        exit;
+        Response::redirect($url);
     }
 
     private static function fail(string $code): never

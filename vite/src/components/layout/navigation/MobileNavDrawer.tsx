@@ -4,6 +4,7 @@ import { createPortal } from 'react-dom';
 import { ChevronDown, X } from 'lucide-react';
 import { Button } from '../../ui/button';
 import type { NavItem, SiteInfo } from '../../../types';
+import HeaderLanguageMenu from './HeaderLanguageMenu';
 import NavIcon from './NavIcon';
 
 interface Props {
@@ -68,16 +69,19 @@ export default function MobileNavDrawer({ site, title, drawerRef, onClose }: Pro
                         <p className="section-label">Navigation</p>
                         <p className="mt-1 truncate text-[16px] font-medium text-ink">{title}</p>
                     </div>
-                    <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon"
-                        className="size-9 rounded-[6px] text-ink-mute"
-                        aria-label="关闭导航菜单"
-                        onClick={onClose}
-                    >
-                        <X strokeWidth={1.8} aria-hidden="true" />
-                    </Button>
+                    <div className="flex shrink-0 items-center gap-1">
+                        <HeaderLanguageMenu translate={site.translate} />
+                        <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            className="size-11 rounded-[8px] text-ink-mute"
+                            aria-label="关闭导航菜单"
+                            onClick={onClose}
+                        >
+                            <X strokeWidth={1.8} aria-hidden="true" />
+                        </Button>
+                    </div>
                 </div>
                 <ul className="mobile-drawer-list">
                     {site.nav.map((item, index) => {

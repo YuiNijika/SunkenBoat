@@ -220,7 +220,7 @@ a.comment-author:hover {
     width: 14px;
     height: 14px;
     flex: none;
-    color: #4da3ff;
+    color: var(--status-info);
     vertical-align: -2px;
 }
 
@@ -1149,8 +1149,8 @@ a.comment-time:hover {
 }
 
 .comment-alert-error {
-    background: rgba(217, 72, 72, 0.1);
-    color: #d94848;
+    background: var(--status-danger-soft);
+    color: var(--status-danger);
 }
 
 .comment-alert-success {

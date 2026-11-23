@@ -12,13 +12,16 @@ namespace SunkenBoat\Support\OAuth;
  */
 final class HttpClient
 {
+    private const MAX_BODY_BYTES = 1_048_576;
+
     /**
      * @param list<string> $headers
      * @return array{status: int, body: string}
      */
     public static function request(string $method, string $url, array $headers = [], ?string $body = null): array
     {
-        if (preg_match('#^https?://#i', $url) !== 1) {
+        $target = self::target($url);
+        if ($target === null) {
             return ['status' => 0, 'body' => ''];
         }
 
@@ -27,18 +30,35 @@ final class HttpClient
             return ['status' => 0, 'body' => ''];
         }
 
+        $headers = array_values(array_filter(
+            $headers,
+            static fn (mixed $header): bool => is_string($header)
+                && !str_contains($header, "\r")
+                && !str_contains($header, "\n")
+        ));
+
         if (function_exists('curl_init')) {
-            return self::curl($method, $url, $headers, $body);
+            return self::curl($method, $url, $headers, $body, $target);
         }
 
-        return self::stream($method, $url, $headers, $body);
+        // Secure provider calls pin the validated DNS answer with cURL. PHP's
+        // stream wrapper would resolve the host a second time and permit DNS
+        // rebinding between validation and connection.
+        return ['status' => 0, 'body' => ''];
     }
 
     /**
      * @param list<string> $headers
+     * @param array{host: string, port: int, ip: string} $target
      * @return array{status: int, body: string}
      */
-    private static function curl(string $method, string $url, array $headers, ?string $body): array
+    private static function curl(
+        string $method,
+        string $url,
+        array $headers,
+        ?string $body,
+        array $target
+    ): array
     {
         $handle = curl_init($url);
         if ($handle === false) {
@@ -52,10 +72,17 @@ final class HttpClient
             CURLOPT_TIMEOUT => 15,
             CURLOPT_HTTPHEADER => $headers,
             CURLOPT_USERAGENT => 'TTDF-OAuth',
+            CURLOPT_MAXFILESIZE => self::MAX_BODY_BYTES,
+            CURLOPT_RESOLVE => [
+                $target['host'] . ':' . $target['port'] . ':' . $target['ip'],
+            ],
+            CURLOPT_SSL_VERIFYPEER => true,
+            CURLOPT_SSL_VERIFYHOST => 2,
+            CURLOPT_NOSIGNAL => true,
         ];
 
         if (defined('CURLOPT_PROTOCOLS')) {
-            $options[CURLOPT_PROTOCOLS] = CURLPROTO_HTTP | CURLPROTO_HTTPS;
+            $options[CURLOPT_PROTOCOLS] = CURLPROTO_HTTPS;
         }
 
         if ($method === 'POST') {
@@ -63,47 +90,95 @@ final class HttpClient
             $options[CURLOPT_POSTFIELDS] = $body ?? '';
         }
 
+        $result = '';
+        $tooLarge = false;
+        $options[CURLOPT_WRITEFUNCTION] = static function ($handle, string $chunk) use (&$result, &$tooLarge): int {
+            unset($handle);
+            if (strlen($result) + strlen($chunk) > self::MAX_BODY_BYTES) {
+                $tooLarge = true;
+
+                return 0;
+            }
+            $result .= $chunk;
+
+            return strlen($chunk);
+        };
+
         curl_setopt_array($handle, $options);
-        $result = curl_exec($handle);
+        $completed = curl_exec($handle);
         $status = (int) curl_getinfo($handle, CURLINFO_RESPONSE_CODE);
         curl_close($handle);
 
         return [
-            'status' => $status,
-            'body' => is_string($result) ? $result : '',
+            'status' => $completed === false || $tooLarge ? 0 : $status,
+            'body' => $result,
         ];
     }
 
     /**
-     * @param list<string> $headers
-     * @return array{status: int, body: string}
+     * @return array{host: string, port: int, ip: string}|null
      */
-    private static function stream(string $method, string $url, array $headers, ?string $body): array
+    private static function target(string $url): ?array
     {
-        $context = stream_context_create([
-            'http' => [
-                'method' => $method,
-                'header' => implode("\r\n", $headers),
-                'content' => $body ?? '',
-                'timeout' => 15,
-                'ignore_errors' => true,
-                'follow_location' => 0,
-                'max_redirects' => 0,
-            ],
-        ]);
+        if (
+            $url === ''
+            || preg_match('/[\x00-\x20\x7f\\\\]/', $url) === 1
+            || filter_var($url, FILTER_VALIDATE_URL) === false
+        ) {
+            return null;
+        }
 
-        $result = @file_get_contents($url, false, $context);
-        $status = 0;
+        $parts = parse_url($url);
+        if (
+            !is_array($parts)
+            || strtolower((string) ($parts['scheme'] ?? '')) !== 'https'
+            || empty($parts['host'])
+            || isset($parts['user'])
+            || isset($parts['pass'])
+            || isset($parts['fragment'])
+        ) {
+            return null;
+        }
 
-        foreach ($http_response_header ?? [] as $line) {
-            if (preg_match('#^HTTP/\S+\s+(\d{3})#', $line, $matches) === 1) {
-                $status = (int) $matches[1];
+        $host = rtrim(strtolower((string) $parts['host']), '.');
+        $port = isset($parts['port']) ? (int) $parts['port'] : 443;
+        if ($host === '' || $port < 1 || $port > 65535) {
+            return null;
+        }
+
+        $addresses = [];
+        if (filter_var($host, FILTER_VALIDATE_IP) !== false) {
+            $addresses[] = $host;
+        } else {
+            foreach (gethostbynamel($host) ?: [] as $address) {
+                $addresses[] = $address;
+            }
+            foreach (dns_get_record($host, DNS_AAAA) ?: [] as $record) {
+                if (is_array($record) && is_string($record['ipv6'] ?? null)) {
+                    $addresses[] = $record['ipv6'];
+                }
             }
         }
 
-        return [
-            'status' => $status,
-            'body' => is_string($result) ? $result : '',
-        ];
+        foreach (array_unique($addresses) as $address) {
+            if (self::isPublicAddress($address)) {
+                return [
+                    'host' => $host,
+                    'port' => $port,
+                    'ip' => $address,
+                ];
+            }
+        }
+
+        return null;
+    }
+
+    private static function isPublicAddress(string $address): bool
+    {
+        return filter_var(
+            $address,
+            FILTER_VALIDATE_IP,
+            FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE
+        ) !== false;
     }
 }

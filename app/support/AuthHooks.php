@@ -313,7 +313,14 @@ final class AuthHooks
             ]);
         }
 
-        Mailer::sendVerificationCode($mail, $purpose, $code, $expiresAt);
+        try {
+            Mailer::sendVerificationCode($mail, $purpose, $code, $expiresAt);
+        } catch (\Throwable $exception) {
+            VerificationCodes::clear($mail, $purpose);
+            error_log('SunkenBoat verification mail failed: ' . $exception::class);
+            Response::error('Email delivery is unavailable', 503);
+        }
+
         self::recordEmailSend();
     }
 

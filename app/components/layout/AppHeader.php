@@ -19,8 +19,8 @@ $pageWidth = max(960, min(1600, $pageWidth));
 $colorMode = (string) ($values['Color_Mode'] ?? 'auto');
 $lightThemeColor = (string) ($values['Color_Background'] ?? '');
 $darkThemeColor = (string) ($values['Color_Background_Dark'] ?? '');
-$lightThemeColor = $lightThemeColor !== '' ? $lightThemeColor : '#f5f6f7';
-$darkThemeColor = $darkThemeColor !== '' ? $darkThemeColor : '#15171c';
+$lightThemeColor = $lightThemeColor !== '' ? $lightThemeColor : '#f3f5f7';
+$darkThemeColor = $darkThemeColor !== '' ? $darkThemeColor : '#202830';
 
 $seo = \SunkenBoat\Support\Seo::pageMeta($viewData, is_object($archive) ? $archive : null);
 $structuredData = \SunkenBoat\Support\Seo::structuredData(

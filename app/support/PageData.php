@@ -2882,7 +2882,11 @@ final class PageData
         }
 
         $script = trim((string) ($values['Translate_Script'] ?? ''));
-        if (filter_var($script, FILTER_VALIDATE_URL) === false) {
+        if (
+            filter_var($script, FILTER_VALIDATE_URL) === false
+            || strtolower((string) parse_url($script, PHP_URL_SCHEME)) !== 'https'
+            || (string) parse_url($script, PHP_URL_HOST) === ''
+        ) {
             $script = 'https://res.zvo.cn/translate/translate.js';
         }
 
@@ -3219,6 +3223,7 @@ final class PageData
         $allowRegister = (bool) (Typecho::options()?->allowRegister ?? false);
         $userCenterEnabled = ($values['Show_UserCenter'] ?? false) === true;
         $userApiReady = ThemeConfig::restV2Enabled();
+        $authenticated = UserProfile::viewerUid() > 0;
 
         return [
             'enabled' => true,
@@ -3233,6 +3238,7 @@ final class PageData
                 'enabled' => $userCenterEnabled && $userApiReady,
                 'centerEnabled' => $userCenterEnabled,
                 'apiReady' => $userApiReady,
+                'authenticated' => $authenticated,
                 'admin' => Typecho::isAdmin(),
                 'session' => $v2Base . '/auth/session',
                 'login' => $v2Base . '/auth/login',

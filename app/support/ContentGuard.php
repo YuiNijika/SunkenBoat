@@ -56,12 +56,7 @@ final class ContentGuard
         }
 
         if ($path === 'admin/contents') {
-            if ($method === 'GET') {
-                // The listing already supports a server-side author filter;
-                // pin it so an editor cannot enumerate other authors' drafts.
-                $_GET['authorId'] = (string) $uid;
-            }
-
+            // TTDF scopes writer listings to the authenticated author.
             return;
         }
 

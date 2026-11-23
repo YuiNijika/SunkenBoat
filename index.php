@@ -9,7 +9,7 @@ declare(strict_types=1);
  *
  * @package Sunken Boat
  * @author YuiNijika
- * @version 1.0.2
+ * @version 1.0.3
  * @link https://blog.miomoe.cn
  */
 

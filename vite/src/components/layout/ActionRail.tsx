@@ -22,45 +22,87 @@ export default function ActionRail({ colorMode }: Props) {
         return () => window.removeEventListener('scroll', onScroll);
     }, []);
 
+    const scrollToTop = () => {
+        window.scrollTo({
+            top: 0,
+            behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches
+                ? 'auto'
+                : 'smooth',
+        });
+    };
+
     return (
-        <div className="fixed right-4 top-1/3 z-30 hidden flex-col gap-2 2xl:flex">
-            <button
-                type="button"
-                className="rail-btn"
-                aria-label="搜索"
-                title="搜索文章"
-                onClick={() => openSearch()}
+        <>
+            <nav
+                className="fixed right-4 top-1/3 z-30 hidden flex-col gap-2 lg:flex"
+                aria-label="页面快捷操作"
             >
-                <Search className="size-4" strokeWidth={1.8} />
-            </button>
+                <button
+                    type="button"
+                    className="rail-btn size-11"
+                    aria-label="搜索"
+                    title="搜索文章"
+                    onClick={() => openSearch()}
+                >
+                    <Search className="size-4" strokeWidth={1.8} aria-hidden="true" />
+                </button>
 
-            <button
-                type="button"
-                className="rail-btn"
-                aria-label="切换深浅色"
-                aria-pressed={theme === 'dark'}
-                title={theme === 'dark' ? '切换到浅色模式' : '切换到深色模式'}
-                onClick={toggle}
-            >
-                {theme === 'dark' ? (
-                    <Sun className="size-4" strokeWidth={1.8} />
-                ) : (
-                    <Moon className="size-4" strokeWidth={1.8} />
-                )}
-            </button>
+                <button
+                    type="button"
+                    className="rail-btn size-11"
+                    aria-label="切换深浅色"
+                    aria-pressed={theme === 'dark'}
+                    title={theme === 'dark' ? '切换到浅色模式' : '切换到深色模式'}
+                    onClick={toggle}
+                >
+                    {theme === 'dark' ? (
+                        <Sun className="size-4" strokeWidth={1.8} aria-hidden="true" />
+                    ) : (
+                        <Moon className="size-4" strokeWidth={1.8} aria-hidden="true" />
+                    )}
+                </button>
 
-            <button
-                type="button"
-                className={
-                    'rail-btn transition-opacity duration-200 ' +
-                    (visible ? 'opacity-100' : 'pointer-events-none opacity-0')
-                }
-                aria-label="回到顶部"
-                aria-hidden={!visible}
-                onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
-            >
-                <ArrowUp className="size-4" strokeWidth={1.8} />
-            </button>
-        </div>
+                <button
+                    type="button"
+                    className={
+                        'rail-btn transition-opacity duration-200 ' +
+                        (visible ? 'opacity-100' : 'pointer-events-none opacity-0')
+                    }
+                    aria-label="回到顶部"
+                    aria-hidden={!visible}
+                    tabIndex={visible ? 0 : -1}
+                    onClick={scrollToTop}
+                >
+                    <ArrowUp className="size-4" strokeWidth={1.8} aria-hidden="true" />
+                </button>
+            </nav>
+
+            <nav className="action-rail-mobile lg:hidden" aria-label="页面快捷操作">
+                <button type="button" onClick={() => openSearch()}>
+                    <Search className="size-4" strokeWidth={1.8} aria-hidden="true" />
+                    <span>搜索</span>
+                </button>
+                <button
+                    type="button"
+                    aria-pressed={theme === 'dark'}
+                    onClick={toggle}
+                >
+                    {theme === 'dark' ? (
+                        <Sun className="size-4" strokeWidth={1.8} aria-hidden="true" />
+                    ) : (
+                        <Moon className="size-4" strokeWidth={1.8} aria-hidden="true" />
+                    )}
+                    <span>{theme === 'dark' ? '浅色' : '深色'}</span>
+                </button>
+                <button
+                    type="button"
+                    disabled={!visible}
+                    onClick={scrollToTop}
+                >
+                    <ArrowUp className="size-4" strokeWidth={1.8} aria-hidden="true" />
+                    <span>回顶</span>
+                </button>
+            </nav>
+        </>
     );
 }

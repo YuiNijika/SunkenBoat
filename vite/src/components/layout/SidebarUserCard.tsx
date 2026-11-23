@@ -16,6 +16,7 @@ import { Card } from '../ui/card';
 import AuthDialog from './AuthDialog';
 import UserAvatar from './UserAvatar';
 import { cssUrl } from '../../lib/css';
+import { loadSession } from '../../lib/session';
 import { profileFrom, readPayload } from '../../lib/user';
 import type { UserApiEndpoints, UserProfile } from '../../types';
 
@@ -33,7 +34,7 @@ const GROUP_LABELS: Record<string, string> = {
 
 export default function SidebarUserCard({ api }: Props) {
     const [user, setUser] = useState<UserProfile | null>(null);
-    const [checking, setChecking] = useState(true);
+    const [checking, setChecking] = useState(api?.authenticated === true);
     const [authOpen, setAuthOpen] = useState(false);
     const [version, setVersion] = useState(0);
 
@@ -50,90 +51,30 @@ export default function SidebarUserCard({ api }: Props) {
             return;
         }
 
-        const controller = new AbortController();
         let active = true;
-        setChecking(true);
+        setChecking(api.authenticated || version > 0);
 
-        void (async () => {
-            try {
-                const response = await fetch(api.session, {
-                    credentials: 'same-origin',
-                    headers: { Accept: 'application/json' },
-                    signal: controller.signal,
-                });
-
-                if (response.status === 401) {
-                    if (active) {
-                        setUser(null);
-                    }
-                    return;
-                }
-
-                const payload = await readPayload(response);
-                if (!response.ok) {
-                    throw new Error(payload?.message || '读取登录状态失败');
-                }
-
-                let profile = profileFrom(payload);
-                if (profile && api.me) {
-                    try {
-                        const detail = await fetch(api.me, {
-                            credentials: 'same-origin',
-                            headers: { Accept: 'application/json' },
-                            signal: controller.signal,
-                        });
-                        if (detail.ok) {
-                            profile = profileFrom(await readPayload(detail)) ?? profile;
-                        }
-                    } catch (reason) {
-                        if (reason instanceof DOMException && reason.name === 'AbortError') {
-                            throw reason;
-                        }
-                    }
-                }
-
-                if (profile && api.profile && api.profileNonce) {
-                    try {
-                        const detail = await fetch(api.profile, {
-                            credentials: 'same-origin',
-                            headers: {
-                                Accept: 'application/json',
-                                'X-Typecho-Token': api.profileNonce,
-                            },
-                            signal: controller.signal,
-                        });
-                        if (detail.ok) {
-                            profile = profileFrom(await readPayload(detail)) ?? profile;
-                        }
-                    } catch (reason) {
-                        if (reason instanceof DOMException && reason.name === 'AbortError') {
-                            throw reason;
-                        }
-                    }
-                }
-
-                if (active) {
-                    setUser(profile);
-                }
-            } catch (reason) {
-                if (reason instanceof DOMException && reason.name === 'AbortError') {
-                    return;
-                }
-                if (active) {
-                    setUser(null);
-                }
-            } finally {
-                if (active) {
-                    setChecking(false);
-                }
+        void loadSession(api, version > 0).then((result) => {
+            if (!active) {
+                return;
             }
-        })();
+
+            setUser(result.status === 'ready' ? result.profile : null);
+            setChecking(false);
+        });
 
         return () => {
             active = false;
-            controller.abort();
         };
-    }, [api?.enabled, api?.me, api?.profile, api?.profileNonce, api?.session, version]);
+    }, [
+        api?.authenticated,
+        api?.enabled,
+        api?.me,
+        api?.profile,
+        api?.profileNonce,
+        api?.session,
+        version,
+    ]);
 
     if (!api?.enabled) {
         return null;

@@ -293,12 +293,12 @@ function TopicRow({
                 <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-center gap-1.5">
                         {topic.pinned ? (
-                            <Badge className="rounded-[3px] border-0 bg-[rgba(229,72,77,0.1)] px-1.5 py-0 text-[10px] font-normal text-[#d94848]">
+                            <Badge className="rounded-[3px] border-0 bg-status-danger-soft px-1.5 py-0 text-[11px] font-normal text-status-danger">
                                 置顶
                             </Badge>
                         ) : null}
                         {topic.featured ? (
-                            <Badge className="rounded-[3px] border-0 bg-[rgba(245,158,11,0.12)] px-1.5 py-0 text-[10px] font-normal text-[#b45309]">
+                            <Badge className="rounded-[3px] border-0 bg-status-warning-soft px-1.5 py-0 text-[11px] font-normal text-status-warning">
                                 精华
                             </Badge>
                         ) : null}
@@ -786,7 +786,7 @@ function SidebarHot({
                                 className="group flex items-start gap-2 text-[12.5px] leading-[1.6] text-ink-mute hover:text-brand"
                                 href={topic.url}
                             >
-                                <Flame className="mt-0.5 size-3.5 shrink-0 text-[#e86b3a]" strokeWidth={1.7} aria-hidden="true" />
+                                <Flame className="mt-0.5 size-3.5 shrink-0 text-status-warning" strokeWidth={1.7} aria-hidden="true" />
                                 <span className="line-clamp-2">{topic.title}</span>
                             </a>
                             <p className="mt-0.5 pl-[22px] text-[10.5px] text-ink-faint">
@@ -815,13 +815,13 @@ function HotTopicList({ topics, empty }: { topics: ForumTopic[]; empty: string }
                     >
                         <span
                             className={cx(
-                                'mt-0.5 grid size-[18px] shrink-0 place-items-center rounded-[4px] text-[9.5px] font-bold leading-none',
+                                'mt-0.5 grid size-[18px] shrink-0 place-items-center rounded-[4px] text-[10.5px] font-bold leading-none',
                                 index === 0
-                                    ? 'bg-[#ff5c8a] text-white'
+                                    ? 'bg-rank-first text-on-color'
                                     : index === 1
-                                      ? 'bg-[#ff9f43] text-white'
+                                      ? 'bg-rank-second text-on-color'
                                       : index === 2
-                                        ? 'bg-[#f7c948] text-[#5a4300]'
+                                        ? 'bg-rank-third text-rank-third-ink'
                                         : 'bg-surface-2 text-ink-faint'
                             )}
                         >
@@ -2194,30 +2194,30 @@ export function ForumTopicBlock({
                                     {author.group === 'administrator'
                                     || author.group === 'editor' ? (
                                         <BadgeCheck
-                                            className="size-3.5 text-[#4da3ff]"
+                                            className="size-3.5 text-status-info"
                                             strokeWidth={2.1}
                                             aria-label={author.groupLabel}
                                         />
                                     ) : null}
                                 </a>
-                                <span className="rounded-full bg-[rgba(255,138,61,0.12)] px-1.5 py-0.5 text-[9.5px] font-medium text-[#ff8a3d]">
+                                <span className="rounded-full bg-status-warning-soft px-1.5 py-0.5 text-[10.5px] font-medium text-status-warning">
                                     {author.groupLabel}
                                 </span>
-                                <span className="rounded-[3px] bg-surface-2 px-1.5 py-0.5 text-[9.5px] text-ink-mute">
+                                <span className="rounded-[3px] bg-surface-2 px-1.5 py-0.5 text-[10.5px] text-ink-mute">
                                     {topic.kindLabel}
                                 </span>
                                 {pinned ? (
-                                    <span className="rounded-[3px] bg-[rgba(229,72,77,0.1)] px-1.5 py-0.5 text-[9.5px] text-[#d94848]">
+                                    <span className="rounded-[3px] bg-status-danger-soft px-1.5 py-0.5 text-[10.5px] text-status-danger">
                                         置顶
                                     </span>
                                 ) : null}
                                 {featured ? (
-                                    <span className="rounded-[3px] bg-[rgba(245,158,11,0.12)] px-1.5 py-0.5 text-[9.5px] text-[#b45309]">
+                                    <span className="rounded-[3px] bg-status-warning-soft px-1.5 py-0.5 text-[10.5px] text-status-warning">
                                         精华
                                     </span>
                                 ) : null}
                                 {topicStatus !== 'publish' ? (
-                                    <span className="rounded-[3px] bg-[rgba(229,72,77,0.1)] px-1.5 py-0.5 text-[9.5px] text-[#d94848]">
+                                    <span className="rounded-[3px] bg-status-danger-soft px-1.5 py-0.5 text-[10.5px] text-status-danger">
                                         {topicStatus === 'waiting'
                                             ? '待审核'
                                             : topicStatus === 'rejected'
@@ -2399,12 +2399,12 @@ export function ForumTopicBlock({
                                         {author.group === 'administrator'
                                         || author.group === 'editor' ? (
                                             <BadgeCheck
-                                                className="size-4 text-[#4da3ff]"
+                                                className="size-4 text-status-info"
                                                 strokeWidth={2.1}
                                                 aria-label={author.groupLabel}
                                             />
                                         ) : null}
-                                        <span className="rounded-full bg-[rgba(255,138,61,0.12)] px-2 py-0.5 text-[9.5px] font-medium text-[#ff8a3d]">
+                                        <span className="rounded-full bg-status-warning-soft px-2 py-0.5 text-[10.5px] font-medium text-status-warning">
                                             {author.groupLabel}
                                         </span>
                                     </div>

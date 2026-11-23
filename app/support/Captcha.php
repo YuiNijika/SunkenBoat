@@ -896,9 +896,7 @@ final class Captcha
         }
 
         if ($valid) {
-            self::deleteRecord($id);
-
-            return true;
+            return self::deleteRecord($id);
         }
 
         // A selection captcha has only one correct card, so a wrong pick burns
@@ -1227,17 +1225,20 @@ final class Captcha
         }
     }
 
-    private static function deleteRecord(string $id): void
+    private static function deleteRecord(string $id): bool
     {
         try {
             $db = Db::get();
-            $db->query(
+            $deleted = (int) $db->query(
                 $db->delete('table.options')
                     ->where('name = ?', self::STORE_PREFIX . $id)
                     ->where('user = ?', 0)
             );
+
+            return $deleted > 0;
         } catch (\Throwable) {
             // Ignore cleanup failures.
+            return false;
         }
     }
 

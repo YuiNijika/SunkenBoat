@@ -676,7 +676,6 @@ final class Downloads
                     error_log(
                         'SunkenBoat payment notification rejected: signature or payload check failed for '
                         . $claimed
-                        . '; fields=' . self::notificationFields($input)
                     );
                 }
                 $order = null;
@@ -684,47 +683,28 @@ final class Downloads
                 $order = self::settleGatewayOrder($result);
             }
         } catch (\Throwable $exception) {
-            // The table may not exist yet on a fresh install; create it once and retry.
-            try {
-                DownloadStore::install();
-                $order = isset($result) && is_array($result)
-                    ? self::settleGatewayOrder($result)
-                    : null;
-            } catch (\Throwable $retry) {
-                error_log('SunkenBoat payment notification failed: ' . $retry->getMessage());
-                $order = null;
-            }
+            // Payment callbacks are frontend requests and must never run DDL.
+            error_log('SunkenBoat payment notification failed: ' . $exception::class);
+            $order = null;
         }
 
         if ($order === null && isset($result) && is_array($result)) {
             error_log(
                 'SunkenBoat payment notification could not settle order '
                 . $result['number']
-                . ' (amount or trade mismatch); fields='
-                . self::notificationFields($input)
+                . ' (amount, state or trade mismatch)'
             );
         }
 
         if ($order === null) {
-            if (!headers_sent()) {
-                if (class_exists('Typecho\\Response')) {
-                    \Typecho\Response::getInstance()->setStatus(400);
-                } else {
-                    http_response_code(400);
-                }
-                header('Content-Type: text/plain; charset=UTF-8');
-                header('Cache-Control: no-store');
-            }
-            echo 'fail';
-            exit;
+            Response::text('fail', 400, 'text/plain; charset=UTF-8', [
+                'Cache-Control' => 'no-store',
+            ]);
         }
 
-        if (!headers_sent()) {
-            header('Content-Type: text/plain; charset=UTF-8');
-            header('Cache-Control: no-store');
-        }
-        echo 'success';
-        exit;
+        Response::text('success', 200, 'text/plain; charset=UTF-8', [
+            'Cache-Control' => 'no-store',
+        ]);
     }
 
     public static function paymentGo(): never
@@ -746,12 +726,11 @@ final class Downloads
 
         $redirect = $order === null ? (Typecho::siteUrl() ?: '/') : self::returnUrl($order);
         $paid = $order !== null && (string) ($order['status'] ?? '') === 'paid';
-        if (!headers_sent()) {
-            header('Cache-Control: no-store');
-            header('Referrer-Policy: no-referrer');
-            header('Location: ' . self::appendPaymentStatus($redirect, $paid ? 'success' : 'pending'), true, 302);
-        }
-        exit;
+        Response::redirect(
+            self::appendPaymentStatus($redirect, $paid ? 'success' : 'pending'),
+            302,
+            ['Referrer-Policy' => 'no-referrer']
+        );
     }
 
     private static function appendPaymentStatus(string $url, string $status): string
@@ -774,21 +753,26 @@ final class Downloads
     private static function settleGatewayOrder(array $result): ?array
     {
         $order = DownloadStore::orderByNumber((string) ($result['number'] ?? ''));
-        if ($order === null) {
+        if ($order === null || (int) ($order['user_id'] ?? 0) <= 0) {
             return null;
         }
 
-        if ((string) ($order['content_type'] ?? '') === PaidContent::ORDER_TYPE) {
-            return PaidContent::settleGatewayOrder($result);
-        }
-        if (!in_array((string) ($order['content_type'] ?? ''), ['article', 'topic'], true)) {
-            return null;
-        }
+        return DownloadStore::transaction(
+            (int) $order['user_id'],
+            static function () use ($result, $order): ?array {
+                if ((string) ($order['content_type'] ?? '') === PaidContent::ORDER_TYPE) {
+                    return PaidContent::settleGatewayOrder($result);
+                }
+                if (!in_array((string) ($order['content_type'] ?? ''), ['article', 'topic'], true)) {
+                    return null;
+                }
 
-        return DownloadStore::markPaid(
-            (string) $result['number'],
-            (string) $result['trade'],
-            (int) $result['amount']
+                return DownloadStore::markPaid(
+                    (string) $result['number'],
+                    (string) $result['trade'],
+                    (int) $result['amount']
+                );
+            }
         );
     }
 
@@ -866,40 +850,6 @@ final class Downloads
         }
 
         return $headers;
-    }
-
-    /**
-     * Safe callback key summary for diagnostics. Never include signatures,
-     * keys, tokens or raw provider values.
-     *
-     * @param array<string, mixed> $input
-     */
-    private static function notificationFields(array $input): string
-    {
-        $safe = [];
-        foreach ([
-            'pid',
-            'merchant_id',
-            'mch_id',
-            'mchid',
-            'type',
-            'pay_type',
-            'trade_status',
-            'status',
-            'return_code',
-            'sign_type',
-            'attach',
-        ] as $name) {
-            if (!array_key_exists($name, $input) || !is_scalar($input[$name])) {
-                continue;
-            }
-            $value = trim((string) $input[$name]);
-            if ($value !== '') {
-                $safe[] = $name . '=' . (strlen($value) > 64 ? substr($value, 0, 64) : $value);
-            }
-        }
-
-        return implode(',', $safe);
     }
 
     /**

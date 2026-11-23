@@ -27,6 +27,7 @@ import LevelBadge from '../content/LevelBadge';
 import UserAvatar from './UserAvatar';
 import { refreshApp } from '../../lib/appNavigation';
 import { notifyError, notifySuccess } from '../../lib/notify';
+import { loadSession } from '../../lib/session';
 import { errorMessage, profileFrom, readPayload } from '../../lib/user';
 import type { SiteInfo, UserApiEndpoints, UserEconomySummary, UserProfile } from '../../types';
 
@@ -53,7 +54,7 @@ export default function UserCenter({ api, show, site }: Props) {
     const [menuOpen, setMenuOpen] = useState(false);
     const [authOpen, setAuthOpen] = useState(false);
     const [user, setUser] = useState<UserProfile | null>(null);
-    const [checking, setChecking] = useState(true);
+    const [checking, setChecking] = useState(api?.authenticated === true);
     const [submitting, setSubmitting] = useState(false);
     const [refreshKey, setRefreshKey] = useState(0);
     const [economy, setEconomy] = useState<UserEconomySummary | null>(null);
@@ -83,88 +84,31 @@ export default function UserCenter({ api, show, site }: Props) {
             return;
         }
 
-        const controller = new AbortController();
         let active = true;
-        setChecking(true);
+        setChecking(api.authenticated || refreshKey > 0);
 
-        void (async () => {
-            try {
-                const response = await fetch(api.session, {
-                    credentials: 'same-origin',
-                    headers: { Accept: 'application/json' },
-                    signal: controller.signal,
-                });
-
-                if (response.status === 401) {
-                    if (active) {
-                        setUser(null);
-                    }
-                    return;
-                }
-
-                const payload = await readPayload(response);
-                if (!response.ok) {
-                    throw new Error(payload?.message || '读取登录状态失败');
-                }
-
-                let profile = profileFrom(payload);
-                if (profile && api.me) {
-                    try {
-                        const detail = await fetch(api.me, {
-                            credentials: 'same-origin',
-                            headers: { Accept: 'application/json' },
-                            signal: controller.signal,
-                        });
-                        if (detail.ok) {
-                            profile = profileFrom(await readPayload(detail)) ?? profile;
-                        }
-                    } catch {
-                        // The session endpoint already told us who is logged in.
-                    }
-                }
-
-                if (profile && api.profile && api.profileNonce) {
-                    try {
-                        const detail = await fetch(api.profile, {
-                            credentials: 'same-origin',
-                            headers: {
-                                Accept: 'application/json',
-                                'X-Typecho-Token': api.profileNonce,
-                            },
-                            signal: controller.signal,
-                        });
-                        if (detail.ok) {
-                            profile = profileFrom(await readPayload(detail)) ?? profile;
-                        }
-                    } catch (reason) {
-                        if (reason instanceof DOMException && reason.name === 'AbortError') {
-                            throw reason;
-                        }
-                    }
-                }
-
-                if (active) {
-                    setUser(profile);
-                }
-            } catch (reason) {
-                if (reason instanceof DOMException && reason.name === 'AbortError') {
-                    return;
-                }
-                if (active) {
-                    setUser(null);
-                }
-            } finally {
-                if (active) {
-                    setChecking(false);
-                }
+        void loadSession(api, refreshKey > 0).then((result) => {
+            if (!active) {
+                return;
             }
-        })();
+
+            setUser(result.status === 'ready' ? result.profile : null);
+            setChecking(false);
+        });
 
         return () => {
             active = false;
-            controller.abort();
         };
-    }, [show, api?.enabled, api?.me, api?.profile, api?.profileNonce, api?.session, refreshKey]);
+    }, [
+        show,
+        api?.authenticated,
+        api?.enabled,
+        api?.me,
+        api?.profile,
+        api?.profileNonce,
+        api?.session,
+        refreshKey,
+    ]);
 
     useEffect(() => {
         if (user && authOpen) {
@@ -343,7 +287,7 @@ export default function UserCenter({ api, show, site }: Props) {
         <Button
             variant="ghost"
             size="icon"
-            className="size-8 rounded-[4px] text-ink-mute hover:bg-[rgba(136,136,136,0.1)] hover:text-ink-soft"
+            className="size-11 rounded-[8px] text-ink-mute hover:bg-surface-2 hover:text-ink-soft"
             aria-label="用户中心"
             title="用户中心"
             aria-haspopup={user ? 'menu' : 'dialog'}

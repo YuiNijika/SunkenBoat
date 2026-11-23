@@ -20,6 +20,70 @@
         border-color 0.18s ease;
 }
 
+.action-rail-mobile {
+    position: fixed;
+    right: 12px;
+    bottom: calc(12px + env(safe-area-inset-bottom, 0px));
+    left: 12px;
+    z-index: 35;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 8px;
+    width: min(22rem, calc(100vw - 24px));
+    margin-inline: auto;
+    padding: 6px;
+    border: 1px solid var(--line);
+    border-radius: 16px;
+    background: color-mix(in srgb, var(--surface) 92%, transparent);
+    box-shadow: var(--elevation-pop);
+    backdrop-filter: blur(16px);
+}
+
+@media (max-width: 1023px) {
+    .action-rail-mobile {
+        display: grid;
+    }
+}
+
+.action-rail-mobile button {
+    display: inline-flex;
+    min-height: 48px;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    padding: 0 10px;
+    border: 0;
+    border-radius: 11px;
+    background: transparent;
+    color: var(--ink-mute);
+    font: inherit;
+    font-size: 12px;
+    font-weight: 550;
+    transition:
+        background-color 0.18s ease,
+        color 0.18s ease,
+        opacity 0.18s ease;
+}
+
+.action-rail-mobile button:hover,
+.action-rail-mobile button:focus-visible {
+    background: var(--surface-2);
+    color: var(--ink);
+}
+
+.action-rail-mobile button:disabled {
+    opacity: 0.42;
+}
+
+.has-action-rail {
+    padding-bottom: calc(78px + env(safe-area-inset-bottom, 0px));
+}
+
+@media (min-width: 1024px) {
+    .has-action-rail {
+        padding-bottom: 0;
+    }
+}
+
 /* Image tiles: keep the crop centered and avoid transform flicker while the
    hover zoom is running. */
 .post-list-thumb img,

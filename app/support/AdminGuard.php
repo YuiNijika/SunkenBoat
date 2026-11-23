@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace SunkenBoat\Support;
 
 use TTDF\Compat\Typecho;
+use TTDF\Http\Response;
 
 if (!defined('__TYPECHO_ROOT_DIR__')) {
     exit;
@@ -62,8 +63,7 @@ final class AdminGuard
             return;
         }
 
-        header('Location: ' . Typecho::siteUrl(), true, 302);
-        exit;
+        Response::redirect(Typecho::siteUrl() ?: '/', 302);
     }
 
     private static function normalizePath(string $path): string

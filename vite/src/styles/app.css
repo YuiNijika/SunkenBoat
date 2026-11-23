@@ -43,6 +43,24 @@
     --color-brand-contrast: var(--accent-contrast);
     --color-brand-soft: var(--accent-soft);
 
+    --color-status-info: var(--status-info);
+    --color-status-info-soft: var(--status-info-soft);
+    --color-status-info-line: var(--status-info-line);
+    --color-status-success: var(--status-success);
+    --color-status-success-soft: var(--status-success-soft);
+    --color-status-success-line: var(--status-success-line);
+    --color-status-warning: var(--status-warning);
+    --color-status-warning-soft: var(--status-warning-soft);
+    --color-status-warning-line: var(--status-warning-line);
+    --color-status-danger: var(--status-danger);
+    --color-status-danger-soft: var(--status-danger-soft);
+    --color-status-danger-line: var(--status-danger-line);
+    --color-rank-first: var(--rank-first);
+    --color-rank-second: var(--rank-second);
+    --color-rank-third: var(--rank-third);
+    --color-rank-third-ink: var(--rank-third-ink);
+    --color-on-color: var(--on-color);
+
     --color-footer: var(--footer-bg);
     --color-footer-ink: var(--footer-ink);
     --color-footer-line: var(--footer-line);
@@ -611,7 +629,7 @@
 
 @utility surface-card {
     border: 0 !important;
-    border-radius: 8px !important;
+    border-radius: var(--r-card) !important;
     background-color: var(--surface) !important;
     box-shadow: var(--elevation-card) !important;
 }
@@ -622,7 +640,7 @@
 }
 
 @utility rail-btn {
-    @apply inline-flex size-10 items-center justify-center rounded-full border border-line
+    @apply inline-flex size-11 items-center justify-center rounded-full border border-line
         bg-surface text-ink-mute shadow-card transition-colors duration-150
         hover:border-brand hover:text-brand;
 }

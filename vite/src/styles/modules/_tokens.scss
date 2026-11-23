@@ -12,15 +12,15 @@
 :root {
     color-scheme: light;
 
-    --bg: #f5f6f7;
+    --bg: #f3f5f7;
     --surface: #ffffff;
-    --surface-2: #f6f7f8;
-    --surface-3: #eeeeee;
-    --ink: #333333;
-    --ink-soft: #4e5358;
-    --ink-mute: #777777;
-    --ink-faint: #999999;
-    --line: rgba(50, 50, 50, 0.06);
+    --surface-2: #f7f8fa;
+    --surface-3: #eceff3;
+    --ink: #26323d;
+    --ink-soft: #46525e;
+    --ink-mute: #596570;
+    --ink-faint: #66727e;
+    --line: #d9e0e7;
 
     --accent: #2563eb;
     --accent-strong: #1d4ed8;
@@ -40,6 +40,12 @@
     --status-danger-soft: rgba(180, 35, 24, 0.09);
     --status-danger-line: rgba(180, 35, 24, 0.22);
 
+    --rank-first: #ff5c8a;
+    --rank-second: #ff9f43;
+    --rank-third: #f7c948;
+    --rank-third-ink: #5a4300;
+    --on-color: #ffffff;
+
     /* Banner gradient always ends dark so white copy stays readable. */
     --hero-from: color-mix(in oklab, var(--accent) 82%, #0b1120);
     --hero-to: color-mix(in oklab, var(--accent) 48%, #070c17);
@@ -48,11 +54,11 @@
     --footer-ink: #e5e5e5;
     --footer-line: rgba(255, 255, 255, 0.08);
 
-    --elevation-card: 0 0 10px rgba(116, 116, 116, 0.08);
-    --elevation-pop: 0 12px 28px -12px rgba(0, 0, 0, 0.18);
+    --elevation-card: 0 8px 24px -18px rgba(25, 43, 60, 0.28);
+    --elevation-pop: 0 18px 40px -20px rgba(25, 43, 60, 0.32);
 
-    --r-card: 8px;
-    --r-ctl: 4px;
+    --r-card: 12px;
+    --r-ctl: 8px;
 
     --sidebar-width: 311px;
     --forum-left-width: 230px;
@@ -80,4 +86,107 @@
     --code-builtin: #89ddff;
     --code-variable: #f07178;
     --code-comment: #7f848e;
+}
+
+/*
+ * Dark values live beside the light values so every colour has one source of
+ * truth. The system-preference block mirrors the explicit theme selector
+ * until the PHP shell has applied the saved theme.
+ */
+:root[data-theme="dark"] {
+    color-scheme: dark;
+
+    --bg: #202830;
+    --surface: #29333c;
+    --surface-2: #303b45;
+    --surface-3: #26313a;
+    --ink: #f8fafc;
+    --ink-soft: #e4ebf2;
+    --ink-mute: #c4ccd4;
+    --ink-faint: #aeb8c2;
+    --line: rgba(196, 211, 224, 0.18);
+
+    --accent: #83a7ff;
+    --accent-strong: #9dbaff;
+    --accent-contrast: #101722;
+    --accent-soft: rgba(131, 167, 255, 0.16);
+
+    --status-info: #9dbaff;
+    --status-info-soft: rgba(131, 167, 255, 0.16);
+    --status-info-line: rgba(131, 167, 255, 0.32);
+    --status-success: #78e5ae;
+    --status-success-soft: rgba(120, 229, 174, 0.14);
+    --status-success-line: rgba(120, 229, 174, 0.3);
+    --status-warning: #f6c66f;
+    --status-warning-soft: rgba(246, 198, 111, 0.15);
+    --status-warning-line: rgba(246, 198, 111, 0.3);
+    --status-danger: #ffaaa3;
+    --status-danger-soft: rgba(255, 170, 163, 0.15);
+    --status-danger-line: rgba(255, 170, 163, 0.3);
+
+    --rank-first: #ff86a8;
+    --rank-second: #ffb86f;
+    --rank-third: #f7d56b;
+    --rank-third-ink: #332500;
+    --on-color: #ffffff;
+
+    --hero-from: color-mix(in oklab, var(--accent) 62%, #0b1120);
+    --hero-to: color-mix(in oklab, var(--accent) 34%, #070c17);
+
+    --footer-bg: #182129;
+    --footer-ink: #edf2f6;
+    --footer-line: rgba(255, 255, 255, 0.12);
+
+    --elevation-card: 0 10px 28px -18px rgba(0, 0, 0, 0.76);
+    --elevation-pop: 0 18px 42px -18px rgba(0, 0, 0, 0.82);
+}
+
+@media (prefers-color-scheme: dark) {
+    :root:not([data-theme]) {
+        color-scheme: dark;
+
+        --bg: #202830;
+        --surface: #29333c;
+        --surface-2: #303b45;
+        --surface-3: #26313a;
+        --ink: #f8fafc;
+        --ink-soft: #e4ebf2;
+        --ink-mute: #c4ccd4;
+        --ink-faint: #aeb8c2;
+        --line: rgba(196, 211, 224, 0.18);
+
+        --accent: #83a7ff;
+        --accent-strong: #9dbaff;
+        --accent-contrast: #101722;
+        --accent-soft: rgba(131, 167, 255, 0.16);
+
+        --status-info: #9dbaff;
+        --status-info-soft: rgba(131, 167, 255, 0.16);
+        --status-info-line: rgba(131, 167, 255, 0.32);
+        --status-success: #78e5ae;
+        --status-success-soft: rgba(120, 229, 174, 0.14);
+        --status-success-line: rgba(120, 229, 174, 0.3);
+        --status-warning: #f6c66f;
+        --status-warning-soft: rgba(246, 198, 111, 0.15);
+        --status-warning-line: rgba(246, 198, 111, 0.3);
+        --status-danger: #ffaaa3;
+        --status-danger-soft: rgba(255, 170, 163, 0.15);
+        --status-danger-line: rgba(255, 170, 163, 0.3);
+
+        --rank-first: #ff86a8;
+        --rank-second: #ffb86f;
+        --rank-third: #f7d56b;
+        --rank-third-ink: #332500;
+        --on-color: #ffffff;
+
+        --hero-from: color-mix(in oklab, var(--accent) 62%, #0b1120);
+        --hero-to: color-mix(in oklab, var(--accent) 34%, #070c17);
+
+        --footer-bg: #182129;
+        --footer-ink: #edf2f6;
+        --footer-line: rgba(255, 255, 255, 0.12);
+
+        --elevation-card: 0 10px 28px -18px rgba(0, 0, 0, 0.76);
+        --elevation-pop: 0 18px 42px -18px rgba(0, 0, 0, 0.82);
+    }
 }

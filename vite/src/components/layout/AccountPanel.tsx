@@ -52,6 +52,7 @@ import type {
 import { notifyError, notifySuccess } from '../../lib/notify';
 import { refreshApp } from '../../lib/appNavigation';
 import { cssUrl } from '../../lib/css';
+import { loadSession } from '../../lib/session';
 import ContentManager from './ContentManager';
 import AuthDialog from './AuthDialog';
 import TabsNav from './TabsNav';
@@ -177,7 +178,9 @@ function ProfileAvatar({ profile, className }: { profile: UserProfile; className
 }
 
 export default function AccountPanel({ api, section = 'profile' }: Props) {
-    const [status, setStatus] = useState<Status>(api?.enabled ? 'loading' : 'guest');
+    const [status, setStatus] = useState<Status>(
+        api?.enabled && api?.authenticated ? 'loading' : 'guest'
+    );
     const [profile, setProfile] = useState<UserProfile | null>(null);
     const [authOpen, setAuthOpen] = useState(false);
     const [screenName, setScreenName] = useState('');
@@ -271,105 +274,49 @@ export default function AccountPanel({ api, section = 'profile' }: Props) {
             return;
         }
 
-        const controller = new AbortController();
         let active = true;
-        setStatus('loading');
+        setStatus(api.authenticated ? 'loading' : 'guest');
         setLoadError('');
 
-        void (async () => {
-            try {
-                const response = await fetch(sessionEndpoint, {
-                    credentials: 'same-origin',
-                    headers: { Accept: 'application/json' },
-                    signal: controller.signal,
-                });
-
-                if (response.status === 401) {
-                    if (active) {
-                        setProfile(null);
-                        setStatus('guest');
-                    }
-                    return;
-                }
-
-                const payload = await readPayload(response);
-                if (!response.ok) {
-                    throw new Error(errorMessage(payload, '读取登录状态失败'));
-                }
-
-                let current = profileFrom(payload);
-                if (!current) {
-                    throw new Error('登录状态异常，请重新登录');
-                }
-
-                try {
-                    const detail = await fetch(meEndpoint, {
-                        credentials: 'same-origin',
-                        headers: { Accept: 'application/json' },
-                        signal: controller.signal,
-                    });
-                    if (detail.ok) {
-                        current = profileFrom(await readPayload(detail)) ?? current;
-                    }
-                } catch (reason) {
-                    if (reason instanceof DOMException && reason.name === 'AbortError') {
-                        throw reason;
-                    }
-                }
-
-                if (api?.profile) {
-                    try {
-                        const detailResponse = await fetch(api.profile, {
-                            credentials: 'same-origin',
-                            headers: {
-                                Accept: 'application/json',
-                                'X-Typecho-Token': api.profileNonce,
-                            },
-                            signal: controller.signal,
-                        });
-
-                        if (detailResponse.ok) {
-                            const detailed = profileFrom(await readPayload(detailResponse));
-                            if (detailed) {
-                                current = { ...current, ...detailed };
-                                if (active) {
-                                    setDetailsReady(true);
-                                }
-                            }
-                        }
-                    } catch (reason) {
-                        if (reason instanceof DOMException && reason.name === 'AbortError') {
-                            throw reason;
-                        }
-                    }
-                }
-
-                if (active) {
-                    setProfile(current);
-                    setScreenName(current.screenName);
-                    setUrl(current.url ?? '');
-                    setMail(current.mail ?? '');
-                    setDetails(detailsFromProfile(current));
-                    setCertification(current.certification ?? null);
-                    setStatus('ready');
-                }
-            } catch (reason) {
-                if (reason instanceof DOMException && reason.name === 'AbortError') {
-                    return;
-                }
-
-                if (active) {
-                    setLoadError(reason instanceof Error ? reason.message : '读取账号信息失败');
-                    setStatus('error');
-                }
+        void loadSession(api).then((result) => {
+            if (!active) {
+                return;
             }
-        })();
+
+            if (result.status === 'guest') {
+                setProfile(null);
+                setStatus('guest');
+                return;
+            }
+
+            if (result.status === 'error') {
+                setLoadError(result.message || '读取账号信息失败');
+                setStatus('error');
+                return;
+            }
+
+            setProfile(result.profile);
+            setScreenName(result.profile.screenName);
+            setUrl(result.profile.url ?? '');
+            setMail(result.profile.mail ?? '');
+            setDetails(detailsFromProfile(result.profile));
+            setCertification(result.profile.certification ?? null);
+            setDetailsReady(api.profile !== '');
+            setStatus('ready');
+        });
 
         return () => {
             active = false;
-            controller.abort();
         };
-    }, [api?.enabled, api?.enhanced, api?.profile, api?.profileNonce, meEndpoint, sessionEndpoint]);
+    }, [
+        api?.authenticated,
+        api?.enabled,
+        api?.enhanced,
+        api?.profile,
+        api?.profileNonce,
+        meEndpoint,
+        sessionEndpoint,
+    ]);
 
     useEffect(() => {
         if (cooldown <= 0) {
@@ -1648,11 +1595,11 @@ export default function AccountPanel({ api, section = 'profile' }: Props) {
                                             className={
                                                 'chip ' +
                                                 (certification?.status === 'approved'
-                                                    ? 'border-[rgba(77,163,255,0.35)] bg-[rgba(77,163,255,0.1)] text-[#2d7dd2]'
+                                                    ? 'border-status-info-line bg-status-info-soft text-status-info'
                                                     : certification?.status === 'pending'
-                                                      ? 'border-[rgba(245,158,11,0.3)] bg-[rgba(245,158,11,0.1)] text-[#b45309]'
+                                                      ? 'border-status-warning-line bg-status-warning-soft text-status-warning'
                                                       : certification?.status === 'rejected'
-                                                        ? 'border-[rgba(229,72,77,0.3)] bg-[rgba(229,72,77,0.08)] text-[#d94848]'
+                                                        ? 'border-status-danger-line bg-status-danger-soft text-status-danger'
                                                         : '')
                                             }
                                         >
@@ -1690,7 +1637,7 @@ export default function AccountPanel({ api, section = 'profile' }: Props) {
                                     ) : null}
 
                                     {certification?.status === 'rejected' ? (
-                                        <p className="mt-4 rounded-[6px] border border-[rgba(229,72,77,0.25)] bg-[rgba(229,72,77,0.06)] px-3 py-3 text-[12px] leading-5 text-[#b93b3b]">
+                                        <p className="mt-4 rounded-[6px] border border-status-danger-line bg-status-danger-soft px-3 py-3 text-[12px] leading-5 text-status-danger">
                                             认证未通过
                                             {certification.reason !== ''
                                                 ? `：${certification.reason}`
@@ -2053,7 +2000,7 @@ export default function AccountPanel({ api, section = 'profile' }: Props) {
                 <DialogContent>
                     <DialogHeader>
                         <DialogTitle className="flex items-center gap-2">
-                            <BadgeCheck className="size-5 text-[#2d7dd2]" aria-hidden="true" />
+                            <BadgeCheck className="size-5 text-status-info" aria-hidden="true" />
                             认证详情
                         </DialogTitle>
                         <DialogDescription>

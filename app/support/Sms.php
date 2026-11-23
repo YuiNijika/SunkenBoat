@@ -122,7 +122,7 @@ final class Sms
             self::send($phone, 'register', $code, $expiresAt);
         } catch (\Throwable $exception) {
             self::clearCode($phone, 'register');
-            error_log('SunkenBoat SMS delivery failed: ' . $exception->getMessage());
+            error_log('SunkenBoat SMS delivery failed: ' . $exception::class);
             Response::error('短信发送失败，请检查发信服务', 502);
         }
 
@@ -162,9 +162,11 @@ final class Sms
             return false;
         }
 
-        self::clearFailures($phone, $purpose);
-        self::clearCode($phone, $purpose);
+        if (!self::clearCode($phone, $purpose)) {
+            return false;
+        }
 
+        self::clearFailures($phone, $purpose);
         return true;
     }
 
@@ -561,17 +563,20 @@ final class Sms
         return self::readOption(self::codeKey($phone, $purpose));
     }
 
-    private static function clearCode(string $phone, string $purpose): void
+    private static function clearCode(string $phone, string $purpose): bool
     {
         try {
             $db = Db::get();
-            $db->query(
+            $deleted = (int) $db->query(
                 $db->delete('table.options')
                     ->where('name = ?', self::codeKey($phone, $purpose))
                     ->where('user = ?', 0)
             );
+
+            return $deleted > 0;
         } catch (\Throwable) {
             // Expired codes are harmless; failing to delete must not break verification.
+            return false;
         }
     }
 

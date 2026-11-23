@@ -36,7 +36,7 @@ return [
                     [
                         'type' => 'ColorPicker',
                         'name' => 'Color_Accent_Dark',
-                        'value' => '#7d9bff',
+                        'value' => '#83a7ff',
                         'inline' => true,
                         'label' => '深色模式主色',
                         'description' => '深色模式下的按钮、链接与强调元素；留空使用主题默认色。',
@@ -45,7 +45,7 @@ return [
                     [
                         'type' => 'ColorPicker',
                         'name' => 'Color_Background',
-                        'value' => '#f5f6f7',
+                        'value' => '#f3f5f7',
                         'inline' => true,
                         'label' => '浅色模式背景',
                         'description' => '页面底色；留空使用主题默认色。',
@@ -53,7 +53,7 @@ return [
                     [
                         'type' => 'ColorPicker',
                         'name' => 'Color_Background_Dark',
-                        'value' => '#15171c',
+                        'value' => '#202830',
                         'inline' => true,
                         'label' => '深色模式背景',
                         'description' => '深色模式下的页面底色；留空使用主题默认色。',

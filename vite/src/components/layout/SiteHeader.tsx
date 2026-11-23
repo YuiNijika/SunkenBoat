@@ -24,6 +24,7 @@ export default function SiteHeader({ site, colorMode, widgets, api, showUserCent
     const location = useLocation();
     const headerRef = useRef<HTMLElement>(null);
     const drawerRef = useRef<HTMLDivElement>(null);
+    const searchTriggerRef = useRef<HTMLButtonElement>(null);
     const [menuOpen, setMenuOpen] = useState(false);
     const [searchOpen, setSearchOpen] = useState(false);
     const [searchScope, setSearchScope] = useState<SearchScope | null>(null);
@@ -59,6 +60,7 @@ export default function SiteHeader({ site, colorMode, widgets, api, showUserCent
         const onKeyDown = (event: KeyboardEvent) => {
             if (event.key === 'Escape') {
                 setSearchOpen(false);
+                window.requestAnimationFrame(() => searchTriggerRef.current?.focus());
             }
         };
         const onPointerDown = (event: PointerEvent) => {
@@ -66,6 +68,7 @@ export default function SiteHeader({ site, colorMode, widgets, api, showUserCent
                 return;
             }
             setSearchOpen(false);
+            window.requestAnimationFrame(() => searchTriggerRef.current?.focus());
         };
 
         document.addEventListener('keydown', onKeyDown);
@@ -82,24 +85,34 @@ export default function SiteHeader({ site, colorMode, widgets, api, showUserCent
             return;
         }
 
-        const previousFocus = document.activeElement instanceof HTMLElement
-            ? document.activeElement
-            : null;
-        const previousOverflow = document.body.style.overflow;
-        document.body.style.overflow = 'hidden';
-
         const focusableInDrawer = (): HTMLElement[] => {
             const panel = drawerRef.current?.querySelector<HTMLElement>('.mobile-drawer-panel');
             if (!panel) {
                 return [];
             }
 
-            return Array.from(
-                panel.querySelectorAll<HTMLElement>(
-                    'a[href], button:not([disabled]), [tabindex]:not([tabindex="-1"])'
+            const dropdowns = Array.from(
+                document.querySelectorAll<HTMLElement>(
+                    '[data-slot="dropdown-menu-content"][data-state="open"]'
                 )
-            ).filter((element) => element.getClientRects().length > 0);
+            );
+
+            return [panel, ...dropdowns]
+                .flatMap((scope) =>
+                    Array.from(
+                        scope.querySelectorAll<HTMLElement>(
+                            'a[href], button:not([disabled]), [tabindex]:not([tabindex="-1"])'
+                        )
+                    )
+                )
+                .filter((element) => element.getClientRects().length > 0);
         };
+
+        const previousFocus = document.activeElement instanceof HTMLElement
+            ? document.activeElement
+            : null;
+        const previousOverflow = document.body.style.overflow;
+        document.body.style.overflow = 'hidden';
 
         const frame = window.requestAnimationFrame(() => {
             focusableInDrawer()[0]?.focus();
@@ -107,6 +120,12 @@ export default function SiteHeader({ site, colorMode, widgets, api, showUserCent
 
         const onKeyDown = (event: KeyboardEvent) => {
             if (event.key === 'Escape') {
+                if (
+                    document.activeElement instanceof Element
+                    && document.activeElement.closest('[data-slot="dropdown-menu-content"]')
+                ) {
+                    return;
+                }
                 setMenuOpen(false);
                 return;
             }
@@ -123,7 +142,10 @@ export default function SiteHeader({ site, colorMode, widgets, api, showUserCent
             const first = focusable[0];
             const last = focusable[focusable.length - 1];
             const active = document.activeElement;
-            if (event.shiftKey && (active === first || !drawerRef.current?.contains(active))) {
+            if (!focusable.includes(active as HTMLElement)) {
+                event.preventDefault();
+                (event.shiftKey ? last : first).focus();
+            } else if (event.shiftKey && active === first) {
                 event.preventDefault();
                 last.focus();
             } else if (!event.shiftKey && active === last) {
@@ -151,7 +173,7 @@ export default function SiteHeader({ site, colorMode, widgets, api, showUserCent
                 <a className="flex min-w-0 shrink-0 items-center gap-2.5" href={site.url}>
                     {site.logo ? (
                         <img
-                            className="size-9 shrink-0 rounded-[4px] object-cover"
+                            className="size-9 shrink-0 rounded-[8px] object-cover"
                             src={site.logo}
                             alt=""
                             width={36}
@@ -159,7 +181,7 @@ export default function SiteHeader({ site, colorMode, widgets, api, showUserCent
                         />
                     ) : (
                         <span
-                            className="grid size-9 shrink-0 place-items-center rounded-[4px] bg-brand text-[15px] font-medium text-brand-contrast"
+                            className="grid size-9 shrink-0 place-items-center rounded-[8px] bg-brand text-[15px] font-medium text-brand-contrast"
                             aria-hidden="true"
                         >
                             {title.slice(0, 1)}
@@ -181,13 +203,16 @@ export default function SiteHeader({ site, colorMode, widgets, api, showUserCent
 
                 <DesktopNav items={site.nav} />
 
-                <div className="ml-auto flex items-center gap-1">
-                    <HeaderLanguageMenu translate={site.translate} />
+                <div className="ml-auto flex shrink-0 items-center gap-1">
+                    <div className="hidden sm:block">
+                        <HeaderLanguageMenu translate={site.translate} />
+                    </div>
                     <Button
+                        ref={searchTriggerRef}
                         type="button"
                         variant="ghost"
                         size="icon"
-                        className="size-8 rounded-[4px] text-ink-mute hover:bg-[rgba(136,136,136,0.1)] hover:text-ink-soft"
+                        className="size-11 rounded-[8px] text-ink-mute hover:bg-surface-2 hover:text-ink-soft"
                         aria-label={searchOpen ? '关闭搜索' : '打开搜索'}
                         aria-expanded={searchOpen}
                         aria-controls="ttdf-search-panel"
@@ -202,7 +227,7 @@ export default function SiteHeader({ site, colorMode, widgets, api, showUserCent
                     <Button
                         variant="ghost"
                         size="icon"
-                        className="size-8 rounded-[4px] text-ink-mute hover:bg-[rgba(136,136,136,0.1)] hover:text-ink-soft"
+                        className="hidden size-11 rounded-[8px] text-ink-mute hover:bg-surface-2 hover:text-ink-soft sm:inline-flex"
                         aria-label={theme === 'dark' ? '切换到浅色模式' : '切换到深色模式'}
                         aria-pressed={theme === 'dark'}
                         onClick={toggle}
@@ -212,7 +237,7 @@ export default function SiteHeader({ site, colorMode, widgets, api, showUserCent
                     <Button
                         variant="ghost"
                         size="icon"
-                        className="size-8 rounded-[4px] text-ink-mute hover:bg-[rgba(136,136,136,0.1)] hover:text-ink-soft lg:hidden"
+                        className="size-11 rounded-[8px] text-ink-mute hover:bg-surface-2 hover:text-ink-soft lg:hidden"
                         aria-label={menuOpen ? '关闭导航菜单' : '打开导航菜单'}
                         aria-expanded={menuOpen}
                         aria-controls="ttdf-mobile-nav"
@@ -238,7 +263,11 @@ export default function SiteHeader({ site, colorMode, widgets, api, showUserCent
                     site={site}
                     widgets={widgets}
                     scope={searchScope}
-                    onClose={() => setSearchOpen(false)}
+                    onClose={() => {
+                        setSearchOpen(false);
+                        setSearchScope(null);
+                        window.requestAnimationFrame(() => searchTriggerRef.current?.focus());
+                    }}
                 />
             ) : null}
         </header>

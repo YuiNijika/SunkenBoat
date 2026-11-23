@@ -5,7 +5,10 @@ import { fileURLToPath, URL } from 'node:url';
 
 // The PHP theme injects assets from build.manifest, so the entry must stay at
 // src/main.tsx to match app/config/app.php -> vite.entry.
-export default defineConfig({
+export default defineConfig(({ command }) => ({
+  // Built modulepreload URLs must stay beside the manifest assets. Development
+  // keeps an absolute base so Vite's HMR and dependency URLs remain valid.
+  base: command === 'build' ? './' : '/',
   plugins: [react(), tailwindcss()],
   resolve: {
     alias: {
@@ -28,4 +31,4 @@ export default defineConfig({
       input: 'src/main.tsx',
     },
   },
-});
+}));

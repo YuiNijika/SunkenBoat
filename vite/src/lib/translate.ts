@@ -37,7 +37,11 @@ function loadScript(source: string): Promise<TranslateApi | null> {
         const existing = document.querySelector<HTMLScriptElement>('script[data-ttdf-translate]');
         const script = existing ?? document.createElement('script');
         const done = () => resolve(window.translate ?? null);
-        const failed = () => resolve(null);
+        const failed = () => {
+            loading = null;
+            script.remove();
+            resolve(null);
+        };
 
         script.addEventListener('load', done, { once: true });
         script.addEventListener('error', failed, { once: true });

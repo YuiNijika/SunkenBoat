@@ -243,6 +243,9 @@ function SiteApp({ data, appStyle }: { data: PageData; appStyle: CSSProperties }
         Array.isArray(data.theme.layoutModules) && data.theme.layoutModules.length > 0
             ? data.theme.layoutModules
             : ['reading-progress', 'header', 'main', 'footer', 'action-rail'];
+    const showActionRail =
+        layoutModules.includes('action-rail') &&
+        !['forum-home', 'forum-circle', 'forum-topic'].includes(data.kind);
 
     const blockIndex = (block: PageData['blocks'][number], fallback: number): number => (
         typeof block.settingsIndex === 'number' ? block.settingsIndex : fallback
@@ -366,14 +369,18 @@ function SiteApp({ data, appStyle }: { data: PageData; appStyle: CSSProperties }
             />
         ),
         'action-rail':
-            ['forum-home', 'forum-circle', 'forum-topic'].includes(data.kind) ? null : (
+            showActionRail ? (
                 <ActionRail colorMode={data.theme.colorMode} />
-            ),
+            ) : null,
     };
 
     return (
         <div
-            className={'flex min-h-dvh flex-col' + (flushTop ? ' has-flush-top' : '')}
+            className={
+                'flex min-h-dvh flex-col' +
+                (flushTop ? ' has-flush-top' : '') +
+                (showActionRail ? ' has-action-rail' : '')
+            }
             data-kind={data.kind}
             style={appStyle}
         >

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace SunkenBoat\Support;
 
 use TTDF\Compat\Typecho;
+use TTDF\Http\Response;
 use TTDF\Support\Escaper;
 use TTDF\Theme\Options;
 use TTDF\Theme\Settings;
@@ -15,6 +16,8 @@ if (!defined('__TYPECHO_ROOT_DIR__')) {
 
 final class DownloadPayment
 {
+    private const MAX_RESPONSE_BYTES = 1_048_576;
+
     /** @var array<string, string> */
     private const METHODS = [
         'alipay' => '支付宝',
@@ -342,7 +345,11 @@ final class DownloadPayment
             self::fail('下载数据表尚未初始化，请管理员保存一次主题设置');
         }
         $order = DownloadStore::orderByNumber($number);
-        if ($order === null || (string) ($order['status'] ?? '') !== 'pending') {
+        if (
+            $order === null
+            || (int) ($order['user_id'] ?? 0) !== UserProfile::viewerUid()
+            || (string) ($order['status'] ?? '') !== 'pending'
+        ) {
             self::fail('订单不存在或已支付');
         }
 
@@ -364,26 +371,25 @@ final class DownloadPayment
         }
 
         if (($result['html'] ?? false) === true) {
-            if (!headers_sent()) {
-                header('Content-Type: text/html; charset=UTF-8');
-                header('Cache-Control: no-store');
-                header('Referrer-Policy: no-referrer');
-                header('X-Frame-Options: DENY');
-                header('X-Content-Type-Options: nosniff');
-            }
-            echo $result['url'];
-            exit;
+            Response::text(
+                $result['url'],
+                200,
+                'text/html; charset=UTF-8',
+                [
+                    'Cache-Control' => 'no-store',
+                    'Referrer-Policy' => 'no-referrer',
+                    'X-Frame-Options' => 'DENY',
+                    'X-Content-Type-Options' => 'nosniff',
+                ]
+            );
         }
 
         if (!self::isSafeUrl($result['url'], $channel['platform'] === 'vmq')) {
             self::fail('支付通道返回了不安全的地址');
         }
-        if (!headers_sent()) {
-            header('Cache-Control: no-store');
-            header('Referrer-Policy: no-referrer');
-            header('Location: ' . $result['url'], true, 302);
-        }
-        exit;
+        Response::redirect($result['url'], 302, [
+            'Referrer-Policy' => 'no-referrer',
+        ]);
     }
 
     /**
@@ -446,21 +452,8 @@ final class DownloadPayment
 
     private static function fail(string $message): never
     {
-        if (!headers_sent()) {
-            if (class_exists('Typecho\\Response')) {
-                \Typecho\Response::getInstance()->setStatus(400);
-            } else {
-                http_response_code(400);
-            }
-            header('Content-Type: text/html; charset=UTF-8');
-            header('Cache-Control: no-store');
-            header('Referrer-Policy: no-referrer');
-            header('X-Frame-Options: DENY');
-            header('X-Content-Type-Options: nosniff');
-        }
-
         $home = Escaper::url(Typecho::siteUrl() ?: '/');
-        echo '<!doctype html><html lang="zh-CN"><head><meta charset="utf-8">'
+        $html = '<!doctype html><html lang="zh-CN"><head><meta charset="utf-8">'
             . '<meta name="viewport" content="width=device-width,initial-scale=1">'
             . '<title>支付暂不可用</title></head>'
             . '<body style="margin:0;min-height:100vh;display:grid;place-items:center;background:#f6f7f9;color:#111827;font:15px/1.6 system-ui,sans-serif">'
@@ -469,7 +462,18 @@ final class DownloadPayment
             . '<p style="margin:0 0 20px;color:#4b5563">' . Escaper::html($message) . '</p>'
             . '<a href="' . $home . '" style="display:inline-block;padding:10px 18px;border-radius:999px;background:#111827;color:#fff;text-decoration:none">返回首页</a>'
             . '</main></body></html>';
-        exit;
+
+        Response::text(
+            $html,
+            400,
+            'text/html; charset=UTF-8',
+            [
+                'Cache-Control' => 'no-store',
+                'Referrer-Policy' => 'no-referrer',
+                'X-Frame-Options' => 'DENY',
+                'X-Content-Type-Options' => 'nosniff',
+            ]
+        );
     }
 
     /**
@@ -2394,45 +2398,20 @@ final class DownloadPayment
      */
     private static function postJson(string $url, array $payload): ?array
     {
-        if (!function_exists('curl_init')) {
-            return null;
-        }
         $body = json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
         if (!is_string($body) || $body === '') {
             return null;
         }
 
-        $ch = curl_init($url);
-        if ($ch === false) {
-            return null;
-        }
-        curl_setopt_array($ch, [
-            CURLOPT_POST => true,
-            CURLOPT_POSTFIELDS => $body,
-            CURLOPT_HTTPHEADER => ['Content-Type: application/json', 'Accept: application/json'],
-            CURLOPT_RETURNTRANSFER => true,
-            CURLOPT_CONNECTTIMEOUT => 8,
-            CURLOPT_TIMEOUT => 20,
-            CURLOPT_SSL_VERIFYPEER => true,
-            CURLOPT_SSL_VERIFYHOST => 2,
-            CURLOPT_FOLLOWLOCATION => false,
-            CURLOPT_PROTOCOLS => CURLPROTO_HTTPS,
-            CURLOPT_USERAGENT => 'SunkenBoat-Payment/1.0',
+        $response = self::jsonRequest('POST', $url, $body, [
+            'Content-Type: application/json',
+            'Accept: application/json',
         ]);
-        $response = curl_exec($ch);
-        $status = (int) curl_getinfo($ch, CURLINFO_RESPONSE_CODE);
-        curl_close($ch);
-        if (
-            !is_string($response)
-            || $status < 200
-            || $status >= 300
-            || strlen($response) > 1048576
-        ) {
+        if ($response === null || $response['status'] < 200 || $response['status'] >= 300) {
             return null;
         }
-        $decoded = json_decode($response, true);
 
-        return is_array($decoded) ? $decoded : null;
+        return $response['data'];
     }
 
     /**
@@ -2441,7 +2420,7 @@ final class DownloadPayment
      */
     private static function requestJson(string $method, string $url, ?string $body, array $headers): ?array
     {
-        if (!function_exists('curl_init') || !self::isSafeUrl($url)) {
+        if (!self::isSafeUrl($url)) {
             return null;
         }
 
@@ -2462,13 +2441,75 @@ final class DownloadPayment
             $headers[] = 'Accept: application/json';
         }
 
-        $ch = curl_init($url);
-        if ($ch === false) {
+        $response = self::jsonRequest($method, $url, $body, $headers);
+        if ($response === null) {
             return null;
         }
+
+        return [
+            'status' => $response['status'],
+            'data' => $response['data'],
+            'raw' => $response['raw'],
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    private static function getJson(string $url): ?array
+    {
+        $response = self::jsonRequest('GET', $url, null, [
+            'Accept: application/json',
+        ]);
+        if ($response === null || $response['status'] < 200 || $response['status'] >= 300) {
+            return null;
+        }
+
+        return $response['data'];
+    }
+
+    /**
+     * Send one provider API request through a pinned public HTTPS target.
+     *
+     * @param list<string> $headers
+     * @return array{status: int, data: array<string, mixed>, raw: string}|null
+     */
+    private static function jsonRequest(
+        string $method,
+        string $url,
+        ?string $body,
+        array $headers
+    ): ?array {
+        if (!function_exists('curl_init')) {
+            return null;
+        }
+
+        $method = strtoupper($method);
+        if (!in_array($method, ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'], true)) {
+            return null;
+        }
+
+        $target = self::requestTarget($url);
+        if ($target === null) {
+            return null;
+        }
+
+        $headers = array_values(array_filter(
+            $headers,
+            static fn (mixed $header): bool => is_string($header)
+                && !str_contains($header, "\r")
+                && !str_contains($header, "\n")
+        ));
+
+        $curl = curl_init($url);
+        if ($curl === false) {
+            return null;
+        }
+
+        $raw = '';
+        $tooLarge = false;
         $options = [
-            CURLOPT_CUSTOMREQUEST => strtoupper($method),
-            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_CUSTOMREQUEST => $method,
             CURLOPT_HTTPHEADER => $headers,
             CURLOPT_CONNECTTIMEOUT => 8,
             CURLOPT_TIMEOUT => 20,
@@ -2476,16 +2517,32 @@ final class DownloadPayment
             CURLOPT_SSL_VERIFYHOST => 2,
             CURLOPT_FOLLOWLOCATION => false,
             CURLOPT_PROTOCOLS => CURLPROTO_HTTPS,
+            CURLOPT_RESOLVE => [
+                $target['host'] . ':' . $target['port'] . ':' . $target['ip'],
+            ],
             CURLOPT_USERAGENT => 'SunkenBoat-Payment/1.0',
+            CURLOPT_NOSIGNAL => true,
+            CURLOPT_WRITEFUNCTION => static function ($handle, string $chunk) use (&$raw, &$tooLarge): int {
+                unset($handle);
+                if (strlen($raw) + strlen($chunk) > self::MAX_RESPONSE_BYTES) {
+                    $tooLarge = true;
+
+                    return 0;
+                }
+                $raw .= $chunk;
+
+                return strlen($chunk);
+            },
         ];
         if ($body !== null) {
             $options[CURLOPT_POSTFIELDS] = $body;
         }
-        curl_setopt_array($ch, $options);
-        $raw = curl_exec($ch);
-        $status = (int) curl_getinfo($ch, CURLINFO_RESPONSE_CODE);
-        curl_close($ch);
-        if (!is_string($raw) || $status < 100 || strlen($raw) > 1048576) {
+
+        curl_setopt_array($curl, $options);
+        $completed = curl_exec($curl);
+        $status = (int) curl_getinfo($curl, CURLINFO_RESPONSE_CODE);
+        curl_close($curl);
+        if ($completed === false || $tooLarge || $status < 100 || $status > 599) {
             return null;
         }
 
@@ -2499,43 +2556,69 @@ final class DownloadPayment
     }
 
     /**
-     * @return array<string, mixed>|null
+     * Validate a provider endpoint and pin one public DNS answer for cURL.
+     *
+     * @return array{host: string, port: int, ip: string}|null
      */
-    private static function getJson(string $url): ?array
+    private static function requestTarget(string $url): ?array
     {
-        if (!function_exists('curl_init')) {
-            return null;
-        }
-
-        $ch = curl_init($url);
-        if ($ch === false) {
-            return null;
-        }
-        curl_setopt_array($ch, [
-            CURLOPT_HTTPGET => true,
-            CURLOPT_RETURNTRANSFER => true,
-            CURLOPT_CONNECTTIMEOUT => 8,
-            CURLOPT_TIMEOUT => 20,
-            CURLOPT_SSL_VERIFYPEER => true,
-            CURLOPT_SSL_VERIFYHOST => 2,
-            CURLOPT_FOLLOWLOCATION => false,
-            CURLOPT_PROTOCOLS => CURLPROTO_HTTPS,
-            CURLOPT_USERAGENT => 'SunkenBoat-Payment/1.0',
-        ]);
-        $response = curl_exec($ch);
-        $status = (int) curl_getinfo($ch, CURLINFO_RESPONSE_CODE);
-        curl_close($ch);
         if (
-            !is_string($response)
-            || $status < 200
-            || $status >= 300
-            || strlen($response) > 1048576
+            $url === ''
+            || preg_match('/[\x00-\x20\x7f\\\\]/', $url) === 1
+            || filter_var($url, FILTER_VALIDATE_URL) === false
         ) {
             return null;
         }
-        $decoded = json_decode($response, true);
 
-        return is_array($decoded) ? $decoded : null;
+        $parts = parse_url($url);
+        if (
+            !is_array($parts)
+            || strtolower((string) ($parts['scheme'] ?? '')) !== 'https'
+            || empty($parts['host'])
+            || isset($parts['user'])
+            || isset($parts['pass'])
+            || isset($parts['fragment'])
+        ) {
+            return null;
+        }
+
+        $host = rtrim(strtolower((string) $parts['host']), '.');
+        $port = isset($parts['port']) ? (int) $parts['port'] : 443;
+        if ($host === '' || $port < 1 || $port > 65535) {
+            return null;
+        }
+
+        $addresses = [];
+        if (filter_var($host, FILTER_VALIDATE_IP) !== false) {
+            $addresses[] = $host;
+        } else {
+            foreach (gethostbynamel($host) ?: [] as $address) {
+                $addresses[] = $address;
+            }
+            foreach (dns_get_record($host, DNS_AAAA) ?: [] as $record) {
+                if (is_array($record) && is_string($record['ipv6'] ?? null)) {
+                    $addresses[] = $record['ipv6'];
+                }
+            }
+        }
+
+        foreach (array_unique($addresses) as $address) {
+            if (
+                filter_var(
+                    $address,
+                    FILTER_VALIDATE_IP,
+                    FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE
+                ) !== false
+            ) {
+                return [
+                    'host' => $host,
+                    'port' => $port,
+                    'ip' => $address,
+                ];
+            }
+        }
+
+        return null;
     }
 
     private static function imageSrc(string $value): string

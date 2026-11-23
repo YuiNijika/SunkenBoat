@@ -206,6 +206,7 @@ export interface UserApiEndpoints {
     enabled: boolean;
     centerEnabled: boolean;
     apiReady: boolean;
+    authenticated: boolean;
     admin: boolean;
     session: string;
     login: string;

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { LoaderCircle } from 'lucide-react';
 import ContentEditor from './ContentEditor';
-import { errorMessage, profileFrom, readPayload } from '../../lib/user';
+import { loadSession } from '../../lib/session';
 import type { ArticleField, UserApiEndpoints, UserProfile } from '../../types';
 
 interface Props {
@@ -16,63 +16,32 @@ export default function EditorWorkspace({ api, cid, fields }: Props) {
     const [error, setError] = useState('');
 
     useEffect(() => {
-        const controller = new AbortController();
         let active = true;
 
-        void (async () => {
-            try {
-                const session = await fetch(api.session, {
-                    credentials: 'same-origin',
-                    headers: { Accept: 'application/json' },
-                    signal: controller.signal,
-                });
-                if (session.status === 401) {
-                    if (active) {
-                        setStatus('guest');
-                    }
-                    return;
-                }
-
-                const sessionPayload = await readPayload(session);
-                if (!session.ok) {
-                    throw new Error(errorMessage(sessionPayload, '读取登录状态失败'));
-                }
-
-                let current = profileFrom(sessionPayload);
-                if (!current) {
-                    throw new Error('登录状态异常，请重新登录');
-                }
-
-                const detail = await fetch(api.me, {
-                    credentials: 'same-origin',
-                    headers: { Accept: 'application/json' },
-                    signal: controller.signal,
-                });
-                if (detail.ok) {
-                    current = profileFrom(await readPayload(detail)) ?? current;
-                }
-
-                if (active) {
-                    setProfile(current);
-                    setStatus('ready');
-                }
-            } catch (reason) {
-                if (reason instanceof DOMException && reason.name === 'AbortError') {
-                    return;
-                }
-
-                if (active) {
-                    setError(reason instanceof Error ? reason.message : '读取登录状态失败');
-                    setStatus('error');
-                }
+        void loadSession(api).then((result) => {
+            if (!active) {
+                return;
             }
-        })();
+
+            if (result.status === 'guest') {
+                setStatus('guest');
+                return;
+            }
+
+            if (result.status === 'error') {
+                setError(result.message || '读取登录状态失败');
+                setStatus('error');
+                return;
+            }
+
+            setProfile(result.profile);
+            setStatus('ready');
+        });
 
         return () => {
             active = false;
-            controller.abort();
         };
-    }, [api.me, api.session]);
+    }, [api.authenticated, api.me, api.session]);
 
     if (status === 'loading') {
         return (

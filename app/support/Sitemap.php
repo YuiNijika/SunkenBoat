@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace SunkenBoat\Support;
 
 use TTDF\Compat\Typecho;
+use TTDF\Http\Response;
 use TTDF\Support\Escaper;
 use Typecho\Common;
 use Typecho\Db;
@@ -26,15 +27,15 @@ final class Sitemap
 
     public static function output(): never
     {
-        if (!headers_sent()) {
-            http_response_code(200);
-            header('Content-Type: application/xml; charset=UTF-8');
-            header('X-Content-Type-Options: nosniff');
-            header('Cache-Control: public, max-age=3600');
-        }
-
-        echo self::xml();
-        exit;
+        Response::text(
+            self::xml(),
+            200,
+            'application/xml; charset=UTF-8',
+            [
+                'X-Content-Type-Options' => 'nosniff',
+                'Cache-Control' => 'public, max-age=3600',
+            ]
+        );
     }
 
     public static function xml(): string
