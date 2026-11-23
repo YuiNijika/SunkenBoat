@@ -505,6 +505,9 @@ export default function BlockRenderer({ block }: Props) {
         case 'spacer':
             return <SpacerBlock variant={block.variant} />;
         default:
+            if (import.meta.env.DEV) {
+                console.warn('[TTDF] Unsupported block', block);
+            }
             return null;
     }
 }

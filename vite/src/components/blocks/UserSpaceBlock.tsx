@@ -16,6 +16,7 @@ import {
 } from 'lucide-react';
 import { cssUrl } from '../../lib/css';
 import LevelBadge from '../content/LevelBadge';
+import TabsNav from '../layout/TabsNav';
 import type {
     ForumCircle,
     ForumTopic,
@@ -374,67 +375,43 @@ export default function UserSpaceBlock({
             </div>
 
             <div id="user-space-content" className="user-space-content">
-                <div className="user-space-tabs" role="tablist" aria-label="个人空间内容">
-                    <button
-                        type="button"
-                        role="tab"
-                        aria-selected={tab === 'posts'}
-                        aria-controls="user-space-panel"
-                        className={tab === 'posts' ? 'is-active' : ''}
-                        onClick={() => setTab('posts')}
-                    >
-                        文章
-                        <span>{profile.posts}</span>
-                    </button>
-                    {forumEnabled ? (
-                        <button
-                            type="button"
-                            role="tab"
-                            aria-selected={tab === 'topics'}
-                            aria-controls="user-space-panel"
-                            className={tab === 'topics' ? 'is-active' : ''}
-                            onClick={() => setTab('topics')}
-                        >
-                            帖子
-                            <span>{topicCount}</span>
-                        </button>
-                    ) : null}
-                    <button
-                        type="button"
-                        role="tab"
-                        aria-selected={tab === 'comments'}
-                        aria-controls="user-space-panel"
-                        className={tab === 'comments' ? 'is-active' : ''}
-                        onClick={() => setTab('comments')}
-                    >
-                        评论
-                        <span>{profile.comments}</span>
-                    </button>
-                    {profile.circles !== undefined ? (
-                        <button
-                            type="button"
-                            role="tab"
-                            aria-selected={tab === 'circles'}
-                            aria-controls="user-space-panel"
-                            className={tab === 'circles' ? 'is-active' : ''}
-                            onClick={() => setTab('circles')}
-                        >
-                            圈子
-                            <span>{profile.circles}</span>
-                        </button>
-                    ) : null}
-                    <span className="user-space-tabs-note">
-                        {tab === 'posts'
-                            ? '最近发布的文章'
-                            : tab === 'topics'
-                              ? '最近发布的帖子'
-                            : tab === 'comments'
-                              ? '最近参与的讨论'
-                              : '加入与创建的圈子'}
-                    </span>
-                </div>
+                <TabsNav
+                    variant="tab"
+                    className="user-space-tabs"
+                    ariaLabel="个人空间内容"
+                    active={tab}
+                    idPrefix="user-space"
+                    panelId="user-space-panel"
+                    onChange={(id) => setTab(id as SpaceTab)}
+                    items={[
+                        { id: 'posts', label: '文章', count: profile.posts },
+                        ...(forumEnabled
+                            ? [{ id: 'topics', label: '帖子', count: topicCount }]
+                            : []),
+                        { id: 'comments', label: '评论', count: profile.comments },
+                        ...(profile.circles !== undefined
+                            ? [{ id: 'circles', label: '圈子', count: profile.circles }]
+                            : []),
+                    ]}
+                    trailing={
+                        <span className="user-space-tabs-note">
+                            {tab === 'posts'
+                                ? '最近发布的文章'
+                                : tab === 'topics'
+                                  ? '最近发布的帖子'
+                                  : tab === 'comments'
+                                    ? '最近参与的讨论'
+                                    : '加入与创建的圈子'}
+                        </span>
+                    }
+                />
 
-                <div id="user-space-panel" role="tabpanel" className="user-space-panel">
+                <div
+                    id="user-space-panel"
+                    role="tabpanel"
+                    aria-labelledby={`user-space-tab-${tab}`}
+                    className="user-space-panel"
+                >
                     {tab === 'posts' ? (
                         posts.length > 0 ? (
                             <div className="user-space-post-grid">

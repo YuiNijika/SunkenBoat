@@ -220,6 +220,15 @@ export default function SiteSidebar({
             ) : null,
     };
 
+    if (import.meta.env.DEV) {
+        const unknown = modules.filter(
+            (module) => !Object.prototype.hasOwnProperty.call(panels, module)
+        );
+        if (unknown.length > 0) {
+            console.warn('[TTDF] Unknown sidebar modules', unknown);
+        }
+    }
+
     return (
         <div className="grid gap-5">
             {modules.map((module) => (

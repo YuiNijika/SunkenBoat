@@ -1237,13 +1237,17 @@ final class Forum
                 ? $value
                 : 'default';
         };
+        $width = is_scalar($data['width'] ?? null) ? (string) $data['width'] : 'content';
+        if (!in_array($width, ['content', 'half', 'full'], true)) {
+            $width = 'content';
+        }
         $height = is_scalar($data['min_height'] ?? null) ? trim((string) $data['min_height']) : '';
         if ($height !== '' && preg_match('/^\d{1,4}(?:px|vh|rem|em|%)$/', $height) !== 1) {
             $height = '';
         }
 
         return [
-            'width' => 'content',
+            'width' => $width,
             'spaceTop' => $space($data['space_top'] ?? 'default'),
             'spaceBottom' => $space($data['space_bottom'] ?? 'default'),
             'minHeight' => $height,

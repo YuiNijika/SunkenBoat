@@ -61,6 +61,7 @@ import type {
     UserForumContent,
     UserProfile,
 } from '../../types';
+import TabsNav from './TabsNav';
 
 interface Props {
     api: UserApiEndpoints;
@@ -974,27 +975,24 @@ export default function ContentManager({ api, profile }: Props) {
     return (
         <div className="content-manager min-w-0 grid-cols-[minmax(0,1fr)]">
             <div className="content-toolbar">
-                <div className="content-tabs" role="tablist" aria-label="个人内容管理视图">
-                    {tabs.map((entry) => {
+                <TabsNav
+                    variant="tab"
+                    className="content-tabs"
+                    ariaLabel="个人内容管理视图"
+                    active={tab}
+                    idPrefix="content-manager"
+                    panelId="content-manager-panel"
+                    onChange={(id) => setTab(id as Tab)}
+                    items={tabs.map((entry) => {
                         const Icon = entry.icon;
-                        return (
-                            <button
-                                key={entry.id}
-                                type="button"
-                                role="tab"
-                                aria-selected={tab === entry.id}
-                                className={tab === entry.id ? 'is-active' : ''}
-                                onClick={() => setTab(entry.id)}
-                            >
-                                <Icon aria-hidden="true" />
-                                {entry.label}
-                                {typeof entry.count === 'number' ? (
-                                    <span>{entry.count}</span>
-                                ) : null}
-                            </button>
-                        );
+                        return {
+                            id: entry.id,
+                            label: entry.label,
+                            icon: <Icon aria-hidden="true" />,
+                            count: entry.count,
+                        };
                     })}
-                </div>
+                />
 
                 <div className="content-toolbar-actions">
                     {articleEnabled ? (
@@ -1022,9 +1020,15 @@ export default function ContentManager({ api, profile }: Props) {
                 </div>
             </div>
 
-            {tab === 'dashboard' ? (
-                renderDashboard()
-            ) : tab === 'posts' ? (
+            <div
+                id="content-manager-panel"
+                role="tabpanel"
+                aria-labelledby={`content-manager-tab-${tab}`}
+                className="contents"
+            >
+                {tab === 'dashboard' ? (
+                    renderDashboard()
+                ) : tab === 'posts' ? (
                 <div className="grid gap-3">
                     {renderArticleFilters()}
                     {loading ? (
@@ -1382,7 +1386,8 @@ export default function ContentManager({ api, profile }: Props) {
                         );
                     })}
                 </ul>
-            )}
+                )}
+            </div>
 
             <AlertDialog
                 open={pendingDelete !== null}

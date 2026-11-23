@@ -85,6 +85,7 @@ import type {
     UserProfile,
 } from '../../types';
 import LevelBadge from '../content/LevelBadge';
+import TabsNav from './TabsNav';
 
 type Tab = 'overview' | 'moderation' | 'articles' | 'certification' | 'users';
 type TopicFilter = 'all' | 'waiting' | 'rejected' | 'deleted' | 'pinned' | 'featured';
@@ -1185,20 +1186,14 @@ export default function OperationsCenter({ api, enabled }: Props) {
                         {GROUP_LABELS[profile?.group ?? ''] ?? profile?.group ?? '运营成员'}
                     </Badge>
                 </div>
-                <nav className="account-tabs mt-4" aria-label="运营工作台">
-                    {tabs.map((item) => (
-                        <button
-                            key={item.id}
-                            type="button"
-                            className={tab === item.id ? 'is-active' : ''}
-                            aria-current={tab === item.id ? 'page' : undefined}
-                            onClick={() => setTab(item.id)}
-                        >
-                            {item.icon}
-                            {item.label}
-                        </button>
-                    ))}
-                </nav>
+                <TabsNav
+                    variant="nav"
+                    className="account-tabs mt-4"
+                    ariaLabel="运营工作台"
+                    items={tabs}
+                    active={tab}
+                    onChange={(id) => setTab(id as Tab)}
+                />
             </section>
 
             {tab === 'overview' ? (

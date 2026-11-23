@@ -148,7 +148,7 @@
 
 .editor-toolbar {
     position: sticky;
-    top: 68px;
+    top: var(--editor-sticky-top);
     z-index: 30;
     display: flex;
     flex-wrap: wrap;
@@ -162,7 +162,7 @@
 
 .editor-topbar {
     position: sticky;
-    top: 68px;
+    top: var(--editor-sticky-top);
     z-index: 30;
     border-bottom: 1px solid var(--line);
     background: color-mix(in srgb, var(--surface) 92%, transparent);
@@ -771,13 +771,13 @@
 
 @media (min-width: 1024px) {
     .editor-layout {
-        grid-template-columns: minmax(0, 1fr) 300px;
+        grid-template-columns: minmax(0, 1fr) var(--editor-sidebar-width);
         align-items: start;
     }
 
     .editor-sidebar {
         position: sticky;
-        top: 132px;
+        top: var(--editor-sidebar-sticky-top);
     }
 }
 

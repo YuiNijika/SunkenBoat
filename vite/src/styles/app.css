@@ -600,7 +600,13 @@
 
 /* zibll uses a 944px reading column plus a fixed 311px sidebar. */
 @utility shell-grid {
-    @apply grid items-start gap-[15px] lg:grid-cols-[minmax(0,1fr)_311px];
+    @apply grid items-start gap-[15px];
+}
+
+@media (min-width: 1024px) {
+    .shell-grid {
+        grid-template-columns: minmax(0, 1fr) var(--sidebar-width);
+    }
 }
 
 @utility surface-card {

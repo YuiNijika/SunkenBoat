@@ -54,6 +54,7 @@ import { refreshApp } from '../../lib/appNavigation';
 import { cssUrl } from '../../lib/css';
 import ContentManager from './ContentManager';
 import AuthDialog from './AuthDialog';
+import TabsNav from './TabsNav';
 import UserAvatar from './UserAvatar';
 import DownloadHistory from '../content/DownloadHistory';
 import LevelBadge from '../content/LevelBadge';
@@ -1082,9 +1083,9 @@ export default function AccountPanel({ api, section = 'profile' }: Props) {
                         <ProfileAvatar profile={profile} className="account-profile-avatar" />
                         <div className="account-profile-copy">
                             <div className="account-profile-heading">
-                                <h2 className="account-profile-name">
+                                <h1 className="account-profile-name">
                                     {profile.screenName || profile.name}
-                                </h2>
+                                </h1>
                                 {economy?.enabled ? (
                                     <span className="account-profile-level">
                                         <LevelBadge
@@ -1239,19 +1240,13 @@ export default function AccountPanel({ api, section = 'profile' }: Props) {
                 </div>
             </section>
 
-            <nav className="account-tabs" aria-label="用户中心">
-                {navItems.map((item) => (
-                    <a
-                        key={item.id}
-                        href={item.href}
-                        className={section === item.id ? 'is-active' : ''}
-                        aria-current={section === item.id ? 'page' : undefined}
-                    >
-                        {item.icon}
-                        {item.label}
-                    </a>
-                ))}
-            </nav>
+            <TabsNav
+                variant="link"
+                className="account-tabs"
+                ariaLabel="用户中心"
+                items={navItems}
+                active={section}
+            />
 
             {economy && (economy.enabled || economy.status.banned) ? (
                 <section className="surface-card card-pad">

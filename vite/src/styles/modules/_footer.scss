@@ -172,3 +172,20 @@
     justify-content: center;
     text-align: center;
 }
+
+@media (max-width: 640px) {
+    .site-footer-inner {
+        padding: 24px 15px;
+    }
+
+    .footer-modules {
+        grid-template-columns: 1fr;
+        gap: 24px;
+    }
+
+    .footer-meta {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 4px;
+    }
+}

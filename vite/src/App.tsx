@@ -4,8 +4,10 @@ import BlockRenderer from './components/blocks/BlockRenderer';
 import AccountPanel from './components/layout/AccountPanel';
 import ActionRail from './components/layout/ActionRail';
 import EditorWorkspace from './components/layout/EditorWorkspace';
+import ForumFlow from './components/layout/ForumFlow';
 import ForumTopicEditor from './components/layout/ForumTopicEditor';
 import OperationsCenter from './components/layout/OperationsCenter';
+import PageFlow from './components/layout/PageFlow';
 import ReadingProgress from './components/layout/ReadingProgress';
 import SiteFooter from './components/layout/SiteFooter';
 import SiteHeader from './components/layout/SiteHeader';
@@ -54,15 +56,15 @@ function wideBlockStyle(
         block.spaceBottom && block.spaceBottom !== 'default' ? block.spaceBottom : '';
 
     if (spaceTop !== '') {
-        style.marginTop = BLOCK_SPACE[spaceTop] ?? undefined;
+        style.paddingTop = BLOCK_SPACE[spaceTop] ?? undefined;
     } else if (index > 0) {
-        style.marginTop = BLOCK_SPACE.md;
+        style.paddingTop = BLOCK_SPACE.md;
     }
 
     if (spaceBottom !== '') {
-        style.marginBottom = BLOCK_SPACE[spaceBottom] ?? undefined;
+        style.paddingBottom = BLOCK_SPACE[spaceBottom] ?? undefined;
     } else {
-        style.marginBottom = BLOCK_SPACE.md;
+        style.paddingBottom = BLOCK_SPACE.md;
     }
 
     if (block.minHeight) {
@@ -89,11 +91,7 @@ function useBlockEntrance(enabled: boolean, effect: string) {
         const safeEffect = ['fade-up', 'fade', 'zoom', 'slide-left', 'slide-right'].includes(effect)
             ? effect
             : 'fade-up';
-        const nodes = Array.from(document.querySelectorAll<HTMLElement>('[data-block]'));
-        if (nodes.length === 0) {
-            return;
-        }
-
+        const animated = new WeakSet<HTMLElement>();
         const observer = new IntersectionObserver(
             (entries) => {
                 entries.forEach((entry) => {
@@ -108,12 +106,40 @@ function useBlockEntrance(enabled: boolean, effect: string) {
             { threshold: 0.08, rootMargin: '0px 0px -40px 0px' }
         );
 
-        nodes.forEach((node) => {
-            node.classList.add('block-animate', `block-animate-${safeEffect}`);
-            observer.observe(node);
-        });
+        const scan = () => {
+            document.querySelectorAll<HTMLElement>('[data-block]').forEach((node) => {
+                if (animated.has(node)) {
+                    return;
+                }
 
-        return () => observer.disconnect();
+                animated.add(node);
+                node.classList.add('block-animate', `block-animate-${safeEffect}`);
+                observer.observe(node);
+            });
+        };
+
+        scan();
+        let frame = 0;
+        const schedule = () => {
+            if (frame !== 0) {
+                return;
+            }
+
+            frame = window.requestAnimationFrame(() => {
+                frame = 0;
+                scan();
+            });
+        };
+        const mutations = new MutationObserver(schedule);
+        mutations.observe(document.body, { childList: true, subtree: true });
+
+        return () => {
+            if (frame !== 0) {
+                window.cancelAnimationFrame(frame);
+            }
+            mutations.disconnect();
+            observer.disconnect();
+        };
     }, [enabled, effect]);
 }
 
@@ -209,11 +235,11 @@ function SiteApp({ data, appStyle }: { data: PageData; appStyle: CSSProperties }
     const hasForumLayout = forumLeft.length > 0 || forumRight.length > 0;
     const forumColumns =
         forumLeft.length > 0 && forumRight.length > 0
-            ? 'lg:grid-cols-[230px_minmax(0,1fr)_270px]'
+            ? 'lg:grid-cols-[var(--forum-left-width)_minmax(0,1fr)_var(--forum-right-width)]'
             : forumLeft.length > 0
-              ? 'lg:grid-cols-[230px_minmax(0,1fr)]'
+              ? 'lg:grid-cols-[var(--forum-left-width)_minmax(0,1fr)]'
               : forumRight.length > 0
-                ? 'lg:grid-cols-[minmax(0,1fr)_270px]'
+                ? 'lg:grid-cols-[minmax(0,1fr)_var(--forum-right-width)]'
                 : '';
     const twoColumn =
         data.kind !== 'account' &&
@@ -229,25 +255,41 @@ function SiteApp({ data, appStyle }: { data: PageData; appStyle: CSSProperties }
     const blockIndex = (block: PageData['blocks'][number], fallback: number): number => (
         typeof block.settingsIndex === 'number' ? block.settingsIndex : fallback
     );
-    const renderBlock = (block: PageData['blocks'][number], index: number) => (
-        <div
-            key={`${block.type}-${index}`}
-            data-block={block.type}
-            data-block-index={blockIndex(block, index)}
-            style={blockStyle(block)}
-        >
-            <BlockRenderer block={block} />
-        </div>
-    );
     const isWideBlock = (block: PageData['blocks'][number]) =>
         block.width === 'half' || block.width === 'full';
     const indexedBlocks = data.blocks.map((block, index) => ({ block, index }));
-    const wideBlocks = indexedBlocks.filter((item) => isWideBlock(item.block));
-    const contentBlocks = indexedBlocks.filter((item) => !isWideBlock(item.block));
-    const topBlock = wideBlocks.length > 0 ? wideBlocks[0].block : data.blocks[0];
+    const topBlock = data.blocks[0];
     const flushTop = topBlock?.spaceTop === 'none';
-    const renderForumBlock = (block: PageData['blocks'][number], index: number) =>
-        renderBlock(block, index);
+    const flowItems = indexedBlocks.map(({ block, index }) => {
+        const wide = isWideBlock(block);
+
+        return {
+            key: `${block.type}-${index}`,
+            type: block.type,
+            settingsIndex: blockIndex(block, index),
+            wide,
+            width: block.width ?? 'content',
+            style: wide ? wideBlockStyle(block, index) : blockStyle(block),
+            content: <BlockRenderer block={block} />,
+        };
+    });
+    const pageExtra =
+        data.kind === 'operations' ? (
+            <OperationsCenter api={data.api?.user} enabled={data.operationsEnabled !== false} />
+        ) : data.kind === 'account' ? (
+            <AccountPanel api={data.api?.user} section={data.userSection ?? 'profile'} />
+        ) : null;
+    const sidebarNode = twoColumn ? (
+        <SiteSidebar
+            site={sidebarSite}
+            widgets={widgets}
+            toc={toc}
+            tocTitle={prose?.tocTitle ?? ''}
+            modules={data.theme.sidebarModules}
+            api={data.api?.user}
+        />
+    ) : null;
+    const pageTopPadding = !topBlock || (!isWideBlock(topBlock) && !flushTop);
 
     const modules: Record<string, ReactNode> = {
         'reading-progress': showProgress ? <ReadingProgress /> : null,
@@ -266,114 +308,56 @@ function SiteApp({ data, appStyle }: { data: PageData; appStyle: CSSProperties }
                 className="flex-1 focus:outline-none focus-visible:outline-none"
                 tabIndex={-1}
             >
-                {wideBlocks.length > 0 ? (
-                    <div className="page-wide-stack">
-                        {wideBlocks.map(({ block, index }) => (
-                            <div
-                                key={`${block.type}-${index}`}
-                                className={
-                                    block.width === 'full' ? 'page-wide-full' : 'page-wide-half'
-                                }
-                                data-block={block.type}
-                                data-block-index={blockIndex(block, index)}
-                                style={wideBlockStyle(block, index)}
-                            >
-                                <BlockRenderer block={block} />
-                            </div>
-                        ))}
-                    </div>
-                ) : null}
-                <div
-                    className={
-                        'container-page pb-5 ' +
-                        (wideBlocks.length > 0 || flushTop ? 'pt-0' : 'pt-[15px]')
-                    }
-                >
-                    {hasForumLayout ? (
-                        <div className={'grid grid-cols-[minmax(0,1fr)] gap-[15px] ' + forumColumns}>
-                            {forumLeft.length > 0 ? (
-                                <aside
-                                    className="hidden content-start gap-[15px] lg:sticky lg:top-[88px] lg:order-1 lg:grid lg:self-start"
-                                    data-block-slot="left"
-                                    data-forum-slot="left"
-                                >
-                                    {forumLeft.map(renderForumBlock)}
-                                </aside>
-                            ) : null}
-                            <div
-                                className="order-1 grid min-w-0 content-start gap-[15px] lg:order-2"
-                                data-block-slot="main"
-                                data-forum-slot="main"
-                            >
-                                {contentBlocks.map(({ block, index }) => renderBlock(block, index))}
-                            </div>
-                            {forumRight.length > 0 ? (
-                                <aside
-                                    className="order-3 grid content-start gap-[15px] lg:sticky lg:top-[88px] lg:self-start"
-                                    data-block-slot="right"
-                                    data-forum-slot="right"
-                                >
-                                    {forumRight.map(renderForumBlock)}
-                                </aside>
-                            ) : null}
-                        </div>
-                    ) : twoColumn ? (
-                        <div className="grid grid-cols-[minmax(0,1fr)] gap-[15px]">
-                            <div
-                                className={
-                                    sidebarFirst
-                                        ? 'shell-grid lg:grid-cols-[311px_minmax(0,1fr)]'
-                                        : 'shell-grid'
-                                }
-                            >
-                                <div
-                                    className={
-                                        'grid min-w-0 grid-cols-[minmax(0,1fr)] gap-[15px]' +
-                                        (sidebarFirst ? ' lg:order-2' : '')
-                                    }
-                                >
-                                    {contentBlocks.map(({ block, index }) => renderBlock(block, index))}
-                                </div>
-                                <aside
-                                    className={
-                                        'hidden lg:block lg:self-stretch' +
-                                        (sidebarFirst ? ' lg:order-1' : '')
-                                    }
-                                >
-                                    <div
-                                        className={
-                                            data.theme.sidebarSticky ? 'sidebar-sticky' : ''
-                                        }
-                                    >
-                                        <SiteSidebar
-                                            site={sidebarSite}
-                                            widgets={widgets}
-                                            toc={toc}
-                                            tocTitle={prose?.tocTitle ?? ''}
-                                            modules={data.theme.sidebarModules}
-                                            api={data.api?.user}
-                                        />
-                                    </div>
-                                </aside>
-                            </div>
-                        </div>
-                    ) : (
-                        <div className="grid grid-cols-[minmax(0,1fr)] gap-[15px]">
-                            {contentBlocks.map(({ block, index }) => renderBlock(block, index))}
-                            {data.kind === 'operations' ? (
-                                <OperationsCenter
-                                    api={data.api?.user}
-                                    enabled={data.operationsEnabled !== false}
-                                />
-                            ) : data.kind === 'account' ? (
-                                <AccountPanel
-                                    api={data.api?.user}
-                                    section={data.userSection ?? 'profile'}
-                                />
-                            ) : null}
-                        </div>
-                    )}
-                </div>
+                {hasForumLayout ? (
+                    <ForumFlow
+                        items={flowItems}
+                        left={
+                            forumLeft.length > 0
+                                ? forumLeft.map((block, index) => {
+                                      const settingsIndex = blockIndex(block, index);
+
+                                      return (
+                                          <div
+                                              key={`${block.type}-left-${index}`}
+                                              data-block={block.type}
+                                              data-block-index={settingsIndex}
+                                          >
+                                              <BlockRenderer block={block} />
+                                          </div>
+                                      );
+                                  })
+                                : undefined
+                        }
+                        right={
+                            forumRight.length > 0
+                                ? forumRight.map((block, index) => {
+                                      const settingsIndex = blockIndex(block, index);
+
+                                      return (
+                                          <div
+                                              key={`${block.type}-right-${index}`}
+                                              data-block={block.type}
+                                              data-block-index={settingsIndex}
+                                          >
+                                              <BlockRenderer block={block} />
+                                          </div>
+                                      );
+                                  })
+                                : undefined
+                        }
+                        columns={forumColumns}
+                        topPadding={pageTopPadding}
+                    />
+                ) : (
+                    <PageFlow
+                        items={flowItems}
+                        extra={pageExtra}
+                        sidebar={sidebarNode}
+                        sidebarPosition={sidebarFirst ? 'left' : 'right'}
+                        sidebarSticky={data.theme.sidebarSticky}
+                        topPadding={pageTopPadding}
+                    />
+                )}
             </main>
         ),
         footer: (

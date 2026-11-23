@@ -61,7 +61,7 @@
 
 .forum-action-rail {
     position: sticky;
-    top: 92px;
+    top: var(--forum-sticky-top);
     z-index: 2;
     align-content: start;
     padding: 0;

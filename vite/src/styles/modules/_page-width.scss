@@ -28,3 +28,100 @@
 .page-wide-full .carousel-block {
     border-radius: 0;
 }
+
+.page-flow {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    column-gap: 15px;
+    align-items: start;
+    width: 100%;
+    max-width: var(--page-max, 81.25rem);
+    margin-inline: auto;
+    padding: 0 clamp(15px, 2vw, 24px) 20px;
+}
+
+.forum-flow {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    align-items: start;
+    width: 100%;
+    max-width: var(--page-max, 81.25rem);
+    margin-inline: auto;
+    padding: 0 clamp(15px, 2vw, 24px) 20px;
+}
+
+.forum-flow.forum-flow-top {
+    padding-top: 15px;
+}
+
+.forum-flow-group {
+    grid-column: 1;
+    min-width: 0;
+}
+
+.page-flow.page-flow-top {
+    padding-top: 15px;
+}
+
+.page-flow-group {
+    grid-column: 1;
+    min-width: 0;
+}
+
+.page-flow-stack {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 15px;
+    align-content: start;
+    min-width: 0;
+}
+
+.page-flow-wide {
+    position: relative;
+    z-index: 1;
+    grid-column: 1 / -1;
+    min-width: 0;
+}
+
+.page-flow-bleed {
+    position: relative;
+    left: 50%;
+    width: 100vw;
+    transform: translateX(-50%);
+    background: var(--bg);
+}
+
+.page-flow-sidebar {
+    display: none;
+    min-width: 0;
+}
+
+@media (min-width: 1024px) {
+    .page-flow.has-sidebar {
+        grid-template-columns: minmax(0, 1fr) var(--sidebar-width);
+    }
+
+    .page-flow.has-sidebar.sidebar-left {
+        grid-template-columns: var(--sidebar-width) minmax(0, 1fr);
+    }
+
+    .page-flow.has-sidebar .page-flow-group {
+        grid-column: 1;
+    }
+
+    .page-flow.has-sidebar.sidebar-left .page-flow-group {
+        grid-column: 2;
+    }
+
+    .page-flow-sidebar {
+        position: relative;
+        z-index: 0;
+        display: block;
+        grid-column: 2;
+        align-self: start;
+    }
+
+    .page-flow.has-sidebar.sidebar-left .page-flow-sidebar {
+        grid-column: 1;
+    }
+}

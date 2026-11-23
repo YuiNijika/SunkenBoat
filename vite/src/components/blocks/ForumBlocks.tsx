@@ -934,8 +934,8 @@ export function ForumHomeBlock({
 
     return (
         <section className="forum-page" aria-labelledby="forum-home-title">
-            <div className="grid gap-[15px] lg:grid-cols-[230px_minmax(0,1fr)_270px]">
-                <aside className="order-2 grid content-start gap-[15px] lg:sticky lg:top-[88px] lg:order-1 lg:self-start">
+            <div className="grid gap-[15px] lg:grid-cols-[var(--forum-left-width)_minmax(0,1fr)_var(--forum-right-width)]">
+                <aside className="order-2 grid content-start gap-[15px] lg:sticky lg:top-[var(--sticky-top)] lg:order-1 lg:self-start">
                     <section className="forum-create-card overflow-hidden rounded-[8px] p-[18px] text-white shadow-card">
                         <p className="text-[10px] font-medium tracking-[0.16em] text-white/65 uppercase">Create</p>
                         <h2 className="mt-1 text-[18px] font-semibold leading-6">
@@ -1232,7 +1232,7 @@ export function ForumHomeBlock({
                     </div>
                 </div>
 
-                <aside className="order-3 grid content-start gap-[15px] lg:sticky lg:top-[88px] lg:self-start">
+                <aside className="order-3 grid content-start gap-[15px] lg:sticky lg:top-[var(--sticky-top)] lg:self-start">
                     <Panel title="圈子数据">
                         <div className="grid grid-cols-2 gap-2">
                             {[
@@ -1294,8 +1294,8 @@ export function ForumCircleBlock({
 
     return (
         <section className="forum-page" aria-labelledby="forum-circle-title">
-            <div className="grid gap-[15px] lg:grid-cols-[230px_minmax(0,1fr)_270px]">
-                <aside className="order-2 grid content-start gap-[15px] lg:sticky lg:top-[88px] lg:order-1 lg:self-start">
+            <div className="grid gap-[15px] lg:grid-cols-[var(--forum-left-width)_minmax(0,1fr)_var(--forum-right-width)]">
+                <aside className="order-2 grid content-start gap-[15px] lg:sticky lg:top-[var(--sticky-top)] lg:order-1 lg:self-start">
                     <Panel title="关于圈子">
                         <div className="flex items-start gap-3">
                             <CircleMark circle={circle} size="size-14" />
@@ -1457,7 +1457,7 @@ export function ForumCircleBlock({
                     </div>
                 </div>
 
-                <aside className="order-3 grid content-start gap-[15px] lg:sticky lg:top-[88px] lg:self-start">
+                <aside className="order-3 grid content-start gap-[15px] lg:sticky lg:top-[var(--sticky-top)] lg:self-start">
                     <SidebarHot
                         hotCircles={hotCircles}
                         hotTopics={hotTopics}
@@ -2037,7 +2037,7 @@ export function ForumTopicBlock({
     return (
         <section className="forum-page" aria-labelledby="forum-topic-title">
             <div className="grid gap-[15px] lg:grid-cols-[56px_minmax(0,1fr)_282px]">
-                <aside className="order-1 hidden min-w-0 lg:sticky lg:top-[92px] lg:block lg:self-start">
+                <aside className="order-1 hidden min-w-0 lg:sticky lg:top-[var(--forum-sticky-top)] lg:block lg:self-start">
                     <div
                         className="forum-action-rail grid grid-cols-3 justify-items-center gap-3 lg:grid-cols-1 lg:gap-2.5"
                         role="toolbar"
@@ -2563,7 +2563,7 @@ export function ForumTopicBlock({
                     ) : null}
                 </div>
 
-                <aside className="order-3 grid content-start gap-[15px] lg:sticky lg:top-[88px] lg:self-start">
+                <aside className="order-3 grid content-start gap-[15px] lg:sticky lg:top-[var(--sticky-top)] lg:self-start">
                     {circle ? (
                         <section className="surface-card overflow-hidden">
                             <div

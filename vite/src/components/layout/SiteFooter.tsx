@@ -63,6 +63,22 @@ function ModuleTitle({ children }: { children: string }) {
     return <p className="footer-module-title">{children}</p>;
 }
 
+function FooterMeta({ site }: { site: SiteInfo }) {
+    return (
+        <>
+            <Separator className="footer-separator" />
+            <div className="footer-meta">
+                <p>
+                    &copy; {site.year} {site.title || 'SunkenBoat'}
+                </p>
+                <p>
+                    Typecho · TTDF {site.frameworkVersion} · 主题 {site.themeVersion}
+                </p>
+            </div>
+        </>
+    );
+}
+
 export default function SiteFooter({
     site,
     widgets,
@@ -153,6 +169,9 @@ export default function SiteFooter({
                 );
 
             default:
+                if (import.meta.env.DEV) {
+                    console.warn('[TTDF] Unknown footer module', module.name);
+                }
                 return null;
         }
     };
@@ -164,19 +183,7 @@ export default function SiteFooter({
                     {bodyModules.map((module, index) => renderModule(module, index))}
                 </div>
 
-                {hasMeta ? (
-                    <>
-                        <Separator className="footer-separator" />
-                        <div className="footer-meta">
-                            <p>
-                                &copy; {site.year} {site.title || 'SunkenBoat'}
-                            </p>
-                            <p>
-                                Typecho · TTDF {site.frameworkVersion} · 主题 {site.themeVersion}
-                            </p>
-                        </div>
-                    </>
-                ) : null}
+                {hasMeta ? <FooterMeta site={site} /> : null}
             </div>
         </footer>
     );

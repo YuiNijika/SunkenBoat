@@ -3,7 +3,7 @@
 /* Sidebar follows the viewport while the article column keeps scrolling. */
 .sidebar-sticky {
     position: sticky;
-    top: 88px;
+    top: var(--sticky-top);
     max-height: calc(100dvh - 104px);
     overflow-y: auto;
     overscroll-behavior: contain;
