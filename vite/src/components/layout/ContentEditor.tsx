@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { FormEvent, KeyboardEvent } from 'react';
 import {
-    ArrowLeft,
     Blocks,
     CalendarDays,
     CheckCircle2,
@@ -32,6 +31,7 @@ import DownloadSettings, { downloadConfigError } from '../content/DownloadSettin
 import MetaBox from '../content/EditorMetaBox';
 import MarkdownToolbar from '../content/MarkdownToolbar';
 import MediaLibrary from '../content/MediaLibrary';
+import { EditorMobileBar, EditorTopbar } from './editor/EditorChrome';
 import {
     attachmentsInText,
     attachmentReference,
@@ -644,6 +644,7 @@ export default function ContentEditor({
             .split(',')
             .map((item) => item.trim())
             .filter((item) => item !== '');
+        const placeholder = field.media ? '输入图片地址' : `请输入${field.label}`;
 
         const control =
             type === 'select' ? (
@@ -701,14 +702,14 @@ export default function ContentEditor({
                     rows={3}
                     value={value}
                     onChange={(event) => setFieldValue(field.name, event.target.value)}
-                    placeholder={field.description || field.label}
+                    placeholder={placeholder}
                     aria-label={field.label}
                 />
             ) : (
                 <Input
                     value={value}
                     onChange={(event) => setFieldValue(field.name, event.target.value)}
-                    placeholder={field.description || field.label}
+                    placeholder={placeholder}
                     aria-label={field.label}
                 />
             );
@@ -753,25 +754,21 @@ export default function ContentEditor({
 
     return (
         <div className="editor-workspace" onKeyDown={handleEditorKeyDown}>
-            <header className="editor-topbar">
-                <div className="editor-topbar-row">
-                    <div className="editor-topbar-left">
-                        <a className="editor-back" href={api.pages.content}>
-                            <ArrowLeft aria-hidden="true" />
-                            <span>内容管理</span>
-                        </a>
-                        <span className="editor-topbar-sep" aria-hidden="true">
-                            /
-                        </span>
-                        <span className="editor-topbar-doc">
-                            {editingId > 0 ? '编辑文章' : '新建文章'}
-                        </span>
-                        <Badge variant={status === 'publish' ? 'default' : 'secondary'}>
-                            {statusLabel}
-                        </Badge>
-                        {dirty ? <span className="editor-dirty">未保存</span> : null}
-                    </div>
-                    <div className="editor-toolbar-actions">
+            <EditorTopbar
+                backHref={api.pages.content}
+                documentLabel={editingId > 0 ? '编辑文章' : '新建文章'}
+                statusLabel={statusLabel}
+                statusActive={status === 'publish'}
+                dirty={dirty}
+                note="Markdown · 附件 cid · 组件库 · 媒体库"
+                shortcut={
+                    <>
+                        <kbd>Ctrl</kbd>+<kbd>S</kbd> 保存草稿
+                        <kbd>Ctrl</kbd>+<kbd>Enter</kbd> 发布
+                    </>
+                }
+                actions={
+                    <>
                         <Button
                             type="button"
                             variant="outline"
@@ -799,16 +796,9 @@ export default function ContentEditor({
                             )}
                             {status === 'publish' ? '更新文章' : '发布文章'}
                         </Button>
-                    </div>
-                </div>
-                <div className="editor-topbar-sub">
-                    <span>Markdown · 附件 cid · 组件库 · 媒体库</span>
-                    <span className="editor-shortcut">
-                        <kbd>Ctrl</kbd>+<kbd>S</kbd> 保存草稿
-                        <kbd>Ctrl</kbd>+<kbd>Enter</kbd> 发布
-                    </span>
-                </div>
-            </header>
+                    </>
+                }
+            />
 
             <div className="editor-canvas">
                 <div className="editor-layout">
@@ -1052,27 +1042,6 @@ export default function ContentEditor({
                                 作者：{profile.screenName || profile.name}
                                 {created !== '' ? ` · 创建于 ${created.slice(0, 10)}` : ''}
                             </p>
-                            <div className="editor-publish-actions">
-                                <Button
-                                    type="button"
-                                    variant="outline"
-                                    size="sm"
-                                    disabled={saving !== null}
-                                    onClick={() => void save('draft')}
-                                >
-                                    <Save aria-hidden="true" />
-                                    保存草稿
-                                </Button>
-                                <Button
-                                    type="button"
-                                    size="sm"
-                                    disabled={saving !== null}
-                                    onClick={() => void save('publish')}
-                                >
-                                    <Send aria-hidden="true" />
-                                    发布
-                                </Button>
-                            </div>
                         </MetaBox>
 
                         <DownloadSettings
@@ -1227,7 +1196,7 @@ export default function ContentEditor({
                 </div>
             </div>
 
-            <div className="editor-mobile-bar">
+            <EditorMobileBar>
                 <Button
                     type="button"
                     variant="outline"
@@ -1247,7 +1216,7 @@ export default function ContentEditor({
                     <Send aria-hidden="true" />
                     {status === 'publish' ? '更新' : '发布'}
                 </Button>
-            </div>
+            </EditorMobileBar>
 
             <ComponentLibrary
                 open={libraryOpen}

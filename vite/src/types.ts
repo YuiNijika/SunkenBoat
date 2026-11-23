@@ -524,7 +524,7 @@ export interface PostHeaderBlock extends BlockBase {
         likes: number;
         likesText: string;
         categories: PostCategory[];
-    };
+    } | null;
     share?: ShareConfig;
 }
 
@@ -539,6 +539,7 @@ export interface ProseBlock extends BlockBase {
     title: string;
     meta: PostHeaderBlock['meta'] | null;
     share?: ShareConfig;
+    showHeader?: boolean;
     layout: 'default' | 'wide' | 'narrow' | string;
     html: string;
     toc: boolean;

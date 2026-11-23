@@ -233,14 +233,6 @@ function SiteApp({ data, appStyle }: { data: PageData; appStyle: CSSProperties }
     const forumLeft = data.forumLayout?.left ?? [];
     const forumRight = data.forumLayout?.right ?? [];
     const hasForumLayout = forumLeft.length > 0 || forumRight.length > 0;
-    const forumColumns =
-        forumLeft.length > 0 && forumRight.length > 0
-            ? 'lg:grid-cols-[var(--forum-left-width)_minmax(0,1fr)_var(--forum-right-width)]'
-            : forumLeft.length > 0
-              ? 'lg:grid-cols-[var(--forum-left-width)_minmax(0,1fr)]'
-              : forumRight.length > 0
-                ? 'lg:grid-cols-[minmax(0,1fr)_var(--forum-right-width)]'
-                : '';
     const twoColumn =
         data.kind !== 'account' &&
         !hasForumLayout &&
@@ -345,7 +337,6 @@ function SiteApp({ data, appStyle }: { data: PageData; appStyle: CSSProperties }
                                   })
                                 : undefined
                         }
-                        columns={forumColumns}
                         topPadding={pageTopPadding}
                     />
                 ) : (

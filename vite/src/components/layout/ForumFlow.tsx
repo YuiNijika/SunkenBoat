@@ -1,11 +1,10 @@
-import { Fragment, type ReactNode } from 'react';
+import type { CSSProperties, ReactNode } from 'react';
 import type { PageFlowItem } from './PageFlow';
 
 interface Props {
     items: PageFlowItem[];
     left?: ReactNode;
     right?: ReactNode;
-    columns: string;
     topPadding: boolean;
 }
 
@@ -21,16 +20,14 @@ type FlowRow =
     | { kind: 'wide'; item: PageFlowItem; index: number }
     | { kind: 'group'; entries: FlowEntry[] };
 
-export default function ForumFlow({ items, left, right, columns, topPadding }: Props) {
+export default function ForumFlow({ items, left, right, topPadding }: Props) {
     const rows: FlowRow[] = [];
     let group: FlowEntry[] = [];
-    let sawGroup = false;
     const flushGroup = () => {
         if (group.length === 0) {
             return;
         }
 
-        sawGroup = true;
         rows.push({ kind: 'group', entries: group });
         group = [];
     };
@@ -51,25 +48,58 @@ export default function ForumFlow({ items, left, right, columns, topPadding }: P
         });
     });
     flushGroup();
-    if (!sawGroup && (left || right)) {
-        rows.push({ kind: 'group', entries: [] });
-    }
+
+    const groupRows = rows.reduce<number[]>((acc, row, index) => {
+        if (row.kind === 'group') {
+            acc.push(index);
+        }
+
+        return acc;
+    }, []);
+    const firstGroupRow = groupRows.length > 0 ? groupRows[0] : -1;
+    const lastGroupRow = groupRows.length > 0 ? groupRows[groupRows.length - 1] : -1;
+    const hasHalfBlock = items.some((item) => item.width === 'half');
+    const hasMidWideBlock = rows.some(
+        (row, index) =>
+            row.kind === 'wide' && index > firstGroupRow && index < lastGroupRow
+    );
+    const singleColumn = hasHalfBlock || hasMidWideBlock || firstGroupRow < 0;
+    const showLeft = Boolean(left) && !singleColumn;
+    const showRight = Boolean(right) && !singleColumn;
+    const railStyle = {
+        '--forum-rail-row': `${firstGroupRow + 1} / span ${
+            lastGroupRow - firstGroupRow + 1
+        }`,
+    } as CSSProperties;
+
+    const classes = [
+        'forum-flow',
+        showLeft ? 'has-left' : '',
+        showRight ? 'has-right' : '',
+        topPadding ? 'forum-flow-top' : '',
+    ]
+        .filter(Boolean)
+        .join(' ');
 
     return (
-        <div className={'forum-flow' + (topPadding ? ' forum-flow-top' : '')}>
+        <div className={classes}>
             {rows.map((row, rowIndex) =>
                 row.kind === 'wide' ? (
                     <div
                         key={`${row.item.key}-${row.index}`}
-                        className={`page-flow-wide page-flow-${row.item.width} forum-flow-wide`}
+                        className={`forum-flow-row page-flow-wide page-flow-${row.item.width} forum-flow-wide`}
                         data-block={row.item.type}
                         data-block-index={row.item.settingsIndex}
+                        data-block-slot="main"
+                        data-forum-slot="main"
                         style={{ gridRow: rowIndex + 1 }}
                     >
                         <div className="page-flow-bleed" style={row.item.style}>
                             <div
                                 className={
-                                    row.item.width === 'full' ? 'page-wide-full' : 'page-wide-half'
+                                    row.item.width === 'full'
+                                        ? 'page-wide-full'
+                                        : 'page-wide-half'
                                 }
                             >
                                 {row.item.content}
@@ -77,55 +107,48 @@ export default function ForumFlow({ items, left, right, columns, topPadding }: P
                         </div>
                     </div>
                 ) : (
-                    <Fragment key={`forum-group-${rowIndex}`}>
-                        <div
-                            className="forum-flow-group"
-                            style={{ gridRow: rowIndex + 1 }}
-                        >
-                            <div
-                                className={
-                                    'grid grid-cols-[minmax(0,1fr)] gap-[15px] ' + columns
-                                }
-                            >
-                                {left ? (
-                                    <aside
-                                        className="hidden content-start gap-[15px] lg:sticky lg:top-[var(--sticky-top)] lg:order-1 lg:grid lg:self-start"
-                                        data-block-slot="left"
-                                        data-forum-slot="left"
-                                    >
-                                        {left}
-                                    </aside>
-                                ) : null}
+                    <div
+                        key={`forum-group-${rowIndex}`}
+                        className="forum-flow-row forum-flow-group"
+                        data-block-slot="main"
+                        data-forum-slot="main"
+                        style={{ gridRow: rowIndex + 1 }}
+                    >
+                        <div className="forum-flow-stack">
+                            {row.entries.map((entry) => (
                                 <div
-                                    className="order-1 grid min-w-0 content-start gap-[15px] lg:order-2"
-                                    data-block-slot="main"
-                                    data-forum-slot="main"
+                                    key={entry.key}
+                                    data-block={entry.type}
+                                    data-block-index={entry.settingsIndex}
+                                    style={entry.style}
                                 >
-                                    {row.entries.map((entry) => (
-                                        <div
-                                            key={entry.key}
-                                            data-block={entry.type}
-                                            data-block-index={entry.settingsIndex}
-                                            style={entry.style}
-                                        >
-                                            {entry.content}
-                                        </div>
-                                    ))}
+                                    {entry.content}
                                 </div>
-                                {right ? (
-                                    <aside
-                                        className="order-3 grid content-start gap-[15px] lg:sticky lg:top-[var(--sticky-top)] lg:self-start"
-                                        data-block-slot="right"
-                                        data-forum-slot="right"
-                                    >
-                                        {right}
-                                    </aside>
-                                ) : null}
-                            </div>
+                            ))}
                         </div>
-                    </Fragment>
+                    </div>
                 )
             )}
+            {showLeft ? (
+                <aside
+                    className="forum-flow-left"
+                    data-block-slot="left"
+                    data-forum-slot="left"
+                    style={railStyle}
+                >
+                    {left}
+                </aside>
+            ) : null}
+            {showRight ? (
+                <aside
+                    className="forum-flow-right"
+                    data-block-slot="right"
+                    data-forum-slot="right"
+                    style={railStyle}
+                >
+                    {right}
+                </aside>
+            ) : null}
         </div>
     );
 }

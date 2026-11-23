@@ -1,6 +1,7 @@
-import { CalendarDays, Eye, MessageCircle } from 'lucide-react';
 import Pagination from '../content/Pagination';
 import PostCard from '../content/PostCard';
+import PostMetrics from '../content/PostMetrics';
+import PostThumb from '../content/PostThumb';
 import SectionHeading from '../content/SectionHeading';
 import type { CSSProperties } from 'react';
 import type { PostSummary } from '../../types';
@@ -18,50 +19,11 @@ interface Props {
     showPagination?: boolean;
 }
 
-function Thumb({ post, className = '' }: { post: PostSummary; className?: string }) {
-    const fallback = (post.categories[0]?.label ?? post.title ?? '文').trim().slice(0, 1);
-
-    return (
-        <span className={'post-list-thumb ' + className}>
-            {post.thumb ? (
-                <img src={post.thumb} alt="" loading="lazy" decoding="async" />
-            ) : (
-                <span className="post-list-thumb-fallback" aria-hidden="true">
-                    {fallback}
-                </span>
-            )}
-        </span>
-    );
-}
-
-function Meta({ post }: { post: PostSummary }) {
-    return (
-        <div className="post-list-meta">
-            {post.date ? (
-                <span>
-                    <CalendarDays aria-hidden="true" />
-                    <time dateTime={post.dateIso}>{post.date}</time>
-                </span>
-            ) : null}
-            <span>
-                <MessageCircle aria-hidden="true" />
-                {post.comments}
-            </span>
-            {post.views > 0 ? (
-                <span>
-                    <Eye aria-hidden="true" />
-                    {post.views}
-                </span>
-            ) : null}
-        </div>
-    );
-}
-
 function LargeCard({ post }: { post: PostSummary }) {
     return (
         <article className="post-list-large group">
             <a className="post-list-large-media" href={post.url}>
-                <Thumb post={post} />
+                <PostThumb post={post} />
                 <span className="post-list-large-tag">{post.categories[0]?.label ?? '文章'}</span>
             </a>
             <div className="post-list-large-body">
@@ -69,7 +31,7 @@ function LargeCard({ post }: { post: PostSummary }) {
                     <a href={post.url}>{post.title}</a>
                 </h3>
                 {post.excerpt ? <p>{post.excerpt}</p> : null}
-                <Meta post={post} />
+                <PostMetrics post={post} />
             </div>
         </article>
     );
@@ -79,14 +41,14 @@ function CompactRow({ post }: { post: PostSummary }) {
     return (
         <article className="post-list-row group">
             <a href={post.url} className="post-list-row-media">
-                <Thumb post={post} />
+                <PostThumb post={post} />
             </a>
             <div className="post-list-row-body">
                 <h3>
                     <a href={post.url}>{post.title}</a>
                 </h3>
                 {post.excerpt ? <p>{post.excerpt}</p> : null}
-                <Meta post={post} />
+                <PostMetrics post={post} />
             </div>
         </article>
     );

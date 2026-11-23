@@ -18,6 +18,7 @@ $blockWidthField = [
         'half' => '半宽（不含侧栏）',
         'full' => '全宽',
     ],
+    'description' => '半宽区块会让页面切换为无侧栏布局；在内容区中间插入全宽区块时也会自动隐藏侧栏，避免侧栏被截断。',
 ];
 
 $blockLayoutFields = [

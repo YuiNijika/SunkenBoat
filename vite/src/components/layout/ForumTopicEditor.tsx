@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { FormEvent, KeyboardEvent } from 'react';
 import {
-    ArrowLeft,
     Blocks,
     CheckCircle2,
     CircleDot,
@@ -29,6 +28,7 @@ import DownloadSettings, { downloadConfigError } from '../content/DownloadSettin
 import MetaBox from '../content/EditorMetaBox';
 import MarkdownToolbar from '../content/MarkdownToolbar';
 import MediaLibrary from '../content/MediaLibrary';
+import { EditorMobileBar, EditorTopbar } from './editor/EditorChrome';
 import { Badge } from '../ui/badge';
 import { Button } from '../ui/button';
 import { Checkbox } from '../ui/checkbox';
@@ -411,34 +411,21 @@ function TopicEditor({ editor }: { editor: ForumEditorData }) {
     return (
         <div className="editor-workspace" onKeyDown={onKeyDown}>
             <form onSubmit={onSubmit}>
-                <header className="editor-topbar">
-                    <div className="editor-topbar-row">
-                        <div className="editor-topbar-left">
-                            <a
-                                className="editor-back"
-                                href={editor.contentUrl || editor.homeUrl}
-                            >
-                                <ArrowLeft aria-hidden="true" />
-                                <span>
-                                    内容管理
-                                </span>
-                            </a>
-                            <span className="editor-topbar-sep" aria-hidden="true">
-                                /
-                            </span>
-                            <span className="editor-topbar-doc">
-                                {editing ? '编辑帖子' : '新建帖子'}
-                            </span>
-                            <Badge variant={editing && status === 'publish' ? 'default' : 'secondary'}>
-                                {statusLabel}
-                            </Badge>
-                            {dirty ? (
-                                <span className="editor-dirty">
-                                    未保存
-                                </span>
-                            ) : null}
-                        </div>
-                        <div className="editor-toolbar-actions">
+                <EditorTopbar
+                    backHref={editor.contentUrl || editor.homeUrl}
+                    documentLabel={editing ? '编辑帖子' : '新建帖子'}
+                    statusLabel={statusLabel}
+                    statusActive={editing && status === 'publish'}
+                    dirty={dirty}
+                    note="Markdown 写作 · 组件库 · 媒体库 · 帖子设置"
+                    shortcut={
+                        <>
+                            <kbd>Ctrl</kbd>+<kbd>Enter</kbd>{' '}
+                            {editing ? '保存' : '发布'}
+                        </>
+                    }
+                    actions={
+                        <>
                             <Button type="submit" size="sm" disabled={submitDisabled}>
                                 {submitting ? (
                                     <LoaderCircle className="animate-spin" aria-hidden="true" />
@@ -447,17 +434,9 @@ function TopicEditor({ editor }: { editor: ForumEditorData }) {
                                 )}
                                 {publishLabel}
                             </Button>
-                        </div>
-                    </div>
-                    <div className="editor-topbar-sub">
-                        <span>
-                            Markdown 写作 · 组件库 · 媒体库 · 帖子设置
-                        </span>
-                        <span className="editor-shortcut">
-                            <kbd>Ctrl</kbd>+<kbd>Enter</kbd> {editing ? '保存' : '发布'}
-                        </span>
-                    </div>
-                </header>
+                        </>
+                    }
+                />
 
                 <div className="editor-canvas">
                     {resubmitting ? (
@@ -711,12 +690,6 @@ function TopicEditor({ editor }: { editor: ForumEditorData }) {
                                         发布后需要管理员审核，审核通过前仅你和管理员可见。
                                     </p>
                                 ) : null}
-                                <div className="editor-publish-actions">
-                                    <Button type="submit" size="sm" disabled={submitDisabled}>
-                                        <Send aria-hidden="true" />
-                                        {publishLabel}
-                                    </Button>
-                                </div>
                             </MetaBox>
 
                             <DownloadSettings
@@ -903,7 +876,7 @@ function TopicEditor({ editor }: { editor: ForumEditorData }) {
                 </div>
             </form>
 
-            <div className="editor-mobile-bar">
+            <EditorMobileBar>
                 <Button
                     type="button"
                     size="sm"
@@ -917,7 +890,7 @@ function TopicEditor({ editor }: { editor: ForumEditorData }) {
                     )}
                     {publishLabel}
                 </Button>
-            </div>
+            </EditorMobileBar>
 
             <ComponentLibrary
                 open={libraryOpen}

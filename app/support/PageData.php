@@ -790,8 +790,17 @@ final class PageData
         }
         $cache = [];
         $blocks = [];
+        $hasPostHeader = false;
 
         foreach ($specs as $spec) {
+            if ($kind === 'post' && $spec['name'] === 'post-header') {
+                $hasPostHeader = true;
+            }
+
+            if ($kind === 'post' && $spec['name'] === 'prose' && $hasPostHeader) {
+                $spec['data']['_omit_header'] = true;
+            }
+
             if (
                 $spec['name'] === 'comments'
                 && in_array($kind, ['post', 'page'], true)
@@ -951,7 +960,7 @@ final class PageData
             'categories' => self::categoriesBlock($variant, $cache, $data),
             'archive-header' => self::archiveHeaderBlock($archive, $data),
             'breadcrumbs' => self::breadcrumbsBlock($archive, $data),
-            'post-header' => null,
+            'post-header' => $kind === 'post' ? self::postHeaderBlock($archive, $cache) : null,
             'page-header' => self::pageHeaderBlock($archive, $variant, $data),
             'prose' => self::proseBlock($archive, $cache, $data, $kind),
             'tags' => self::tagsBlock($archive, $cache, $data),
@@ -1368,6 +1377,7 @@ final class PageData
             'title' => $kind === 'post' ? (string) ($archive->title ?? '') : '',
             'meta' => $meta,
             'share' => self::shareConfig(),
+            'showHeader' => !($data['_omit_header'] ?? false),
             'layout' => self::contentLayout($archive),
             'html' => self::cached($cache, 'content', static function () use ($archive): string {
                 $html = self::content($archive);

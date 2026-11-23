@@ -3,8 +3,7 @@ import { parseArticle } from '../../lib/article';
 import { Card } from '../ui/card';
 import DownloadCard from '../content/DownloadCard';
 import ImageLightbox from '../content/ImageLightbox';
-import PostMeta from '../content/PostMeta';
-import { ShareButton } from '../content/ShareSheet';
+import { PostHeaderBlock } from './Headers';
 import { notifyError, notifySuccess } from '../../lib/notify';
 import type { LightboxImage } from '../content/ImageLightbox';
 import type { DownloadOffer } from '../../lib/downloads';
@@ -24,6 +23,7 @@ interface Props {
         categories: PostCategory[];
     } | null;
     share?: ShareConfig;
+    showHeader?: boolean;
     layout: 'default' | 'wide' | 'narrow' | string;
     html: string;
     codeCopy: boolean;
@@ -35,7 +35,16 @@ interface Props {
  * heading anchors come from `parseArticle()` and the table of contents is
  * rendered by the sidebar from the same parse result.
  */
-export default function ProseBlock({ title, meta, share, layout, html, codeCopy, download }: Props) {
+export default function ProseBlock({
+    title,
+    meta,
+    share,
+    showHeader = true,
+    layout,
+    html,
+    codeCopy,
+    download,
+}: Props) {
     const parsed = useMemo(() => parseArticle(html), [html]);
     const bodyRef = useRef<HTMLDivElement>(null);
     const lightboxTrigger = useRef<HTMLImageElement | null>(null);
@@ -275,31 +284,8 @@ export default function ProseBlock({ title, meta, share, layout, html, codeCopy,
     return (
         <>
             <Card className="surface-card gap-0 p-4 sm:p-6">
-                {title ? (
-                    <header className="mb-4 border-b border-line pb-4 sm:mb-5">
-                        <p className="text-[12px] font-normal text-brand">文章</p>
-                        <h1 className="mt-2 text-[24px] font-medium leading-[1.4] text-ink sm:text-[28px]">
-                            {title}
-                        </h1>
-                        {meta ? (
-                            <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
-                                <div className="min-w-0">
-                                    <PostMeta
-                                        date={meta.date}
-                                        dateIso={meta.dateIso}
-                                        author={meta.author}
-                                        commentsText={meta.commentsText}
-                                        views={meta.views}
-                                        viewsText={meta.viewsText}
-                                        likes={meta.likes}
-                                        likesText={meta.likesText}
-                                        categories={meta.categories}
-                                    />
-                                </div>
-                                <ShareButton config={share} title={title} />
-                            </div>
-                        ) : null}
-                    </header>
+                {showHeader && title ? (
+                    <PostHeaderBlock embedded title={title} meta={meta} share={share} />
                 ) : null}
                 <div
                     ref={bodyRef}

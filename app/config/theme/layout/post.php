@@ -28,10 +28,14 @@ return [
                 'name' => 'Post_Blocks',
                 'value' => ['prose', 'tags', 'post-nav', 'comments'],
                 'label' => '文章区块',
-                'description' => '组合文章页的正文、标签、上一篇/下一篇与评论区。标题、分类、作者、日期和正文会显示在同一张内容卡片中。',
+                'description' => '组合文章页的标题、正文、标签、上一篇/下一篇与评论区。默认正文卡片内包含标题；如果单独加入“文章标题”区块，正文会自动隐藏重复标题。',
                 'placeholder' => '选择区块…',
                 'reorder' => ['drag'],
                 'options' => array_merge($commonBlocks, [
+                    'post-header' => [
+                        'label' => '文章标题（独立卡片）',
+                        'fields' => [],
+                    ],
                     'prose' => [
                         'label' => '正文内容',
                         'fields' => [

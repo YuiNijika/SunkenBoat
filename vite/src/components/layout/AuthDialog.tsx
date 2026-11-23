@@ -613,7 +613,10 @@ export default function AuthDialog({
                         </form>
                     )}
 
-                    {!checking && mode === 'login' && api.oauth.enabled ? (
+                    {!checking &&
+                    mode === 'login' &&
+                    api.oauth.enabled &&
+                    api.oauth.providers.length > 0 ? (
                         <div className="mt-5 border-t border-line pt-5">
                             <p className="text-center text-[12px] text-ink-mute">或使用社交账号登录</p>
                             <div className="mt-3 grid gap-2 sm:grid-cols-2">

@@ -1,4 +1,4 @@
-import { Fragment, type CSSProperties, type ReactNode } from 'react';
+import type { CSSProperties, ReactNode } from 'react';
 
 export interface PageFlowItem {
     key: string;
@@ -42,13 +42,11 @@ export default function PageFlow({
 }: Props) {
     const rows: FlowRow[] = [];
     let group: FlowEntry[] = [];
-    let sawGroup = false;
     const flushGroup = () => {
         if (group.length === 0) {
             return;
         }
 
-        sawGroup = true;
         rows.push({ kind: 'group', entries: group });
         group = [];
     };
@@ -82,10 +80,24 @@ export default function PageFlow({
     }
 
     flushGroup();
-    const hasSidebar = Boolean(sidebar);
-    if (!sawGroup && sidebar) {
-        rows.push({ kind: 'group', entries: [] });
-    }
+
+    const groupRows = rows.reduce<number[]>((acc, row, index) => {
+        if (row.kind === 'group') {
+            acc.push(index);
+        }
+
+        return acc;
+    }, []);
+    const firstGroupRow = groupRows.length > 0 ? groupRows[0] : -1;
+    const lastGroupRow = groupRows.length > 0 ? groupRows[groupRows.length - 1] : -1;
+
+    const hasHalfBlock = items.some((item) => item.width === 'half');
+    const hasMidWideBlock = rows.some(
+        (row, index) =>
+            row.kind === 'wide' && index > firstGroupRow && index < lastGroupRow
+    );
+    const hasSidebar =
+        Boolean(sidebar) && !hasHalfBlock && !hasMidWideBlock && firstGroupRow >= 0;
 
     const classes = [
         'page-flow',
@@ -102,7 +114,7 @@ export default function PageFlow({
                 row.kind === 'wide' ? (
                     <div
                         key={`${row.item.key}-${row.index}`}
-                        className={`page-flow-wide page-flow-${row.item.width}`}
+                        className={`page-flow-row page-flow-wide page-flow-${row.item.width}`}
                         data-block={row.item.type}
                         data-block-index={row.item.settingsIndex}
                         style={{ gridRow: rowIndex + 1 }}
@@ -110,7 +122,9 @@ export default function PageFlow({
                         <div className="page-flow-bleed" style={row.item.style}>
                             <div
                                 className={
-                                    row.item.width === 'full' ? 'page-wide-full' : 'page-wide-half'
+                                    row.item.width === 'full'
+                                        ? 'page-wide-full'
+                                        : 'page-wide-half'
                                 }
                             >
                                 {row.item.content}
@@ -118,43 +132,42 @@ export default function PageFlow({
                         </div>
                     </div>
                 ) : (
-                    <Fragment key={`group-${rowIndex}`}>
-                        <div
-                            className="page-flow-group"
-                            style={{ gridRow: rowIndex + 1 }}
-                        >
-                            <div className="page-flow-stack">
-                                {row.entries.map((entry) =>
-                                    entry.animate ? (
-                                        <div
-                                            key={entry.key}
-                                            data-block={entry.type}
-                                            data-block-index={entry.settingsIndex}
-                                            style={entry.style}
-                                        >
-                                            {entry.content}
-                                        </div>
-                                    ) : (
-                                        <div key={entry.key} style={entry.style}>
-                                            {entry.content}
-                                        </div>
-                                    )
-                                )}
-                            </div>
+                    <div
+                        key={`group-${rowIndex}`}
+                        className="page-flow-row page-flow-group"
+                        style={{ gridRow: rowIndex + 1 }}
+                    >
+                        <div className="page-flow-stack">
+                            {row.entries.map((entry) =>
+                                entry.animate ? (
+                                    <div
+                                        key={entry.key}
+                                        data-block={entry.type}
+                                        data-block-index={entry.settingsIndex}
+                                        style={entry.style}
+                                    >
+                                        {entry.content}
+                                    </div>
+                                ) : (
+                                    <div key={entry.key} style={entry.style}>
+                                        {entry.content}
+                                    </div>
+                                )
+                            )}
                         </div>
-                        {sidebar ? (
-                            <aside
-                                className="page-flow-sidebar"
-                                style={{ gridRow: rowIndex + 1 }}
-                            >
-                                <div className={sidebarSticky ? 'sidebar-sticky' : ''}>
-                                    {sidebar}
-                                </div>
-                            </aside>
-                        ) : null}
-                    </Fragment>
+                    </div>
                 )
             )}
+            {hasSidebar ? (
+                <aside
+                    className="page-flow-sidebar"
+                    style={{
+                        gridRow: `${firstGroupRow + 1} / span ${lastGroupRow - firstGroupRow + 1}`,
+                    }}
+                >
+                    <div className={sidebarSticky ? 'sidebar-sticky' : ''}>{sidebar}</div>
+                </aside>
+            ) : null}
         </div>
     );
 }

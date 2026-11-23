@@ -153,6 +153,7 @@ export default function BlockRenderer({ block }: Props) {
                     title={block.title}
                     meta={block.meta}
                     share={block.share}
+                    showHeader={block.showHeader !== false}
                     layout={block.layout}
                     html={block.html}
                     codeCopy={block.codeCopy}

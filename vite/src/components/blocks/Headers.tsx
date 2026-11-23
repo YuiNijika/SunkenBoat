@@ -73,10 +73,48 @@ interface PostHeaderProps {
         likes: number;
         likesText: string;
         categories: PostCategory[];
-    };
+    } | null;
+    embedded?: boolean;
 }
 
-export function PostHeaderBlock({ title, meta, share }: PostHeaderProps) {
+export function PostHeaderBlock({ title, meta, share, embedded = false }: PostHeaderProps) {
+    const metaRow = meta ? (
+        <div
+            className={
+                embedded
+                    ? 'mt-3 flex flex-wrap items-center justify-between gap-2'
+                    : 'mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-line pt-3'
+            }
+        >
+            <div className="min-w-0">
+                <PostMeta
+                    date={meta.date}
+                    dateIso={meta.dateIso}
+                    author={meta.author}
+                    commentsText={meta.commentsText}
+                    views={meta.views}
+                    viewsText={meta.viewsText}
+                    likes={meta.likes}
+                    likesText={meta.likesText}
+                    categories={meta.categories}
+                />
+            </div>
+            <ShareButton config={share} title={title} />
+        </div>
+    ) : null;
+
+    if (embedded) {
+        return (
+            <header className="mb-4 border-b border-line pb-4 sm:mb-5">
+                <p className="text-[12px] font-normal text-brand">文章</p>
+                <h1 className="mt-2 text-[24px] font-medium leading-[1.4] text-ink sm:text-[28px]">
+                    {title}
+                </h1>
+                {metaRow}
+            </header>
+        );
+    }
+
     return (
         <Card className="surface-card gap-0 p-5">
             <Badge
@@ -88,22 +126,7 @@ export function PostHeaderBlock({ title, meta, share }: PostHeaderProps) {
             <h1 className="mt-3 text-[24px] font-medium leading-[1.4] text-ink sm:text-[28px]">
                 {title}
             </h1>
-            <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-line pt-3">
-                <div className="min-w-0">
-                    <PostMeta
-                        date={meta.date}
-                        dateIso={meta.dateIso}
-                        author={meta.author}
-                        commentsText={meta.commentsText}
-                        views={meta.views}
-                        viewsText={meta.viewsText}
-                        likes={meta.likes}
-                        likesText={meta.likesText}
-                        categories={meta.categories}
-                    />
-                </div>
-                <ShareButton config={share} title={title} />
-            </div>
+            {metaRow}
         </Card>
     );
 }
