@@ -272,7 +272,11 @@ function SiteApp({ data, appStyle }: { data: PageData; appStyle: CSSProperties }
         data.kind === 'operations' ? (
             <OperationsCenter api={data.api?.user} enabled={data.operationsEnabled !== false} />
         ) : data.kind === 'account' ? (
-            <AccountPanel api={data.api?.user} section={data.userSection ?? 'profile'} />
+            <AccountPanel
+                key={data.userSection ?? 'profile'}
+                api={data.api?.user}
+                section={data.userSection ?? 'profile'}
+            />
         ) : null;
     const sidebarNode = twoColumn ? (
         <SiteSidebar

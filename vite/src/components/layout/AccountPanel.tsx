@@ -1,23 +1,17 @@
 import { useEffect, useState } from 'react';
-import type { FormEvent, ReactNode } from 'react';
+import type { FormEvent } from 'react';
 import { useLocation } from 'react-router-dom';
 import {
     BadgeCheck,
-    CalendarCheck,
     Camera,
-    CircleAlert,
-    Coins,
     ExternalLink,
     FileText,
     KeyRound,
     Link2,
     LoaderCircle,
-    LogOut,
     Mail,
-    MapPin,
     Newspaper,
     ShieldCheck,
-    Sparkles,
     Unlink,
     UserCheck,
     UserRound,
@@ -31,11 +25,6 @@ import {
     DialogTitle,
 } from '../ui/dialog';
 import { Input } from '../ui/input';
-import {
-    Tooltip,
-    TooltipContent,
-    TooltipTrigger,
-} from '../ui/tooltip';
 import {
     errorMessage,
     profileFrom,
@@ -55,21 +44,13 @@ import { cssUrl } from '../../lib/css';
 import { loadSession } from '../../lib/session';
 import ContentManager from './ContentManager';
 import AuthDialog from './AuthDialog';
-import TabsNav from './TabsNav';
 import UserAvatar from './UserAvatar';
+import UserCenterShell from './UserCenterShell';
+import type { AccountNavGroup, AccountSection } from './UserCenterShell';
 import DownloadHistory from '../content/DownloadHistory';
-import LevelBadge from '../content/LevelBadge';
 import MediaLibrary from '../content/MediaLibrary';
 import CaptchaDialog from './CaptchaDialog';
 import type { CaptchaValue } from './CaptchaField';
-
-const GROUP_LABELS: Record<string, string> = {
-    administrator: '管理员',
-    editor: '编辑',
-    contributor: '贡献者',
-    subscriber: '订阅者',
-    visitor: '访客',
-};
 
 type Status = 'loading' | 'guest' | 'ready' | 'error';
 
@@ -86,8 +67,6 @@ interface ProfileDetails {
     privacy: string;
     location: string;
 }
-
-type AccountSection = 'profile' | 'security' | 'social' | 'content' | 'downloads';
 
 const EMPTY_DETAILS: ProfileDetails = {
     avatar: '',
@@ -120,6 +99,24 @@ const OAUTH_ERRORS: Record<string, string> = {
     oauth_bound: '该社交账号已绑定到其他用户。',
     oauth_unbound: '该社交账号尚未绑定，请先登录后到用户中心绑定。',
 };
+
+type AccountFeedback = {
+    tone: 'success' | 'error';
+    message: string;
+} | null;
+
+function isHttpUrl(value: string): boolean {
+    try {
+        const url = new URL(value);
+        return (
+            (url.protocol === 'http:' || url.protocol === 'https:')
+            && url.username === ''
+            && url.password === ''
+        );
+    } catch {
+        return false;
+    }
+}
 
 function detailsFromProfile(profile: UserProfile): ProfileDetails {
     return {
@@ -169,6 +166,8 @@ function ProfileAvatar({ profile, className }: { profile: UserProfile; className
                 className="size-full object-cover"
                 src={profile.avatar}
                 alt=""
+                width={72}
+                height={72}
                 loading="lazy"
                 referrerPolicy="no-referrer"
                 onError={() => setFailed(true)}
@@ -216,10 +215,37 @@ export default function AccountPanel({ api, section = 'profile' }: Props) {
     const [checkinCaptcha, setCheckinCaptcha] = useState<CaptchaValue | null>(null);
     const [checkinCaptchaOpen, setCheckinCaptchaOpen] = useState(false);
     const [checkinBusy, setCheckinBusy] = useState(false);
+    const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
+    const [feedback, setFeedback] = useState<AccountFeedback>(null);
 
     const sessionEndpoint = api?.session;
     const meEndpoint = api?.me;
     const location = useLocation();
+
+    const clearFeedback = () => {
+        setFeedback(null);
+    };
+
+    const clearFieldError = (field: string) => {
+        setFieldErrors((current) => {
+            if (!current[field]) {
+                return current;
+            }
+
+            const next = { ...current };
+            delete next[field];
+            return next;
+        });
+    };
+
+    const reportFieldError = (field: string, message: string) => {
+        setFieldErrors({ [field]: message });
+        window.requestAnimationFrame(() => {
+            document
+                .querySelector<HTMLElement>(`[data-account-field="${field}"]`)
+                ?.focus();
+        });
+    };
 
     useEffect(() => {
         setOauthProviders(api?.oauth?.providers ?? []);
@@ -406,45 +432,27 @@ export default function AccountPanel({ api, section = 'profile' }: Props) {
             return;
         }
 
-        if (url.trim() !== '') {
-            try {
-                new URL(url.trim());
-            } catch {
-                notifyError('个人主页需要填写完整的 http(s) 地址');
-                return;
-            }
+        setFeedback(null);
+        setFieldErrors({});
+
+        if (screenName.trim() === '') {
+            reportFieldError('screen-name', '显示名称不能为空。');
+            return;
         }
 
-        if (details.avatar.trim() !== '') {
-            try {
-                const avatarUrl = new URL(details.avatar.trim());
-                if (
-                    (avatarUrl.protocol !== 'http:' && avatarUrl.protocol !== 'https:')
-                    || avatarUrl.username !== ''
-                    || avatarUrl.password !== ''
-                ) {
-                    throw new Error();
-                }
-            } catch {
-                notifyError('头像地址需要填写完整的 http(s) 链接');
-                return;
-            }
+        if (url.trim() !== '' && !isHttpUrl(url.trim())) {
+            reportFieldError('profile-url', '请输入完整的 http(s) 个人主页地址。');
+            return;
         }
 
-        if (details.background.trim() !== '') {
-            try {
-                const backgroundUrl = new URL(details.background.trim());
-                if (
-                    (backgroundUrl.protocol !== 'http:' && backgroundUrl.protocol !== 'https:')
-                    || backgroundUrl.username !== ''
-                    || backgroundUrl.password !== ''
-                ) {
-                    throw new Error();
-                }
-            } catch {
-                notifyError('背景图地址需要填写完整的 http(s) 链接');
-                return;
-            }
+        if (details.avatar.trim() !== '' && !isHttpUrl(details.avatar.trim())) {
+            reportFieldError('profile-avatar', '头像地址必须是完整的 http(s) 链接。');
+            return;
+        }
+
+        if (details.background.trim() !== '' && !isHttpUrl(details.background.trim())) {
+            reportFieldError('profile-background', '背景图地址必须是完整的 http(s) 链接。');
+            return;
         }
 
         setProfileBusy(true);
@@ -480,11 +488,12 @@ export default function AccountPanel({ api, section = 'profile' }: Props) {
             }
 
             syncProfile(updated);
+            setFeedback({ tone: 'success', message: '个人资料已保存，公开主页会同步更新。' });
             notifySuccess('个人资料已更新。');
         } catch (reason) {
-            notifyError(
-                reason instanceof Error ? reason.message : '资料保存失败'
-            );
+            const message = reason instanceof Error ? reason.message : '资料保存失败';
+            setFeedback({ tone: 'error', message });
+            notifyError(message);
         } finally {
             setProfileBusy(false);
         }
@@ -500,6 +509,7 @@ export default function AccountPanel({ api, section = 'profile' }: Props) {
         }
 
         const previous = details;
+        setFeedback(null);
         setBackgroundBusy(true);
         try {
             const updated = await saveDetails(nextDetails);
@@ -507,12 +517,13 @@ export default function AccountPanel({ api, section = 'profile' }: Props) {
                 throw new Error('接口未返回更新后的资料');
             }
             syncProfile(updated);
+            setFeedback({ tone: 'success', message: '个人主页背景已更新。' });
             notifySuccess('个人主页背景已更新。');
         } catch (reason) {
             setDetails(previous);
-            notifyError(
-                reason instanceof Error ? reason.message : '背景图保存失败'
-            );
+            const message = reason instanceof Error ? reason.message : '背景图保存失败';
+            setFeedback({ tone: 'error', message });
+            notifyError(message);
         } finally {
             setBackgroundBusy(false);
         }
@@ -524,6 +535,7 @@ export default function AccountPanel({ api, section = 'profile' }: Props) {
         }
 
         setOauthBusy(provider.id);
+        setFeedback(null);
 
         try {
             const response = await fetch(api.oauth.unbind, {
@@ -554,9 +566,15 @@ export default function AccountPanel({ api, section = 'profile' }: Props) {
                     )
                 );
             }
+            setFeedback({
+                tone: 'success',
+                message: `${provider.label} 已解绑，后续不能再使用该平台登录。`,
+            });
             notifySuccess(`${provider.label} 已解绑。`);
         } catch (reason) {
-            notifyError(reason instanceof Error ? reason.message : '解绑失败');
+            const message = reason instanceof Error ? reason.message : '解绑失败';
+            setFeedback({ tone: 'error', message });
+            notifyError(message);
         } finally {
             setOauthBusy('');
         }
@@ -569,7 +587,7 @@ export default function AccountPanel({ api, section = 'profile' }: Props) {
 
         const nextMail = mail.trim();
         if (nextMail === '') {
-            notifyError('请先填写新邮箱');
+            reportFieldError('account-mail', '请先填写新邮箱。');
             return;
         }
 
@@ -578,13 +596,17 @@ export default function AccountPanel({ api, section = 'profile' }: Props) {
         try {
             const result = await requestEmailCode(api.emailCode, nextMail, 'email');
             setCooldown(result.cooldown);
+            setFeedback({
+                tone: 'success',
+                message: `验证码已发送至 ${nextMail}，请在有效期内完成验证。`,
+            });
             notifySuccess(
                 `验证码已发送至新邮箱，${Math.max(1, Math.ceil(result.expiresIn / 60))} 分钟内有效。`
             );
         } catch (reason) {
-            notifyError(
-                reason instanceof Error ? reason.message : '验证码发送失败'
-            );
+            const message = reason instanceof Error ? reason.message : '验证码发送失败';
+            setFeedback({ tone: 'error', message });
+            notifyError(message);
         } finally {
             setSendingCode(false);
         }
@@ -596,19 +618,26 @@ export default function AccountPanel({ api, section = 'profile' }: Props) {
             return;
         }
 
+        setFeedback(null);
+        setFieldErrors({});
         const nextMail = mail.trim();
         if (nextMail === '') {
-            notifyError('邮箱不能为空');
+            reportFieldError('account-mail', '邮箱不能为空。');
+            return;
+        }
+
+        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(nextMail)) {
+            reportFieldError('account-mail', '请输入有效的邮箱地址。');
             return;
         }
 
         if (profile && nextMail.toLowerCase() === profile.mail?.toLowerCase()) {
-            notifyError('新邮箱不能与当前邮箱相同');
+            reportFieldError('account-mail', '新邮箱不能与当前邮箱相同。');
             return;
         }
 
         if (api.emailVerify && emailCode.trim() === '') {
-            notifyError('请输入发送到新邮箱的验证码');
+            reportFieldError('email-code', '请输入发送到新邮箱的验证码。');
             return;
         }
 
@@ -639,9 +668,12 @@ export default function AccountPanel({ api, section = 'profile' }: Props) {
 
             syncProfile(updated);
             setEmailCode('');
+            setFeedback({ tone: 'success', message: '登录邮箱已更新。' });
             notifySuccess('登录邮箱已更新。');
         } catch (reason) {
-            notifyError(reason instanceof Error ? reason.message : '邮箱更新失败');
+            const message = reason instanceof Error ? reason.message : '邮箱更新失败';
+            setFeedback({ tone: 'error', message });
+            notifyError(message);
         } finally {
             setMailBusy(false);
         }
@@ -653,13 +685,20 @@ export default function AccountPanel({ api, section = 'profile' }: Props) {
             return;
         }
 
+        setFeedback(null);
+        setFieldErrors({});
+        if (currentPassword === '') {
+            reportFieldError('current-password', '请输入当前密码。');
+            return;
+        }
+
         if (newPassword !== confirmPassword) {
-            notifyError('两次输入的新密码不一致');
+            reportFieldError('confirm-password', '两次输入的新密码不一致。');
             return;
         }
 
         if (newPassword.length < 6 || newPassword.length > 18) {
-            notifyError('新密码长度需为 6–18 个字符');
+            reportFieldError('new-password', '新密码长度需为 6–18 个字符。');
             return;
         }
 
@@ -688,9 +727,15 @@ export default function AccountPanel({ api, section = 'profile' }: Props) {
             setCurrentPassword('');
             setNewPassword('');
             setConfirmPassword('');
+            setFeedback({
+                tone: 'success',
+                message: '密码已修改，其他设备上的旧登录凭证已失效。',
+            });
             notifySuccess('密码已修改，其他设备上的旧登录凭证已失效。');
         } catch (reason) {
-            notifyError(reason instanceof Error ? reason.message : '密码修改失败');
+            const message = reason instanceof Error ? reason.message : '密码修改失败';
+            setFeedback({ tone: 'error', message });
+            notifyError(message);
         } finally {
             setPasswordBusy(false);
         }
@@ -733,12 +778,14 @@ export default function AccountPanel({ api, section = 'profile' }: Props) {
         if (!api?.certification || !api.certificationNonce || certBusy) {
             return;
         }
+        setFeedback(null);
+        setFieldErrors({});
         if (certName.trim().length < 2) {
-            notifyError('请填写真实姓名或组织名称');
+            reportFieldError('cert-name', '请填写真实姓名或组织名称。');
             return;
         }
         if (certNote.trim() === '') {
-            notifyError('请填写认证说明');
+            reportFieldError('cert-note', '请填写认证说明。');
             return;
         }
 
@@ -769,13 +816,16 @@ export default function AccountPanel({ api, section = 'profile' }: Props) {
             if (next) {
                 setCertification(next);
             }
-            notifySuccess(
+            const message =
                 typeof data?.message === 'string' && data.message !== ''
                     ? data.message
-                    : '认证申请已提交，请等待管理员审核。'
-            );
+                    : '认证申请已提交，请等待管理员审核。';
+            setFeedback({ tone: 'success', message });
+            notifySuccess(message);
         } catch (reason) {
-            notifyError(reason instanceof Error ? reason.message : '认证申请提交失败');
+            const message = reason instanceof Error ? reason.message : '认证申请提交失败';
+            setFeedback({ tone: 'error', message });
+            notifyError(message);
         } finally {
             setCertBusy(false);
         }
@@ -789,15 +839,15 @@ export default function AccountPanel({ api, section = 'profile' }: Props) {
             ? apiReady
                 ? '账号服务正在初始化，请稍后重新加载页面。'
                 : api?.admin
-                  ? '前台用户中心已开启，但 REST API 总开关或 v2 写接口尚未开启。请到“设置外观 → 运行&扩展 → 接口&安全”开启这两项后重试。'
+                  ? '前台用户中心已开启，但 REST v2 接口尚未开启。请到“设置外观 → 运行&扩展 → 接口&安全”开启 REST v2 后重试。'
                   : '站点正在配置前台账号服务，请稍后再试或联系管理员。'
             : '站点暂未开放前台账号服务，请联系管理员。';
 
         return (
-            <div className="surface-card card-pad">
+            <div className="user-center-state">
                 <p className="section-label">Account</p>
-                <h2 className="mt-2 text-[20px] font-medium">{title}</h2>
-                <p className="mt-2 text-[13px] leading-6 text-ink-mute">
+                <h1>{title}</h1>
+                <p>
                     {description}
                 </p>
             </div>
@@ -806,21 +856,28 @@ export default function AccountPanel({ api, section = 'profile' }: Props) {
 
     if (status === 'loading') {
         return (
-            <div className="surface-card card-pad grid gap-4" aria-busy="true">
-                <div className="h-5 w-36 animate-pulse rounded-[4px] bg-surface-2" />
-                <div className="h-28 animate-pulse rounded-[6px] bg-surface-2" />
-                <div className="h-28 animate-pulse rounded-[6px] bg-surface-2" />
+            <div className="user-center-state user-center-state-loading" aria-busy="true">
+                <div className="user-center-state-heading">
+                    <span />
+                    <span />
+                </div>
+                <div className="user-center-state-grid">
+                    <div />
+                    <div />
+                    <div />
+                </div>
+                <span className="sr-only">正在读取账号信息…</span>
             </div>
         );
     }
 
     if (status === 'error') {
         return (
-            <div className="surface-card card-pad text-center">
+            <div className="user-center-state user-center-state-error">
                 <p className="section-label">Account</p>
-                <h2 className="mt-2 text-[20px] font-medium">无法读取账号信息</h2>
-                <p className="mt-2 text-[13px] leading-6 text-ink-mute">{loadError}</p>
-                <Button className="mt-5" type="button" variant="secondary" onClick={() => refreshApp()}>
+                <h1>无法读取账号信息</h1>
+                <p>{loadError}</p>
+                <Button type="button" variant="secondary" onClick={() => refreshApp()}>
                     重新加载
                 </Button>
             </div>
@@ -830,15 +887,15 @@ export default function AccountPanel({ api, section = 'profile' }: Props) {
     if (status === 'guest' || !profile) {
         return (
             <>
-                <div className="surface-card card-pad text-center">
-                    <span className="mx-auto grid size-11 place-items-center rounded-full bg-brand-soft text-brand">
+                <div className="user-center-state user-center-guest-state">
+                    <span className="user-center-state-icon">
                         <UserRound className="size-5" strokeWidth={1.8} aria-hidden="true" />
                     </span>
-                    <h2 className="mt-4 text-[20px] font-medium">登录后管理账号</h2>
-                    <p className="mx-auto mt-2 max-w-md text-[13px] leading-6 text-ink-mute">
+                    <h1>登录后管理账号</h1>
+                    <p>
                         登录后可管理个人资料、账号安全和社交账号。
                     </p>
-                    <Button className="mt-5" type="button" onClick={() => setAuthOpen(true)}>
+                    <Button type="button" onClick={() => setAuthOpen(true)}>
                         登录 / 注册
                     </Button>
                     {loadError ? (
@@ -860,30 +917,12 @@ export default function AccountPanel({ api, section = 'profile' }: Props) {
         );
     }
 
-    const created = profile.created ? new Date(profile.created) : null;
-    const createdText =
-        created && !Number.isNaN(created.getTime())
-            ? `${created.getFullYear()}-${String(created.getMonth() + 1).padStart(2, '0')}-${String(
-                  created.getDate()
-              ).padStart(2, '0')}`
-            : '';
     const avatarPreview: UserProfile = {
         ...profile,
         avatar: details.avatar || profile.avatar,
         customAvatar: details.avatar,
     };
     const coverUrl = details.background || profile.background || '';
-    const coverStyle = coverUrl !== ''
-        ? {
-              backgroundImage:
-                  'linear-gradient(180deg, rgba(8, 12, 18, 0.12), rgba(8, 12, 18, 0.34)), '
-                  + cssUrl(coverUrl),
-              backgroundSize: 'cover',
-              backgroundPosition: 'center',
-          }
-        : undefined;
-    const certificationApproved = certification?.status === 'approved';
-
     const pageUrls = api.pages;
     const spaceUrl = `${pageUrls.space.replace(/\/+$/, '')}/${profile.uid}`;
     const forumLabel = api.forum?.label || '圈子';
@@ -939,439 +978,175 @@ export default function AccountPanel({ api, section = 'profile' }: Props) {
         void runCheckin(checkinCaptcha);
     };
 
-    const navItems: { id: AccountSection; href: string; label: string; icon: ReactNode }[] = [
-        {
-            id: 'profile',
-            href: pageUrls.profile,
-            label: '个人资料',
-            icon: <UserRound className="size-4" strokeWidth={1.8} aria-hidden="true" />,
-        },
-        {
-            id: 'security',
-            href: pageUrls.account,
-            label: '账号安全',
-            icon: <ShieldCheck className="size-4" strokeWidth={1.8} aria-hidden="true" />,
-        },
-    ];
-
-    if (api.oauth?.enabled) {
-        navItems.push({
-            id: 'social',
-            href: pageUrls.social,
-            label: '社交账号',
-            icon: <Link2 className="size-4" strokeWidth={1.8} aria-hidden="true" />,
-        });
-    }
-
-    if (profile.canWrite || api.forum?.canPost || api.forum?.canCreateCircle) {
-        navItems.push({
-            id: 'content',
-            href: pageUrls.content,
-            label: '内容管理',
-            icon: <Newspaper className="size-4" strokeWidth={1.8} aria-hidden="true" />,
-        });
-    }
-
-    if (api.downloads.enabled) {
-        navItems.push({
-            id: 'downloads',
-            href: pageUrls.downloads,
-            label: '订单&下载',
-            icon: <FileText className="size-4" strokeWidth={1.8} aria-hidden="true" />,
-        });
-    }
-
     const socialCount = oauthProviders.filter((provider) => provider.bound).length;
+    const contentEnabled =
+        profile.canWrite || api.forum?.canPost === true || api.forum?.canCreateCircle === true;
+    const navGroups: AccountNavGroup[] = [
+        {
+            label: '账户',
+            items: [
+                {
+                    id: 'profile' as const,
+                    href: pageUrls.profile,
+                    label: '个人资料',
+                    description: '公开身份、头像与隐私',
+                    icon: <UserRound strokeWidth={1.8} aria-hidden="true" />,
+                },
+                {
+                    id: 'security' as const,
+                    href: pageUrls.account,
+                    label: '登录与安全',
+                    description: '邮箱、密码与登录凭证',
+                    icon: <ShieldCheck strokeWidth={1.8} aria-hidden="true" />,
+                },
+            ],
+        },
+        {
+            label: '内容与资产',
+            items: [
+                ...(contentEnabled
+                    ? [{
+                          id: 'content' as const,
+                          href: pageUrls.content,
+                          label: '内容工作台',
+                          description: `文章、${forumLabel}与评论`,
+                          icon: <Newspaper strokeWidth={1.8} aria-hidden="true" />,
+                      }]
+                    : []),
+                ...(api.downloads.enabled
+                    ? [{
+                          id: 'downloads' as const,
+                          href: pageUrls.downloads,
+                          label: '订单与下载',
+                          description: '购买记录与资源下载',
+                          icon: <FileText strokeWidth={1.8} aria-hidden="true" />,
+                      }]
+                    : []),
+            ],
+        },
+        {
+            label: '登录方式',
+            items: api.oauth?.enabled
+                ? [{
+                      id: 'social' as const,
+                      href: pageUrls.social,
+                      label: '社交账号',
+                      description: socialCount > 0 ? `已绑定 ${socialCount} 个平台` : '绑定第三方登录',
+                      icon: <Link2 strokeWidth={1.8} aria-hidden="true" />,
+                      count: socialCount > 0 ? socialCount : undefined,
+                  }]
+                : [],
+        },
+    ].filter((group) => group.items.length > 0);
+
     const sectionTitles: Record<AccountSection, { title: string; description: string }> = {
         profile: {
             title: '个人资料',
-            description: '完善资料后会展示在用户中心，用户名与登录邮箱仍由 Typecho 管理。',
+            description: '设置你在站点内公开显示的身份与个人主页信息。',
         },
         security: {
-            title: '账号安全',
-            description: '管理登录邮箱与密码；敏感操作需要当前账号验证。',
+            title: '登录与安全',
+            description: '管理登录邮箱和密码；修改会同步失效其他设备上的旧凭证。',
         },
         social: {
             title: '社交账号',
-            description: '通过 OAuth 授权绑定社交账号，绑定后可直接使用对应平台登录。',
+            description: '连接可信第三方账号，之后可直接使用对应平台登录。',
         },
         content: {
-            title: '内容管理',
-            description: `统一管理文章、${forumLabel}帖子、${forumLabel}与我的评论，数据会随页面一起加载。`,
+            title: '内容工作台',
+            description: `集中处理文章、${forumLabel}帖子、${forumLabel}和互动记录。`,
         },
         downloads: {
-            title: '订单&下载',
-            description: '查看免费领取与付费购买的订单号、支付状态和下载记录。',
+            title: '订单与下载',
+            description: '核对免费领取、付费订单、支付状态和资源下载。',
         },
     };
 
     return (
-        <div className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-[15px]">
-            <section className="account-profile-card surface-card overflow-hidden">
-                <div className="account-cover" style={coverStyle} aria-label="个人主页背景">
-                    {api.enhanced ? (
-                        <div className="account-cover-actions">
-                            <Button
-                                type="button"
-                                size="sm"
-                                variant="secondary"
-                                className="account-cover-button"
-                                disabled={backgroundBusy || !detailsReady}
-                                onClick={() => setBackgroundMediaOpen(true)}
-                            >
-                                <Camera aria-hidden="true" />
-                                {backgroundBusy ? '保存中…' : '更换背景'}
-                            </Button>
-                        </div>
-                    ) : null}
-                </div>
-                <div className="account-profile-shell">
-                    <div className="account-profile-main">
-                        <ProfileAvatar profile={profile} className="account-profile-avatar" />
-                        <div className="account-profile-copy">
-                            <div className="account-profile-heading">
-                                <h1 className="account-profile-name">
-                                    {profile.screenName || profile.name}
-                                </h1>
-                                {economy?.enabled ? (
-                                    <span className="account-profile-level">
-                                        <LevelBadge
-                                            level={economy.level}
-                                            iconClassName="h-8 w-auto"
-                                            showTitle={false}
-                                        />
-                                    </span>
-                                ) : null}
-                                <span className="account-profile-role">
-                                    {GROUP_LABELS[profile.group] ?? profile.group}
-                                </span>
-                                {certificationApproved ? (
-                                    <button
-                                        type="button"
-                                        className="account-profile-certification"
-                                        title="查看认证详情"
-                                        onClick={() => setCertDetailsOpen(true)}
-                                    >
-                                        <BadgeCheck
-                                            className="size-3.5"
-                                            strokeWidth={2}
-                                            aria-hidden="true"
-                                        />
-                                        {certification?.name || '站点认证'}
-                                    </button>
-                                ) : null}
-                            </div>
-                            <p className="account-profile-handle">
-                                @{profile.name}
-                                <span aria-hidden="true">·</span>
-                                UID {profile.uid}
-                            </p>
-                            <p
-                                className={
-                                    'account-profile-signature'
-                                    + (details.signature ? '' : ' is-empty')
-                                }
-                            >
-                                {details.signature || '这个人很神秘，还没有填写个性签名。'}
-                            </p>
-                        </div>
+        <>
+        <UserCenterShell
+            active={section}
+            api={api}
+            coverUrl={coverUrl}
+            economy={economy}
+            loggingOut={loggingOut}
+            navGroups={navGroups}
+            onCheckin={checkin}
+            onCertificationClick={() => setCertDetailsOpen(true)}
+            onLogout={() => void logout()}
+            pageDescription={sectionTitles[section].description}
+            pageTitle={sectionTitles[section].title}
+            profile={profile}
+            spaceUrl={spaceUrl}
+            checkinBusy={checkinBusy}
+        >
+            <div className="user-center-content-card">
+                {feedback ? (
+                    <div
+                        className={`user-center-feedback is-${feedback.tone}`}
+                        role={feedback.tone === 'error' ? 'alert' : 'status'}
+                        aria-live="polite"
+                    >
+                        <span>{feedback.message}</span>
+                        <button type="button" onClick={clearFeedback}>
+                            关闭
+                        </button>
                     </div>
-
-                    <div className="account-profile-details">
-                        <div className="account-profile-stats">
-                            <div>
-                                <strong>{profile.posts ?? 0}</strong>
-                                <small>文章</small>
-                            </div>
-                            <div>
-                                <strong>{profile.comments ?? 0}</strong>
-                                <small>评论</small>
-                            </div>
-                            {typeof profile.circles === 'number' ? (
-                                <div
-                                    title={`加入 ${profile.joinedCircles ?? 0} · 创建 ${profile.createdCircles ?? 0}`}
-                                >
-                                    <strong>{profile.circles}</strong>
-                                    <small>{forumLabel}</small>
-                                </div>
-                            ) : null}
-                        </div>
-                        <div className="account-profile-meta">
-                            {createdText ? (
-                                <span>
-                                    <CalendarCheck
-                                        className="size-3.5"
-                                        strokeWidth={1.8}
-                                        aria-hidden="true"
-                                    />
-                                    {createdText} 加入
-                                </span>
-                            ) : null}
-                            {details.location ? (
-                                <span>
-                                    <MapPin
-                                        className="size-3.5"
-                                        strokeWidth={1.8}
-                                        aria-hidden="true"
-                                    />
-                                    {details.location}
-                                </span>
-                            ) : null}
-                            {details.gender !== 'secret' ? (
-                                <span>
-                                    <UserRound
-                                        className="size-3.5"
-                                        strokeWidth={1.8}
-                                        aria-hidden="true"
-                                    />
-                                    {GENDER_LABELS[details.gender] ?? details.gender}
-                                </span>
-                            ) : null}
-                            {profile.url ? (
-                                <a
-                                    href={profile.url}
-                                    target="_blank"
-                                    rel="noreferrer noopener"
-                                >
-                                    <ExternalLink
-                                        className="size-3.5"
-                                        strokeWidth={1.8}
-                                        aria-hidden="true"
-                                    />
-                                    个人主页
-                                </a>
-                            ) : null}
-                            <span className="account-profile-privacy">
-                                {PRIVACY_LABELS[details.privacy] ?? '公开资料'}
-                            </span>
-                        </div>
-                        <div className="account-profile-actions">
-                            {api.operations?.enabled ? (
-                                <Button asChild type="button" size="sm">
-                                    <a href={api.operations.home}>
-                                        <ShieldCheck aria-hidden="true" />
-                                        运营中心
-                                    </a>
-                                </Button>
-                            ) : null}
-                            <Button asChild type="button" variant="outline" size="sm">
-                                <a href={spaceUrl}>
-                                    <ExternalLink aria-hidden="true" />
-                                    查看空间
-                                </a>
-                            </Button>
-                            <Button
-                                type="button"
-                                variant="ghost"
-                                size="icon-sm"
-                                disabled={loggingOut}
-                                title={loggingOut ? '退出中…' : '退出登录'}
-                                aria-label={loggingOut ? '退出中…' : '退出登录'}
-                                onClick={() => void logout()}
-                            >
-                                {loggingOut ? (
-                                    <LoaderCircle className="animate-spin" aria-hidden="true" />
-                                ) : (
-                                    <LogOut aria-hidden="true" />
-                                )}
-                            </Button>
-                        </div>
-                    </div>
-                </div>
-                <div className="px-4 pb-4">
-                    {loadError ? (
-                        <p className="text-[12px] leading-5 text-destructive" role="alert">
-                            {loadError}
-                        </p>
-                    ) : null}
-                </div>
-            </section>
-
-            <TabsNav
-                variant="link"
-                className="account-tabs"
-                ariaLabel="用户中心"
-                items={navItems}
-                active={section}
-            />
-
-            {economy && (economy.enabled || economy.status.banned) ? (
-                <section className="surface-card card-pad">
-                    <div className="flex flex-wrap items-start justify-between gap-3">
-                        <div>
-                            <p className="section-label">Account wallet</p>
-                            <h3 className="mt-1.5 flex items-center gap-2 text-[18px] font-medium">
-                                {economy.enabled ? (
-                                    <LevelBadge
-                                        level={economy.level}
-                                        iconClassName="h-5 w-auto"
-                                        showTitle={false}
-                                    />
-                                ) : (
-                                    '账号状态'
-                                )}
-                            </h3>
-                            {economy.enabled ? (
-                                <p className="mt-1 text-[12px] leading-5 text-ink-mute">
-                                    经验 {economy.experience}
-                                    {economy.level.nextExperience > economy.experience
-                                        ? ` · 距「${economy.level.nextTitle}」还需 ${economy.level.nextExperience - economy.experience} 经验`
-                                        : ' · 已达到当前最高等级'}
-                                </p>
-                            ) : null}
-                        </div>
-                        {economy.enabled && economy.checkin.enabled ? (
-                            <Tooltip>
-                                <TooltipTrigger asChild>
-                                    <span tabIndex={0} className="inline-flex">
-                                        <Button
-                                            type="button"
-                                            size="sm"
-                                            onClick={() => void checkin()}
-                                            disabled={checkinBusy || economy.checkin.checkedIn}
-                                        >
-                                            {checkinBusy ? (
-                                                <LoaderCircle
-                                                    className="animate-spin"
-                                                    aria-hidden="true"
-                                                />
-                                            ) : (
-                                                <CalendarCheck aria-hidden="true" />
-                                            )}
-                                            {economy.checkin.checkedIn ? '今日已签到' : '签到'}
-                                        </Button>
-                                    </span>
-                                </TooltipTrigger>
-                                <TooltipContent side="bottom" className="max-w-60 px-3 py-2">
-                                    <div className="grid gap-1 text-[11.5px] leading-5">
-                                        <p className="font-medium">
-                                            总签到 {economy.checkin.total} 天
-                                            {economy.checkin.streak > 0
-                                                ? ` · 连续 ${economy.checkin.streak} 天`
-                                                : ''}
-                                        </p>
-                                        <p className="opacity-80">
-                                            {economy.checkin.checkedIn
-                                                ? `今日已签到（${economy.checkin.today}）`
-                                                : '今日还未签到'}
-                                        </p>
-                                        <p className="opacity-80">
-                                            最近签到：
-                                            {economy.checkin.last || '暂无记录'}
-                                        </p>
-                                    </div>
-                                </TooltipContent>
-                            </Tooltip>
-                        ) : null}
-                    </div>
-
-                    {economy.status.banned ? (
-                        <div className="mt-4 flex items-start gap-2 rounded-lg border border-danger/30 bg-danger/5 p-3 text-[12px] leading-5 text-danger">
-                            <CircleAlert className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
-                            <span>{economy.status.message}</span>
-                        </div>
-                    ) : null}
-
-                    {economy.enabled ? (
-                        <>
-                            <div className="mt-4 grid gap-2 sm:grid-cols-3">
-                                <div className="rounded-lg border border-line bg-surface-mute p-3">
-                                    <p className="flex items-center gap-1.5 text-[11px] text-ink-faint">
-                                        <Coins className="size-3.5" aria-hidden="true" />
-                                        {economy.labels.balance}
-                                    </p>
-                                    <p className="mt-1 text-lg font-semibold tabular-nums text-ink">
-                                        ¥{economy.balance}
-                                    </p>
-                                </div>
-                                <div className="rounded-lg border border-line bg-surface-mute p-3">
-                                    <p className="flex items-center gap-1.5 text-[11px] text-ink-faint">
-                                        <Sparkles className="size-3.5" aria-hidden="true" />
-                                        {economy.labels.points}
-                                    </p>
-                                    <p className="mt-1 text-lg font-semibold tabular-nums text-ink">
-                                        {economy.points}
-                                    </p>
-                                </div>
-                                <div className="rounded-lg border border-line bg-surface-mute p-3">
-                                    <p className="flex items-center gap-1.5 text-[11px] text-ink-faint">
-                                        <LevelBadge
-                                            level={economy.level}
-                                            iconClassName="h-3.5 w-auto"
-                                            showTitle={false}
-                                        />
-                                        等级进度
-                                    </p>
-                                    <div
-                                        className="mt-2.5 h-1.5 overflow-hidden rounded-full bg-line"
-                                        role="progressbar"
-                                        aria-valuemin={0}
-                                        aria-valuemax={100}
-                                        aria-valuenow={economy.level.progress}
-                                    >
-                                        <span
-                                            className="block h-full rounded-full"
-                                            style={{
-                                                width: `${economy.level.progress}%`,
-                                                background: economy.level.color,
-                                            }}
-                                        />
-                                    </div>
-                                    <p className="mt-1.5 text-[11px] text-ink-faint">
-                                        {economy.level.progress}%
-                                    </p>
-                                </div>
-                            </div>
-                            {economy.checkin.enabled && !economy.checkin.checkedIn ? (
-                                <div className="mt-4 grid gap-1.5">
-                                    <p className="text-[12px] leading-5 text-ink-mute">
-                                        今日签到可获经验 {economy.checkin.rewards.experience}、
-                                        {economy.labels.points} {economy.checkin.rewards.points}
-                                        {economy.checkin.rewards.balanceCents > 0
-                                            ? `、${economy.labels.balance} ¥${(economy.checkin.rewards.balanceCents / 100).toFixed(2)}`
-                                            : ''}
-                                        。
-                                    </p>
-                                    {checkinCaptchaRequired ? (
-                                        <p className="text-[11px] leading-5 text-ink-faint">
-                                            点击签到后会弹出人机验证，验证通过即可领取奖励。
-                                        </p>
-                                    ) : null}
-                                </div>
-                            ) : null}
-                        </>
-                    ) : null}
-                </section>
-            ) : null}
-
-            <section className="surface-card card-pad">
-                        <div className="mb-5">
-                            <p className="section-label">Account settings</p>
-                            <h3 className="mt-1.5 text-[18px] font-medium">
-                                {sectionTitles[section].title}
-                            </h3>
-                            <p className="mt-1 text-[12px] leading-5 text-ink-mute">
-                                {sectionTitles[section].description}
-                            </p>
-                        </div>
-
+                ) : null}
+                {loadError ? (
+                    <p className="user-center-feedback is-error" role="alert">
+                        {loadError}
+                    </p>
+                ) : null}
                         {section === 'profile' ? (
                             <>
-                            <form className="grid gap-4" onSubmit={(event) => void saveProfile(event)}>
+                            <form
+                                className="user-center-form"
+                                noValidate
+                                onSubmit={(event) => void saveProfile(event)}
+                            >
+                                <div className="user-center-form-intro">
+                                    <h3>公开资料</h3>
+                                    <p>这些信息会显示在公开主页和站点互动区域。</p>
+                                </div>
                                 <div className="grid gap-4 sm:grid-cols-2">
-                                    <label className="grid gap-1.5">
+                                    <label className="user-center-field">
                                         <span className="text-[12px] font-medium text-ink-soft">显示名称</span>
                                         <Input
+                                            id="account-screen-name"
+                                            name="screenName"
                                             className="h-10"
                                             value={screenName}
-                                            onChange={(event) => setScreenName(event.target.value)}
+                                            onChange={(event) => {
+                                                setScreenName(event.target.value);
+                                                clearFieldError('screen-name');
+                                            }}
                                             maxLength={150}
+                                            autoComplete="nickname"
+                                            spellCheck={false}
+                                            data-account-field="screen-name"
+                                            aria-invalid={Boolean(fieldErrors['screen-name'])}
+                                            aria-describedby={
+                                                fieldErrors['screen-name']
+                                                    ? 'account-screen-name-error'
+                                                    : undefined
+                                            }
                                         />
+                                        {fieldErrors['screen-name'] ? (
+                                            <small
+                                                id="account-screen-name-error"
+                                                className="user-center-field-error"
+                                            >
+                                                {fieldErrors['screen-name']}
+                                            </small>
+                                        ) : null}
                                     </label>
                                     {api.enhanced ? (
-                                        <label className="grid gap-1.5">
+                                        <label className="user-center-field">
                                             <span className="text-[12px] font-medium text-ink-soft">个性签名</span>
                                             <Input
+                                                id="account-signature"
+                                                name="signature"
                                                 className="h-10"
                                                 value={details.signature}
                                                 onChange={(event) =>
@@ -1382,6 +1157,7 @@ export default function AccountPanel({ api, section = 'profile' }: Props) {
                                                 }
                                                 maxLength={120}
                                                 placeholder="一句话介绍自己"
+                                                autoComplete="off"
                                             />
                                         </label>
                                     ) : null}
@@ -1390,7 +1166,7 @@ export default function AccountPanel({ api, section = 'profile' }: Props) {
                                     <>
                                         <div className="grid gap-2">
                                             <span className="text-[12px] font-medium text-ink-soft">头像</span>
-                                            <div className="flex flex-wrap items-center gap-3 rounded-[6px] border border-line bg-surface-2 p-3">
+                                            <div className="user-center-media-field">
                                                 <ProfileAvatar
                                                     profile={avatarPreview}
                                                     className="size-14 border border-line shadow-sm"
@@ -1407,16 +1183,24 @@ export default function AccountPanel({ api, section = 'profile' }: Props) {
                                                 </div>
                                                 <div className="flex shrink-0 flex-wrap items-center gap-1">
                                                     <Button
+                                                        id="account-avatar"
+                                                        name="avatar"
                                                         type="button"
                                                         variant="outline"
                                                         size="sm"
                                                         disabled={!api.avatarMediaEnabled}
                                                         onClick={() => setAvatarMediaOpen(true)}
+                                                        data-account-field="profile-avatar"
                                                     >
                                                         从媒体库选择
                                                     </Button>
                                                 </div>
                                             </div>
+                                            {fieldErrors['profile-avatar'] ? (
+                                                <small className="user-center-field-error">
+                                                    {fieldErrors['profile-avatar']}
+                                                </small>
+                                            ) : null}
                                             {!api.avatarMediaEnabled ? (
                                                 <span className="text-[11px] leading-5 text-ink-faint">
                                                     媒体库接口未启用，暂时无法更换头像。
@@ -1427,7 +1211,7 @@ export default function AccountPanel({ api, section = 'profile' }: Props) {
                                             <span className="text-[12px] font-medium text-ink-soft">
                                                 个人主页背景
                                             </span>
-                                            <div className="flex flex-wrap items-center gap-3 rounded-[6px] border border-line bg-surface-2 p-3">
+                                            <div className="user-center-media-field">
                                                 <span
                                                     className="account-cover-thumb shrink-0"
                                                     style={
@@ -1452,6 +1236,8 @@ export default function AccountPanel({ api, section = 'profile' }: Props) {
                                                     </p>
                                                 </div>
                                                 <Button
+                                                    id="account-background"
+                                                    name="background"
                                                     type="button"
                                                     variant="outline"
                                                     size="sm"
@@ -1461,11 +1247,17 @@ export default function AccountPanel({ api, section = 'profile' }: Props) {
                                                         || backgroundBusy
                                                     }
                                                     onClick={() => setBackgroundMediaOpen(true)}
+                                                    data-account-field="profile-background"
                                                 >
                                                     <Camera aria-hidden="true" />
                                                     {backgroundBusy ? '保存中…' : '从媒体库选择'}
                                                 </Button>
                                             </div>
+                                            {fieldErrors['profile-background'] ? (
+                                                <small className="user-center-field-error">
+                                                    {fieldErrors['profile-background']}
+                                                </small>
+                                            ) : null}
                                             {!api.avatarMediaEnabled ? (
                                                 <span className="text-[11px] leading-5 text-ink-faint">
                                                     媒体库接口未启用，暂时无法更换背景。
@@ -1473,9 +1265,11 @@ export default function AccountPanel({ api, section = 'profile' }: Props) {
                                             ) : null}
                                         </div>
                                         <div className="grid gap-4 sm:grid-cols-2">
-                                            <label className="grid gap-1.5">
+                                            <label className="user-center-field">
                                                 <span className="text-[12px] font-medium text-ink-soft">性别</span>
                                                 <select
+                                                    id="account-gender"
+                                                    name="gender"
                                                     className="h-10 rounded-[4px] border border-line bg-surface px-3 text-[13px] text-ink outline-none transition-[border-color,box-shadow] focus-visible:border-brand focus-visible:ring-[3px] focus-visible:ring-brand/20"
                                                     value={details.gender}
                                                     onChange={(event) =>
@@ -1492,9 +1286,11 @@ export default function AccountPanel({ api, section = 'profile' }: Props) {
                                                     ))}
                                                 </select>
                                             </label>
-                                            <label className="grid gap-1.5">
+                                            <label className="user-center-field">
                                                 <span className="text-[12px] font-medium text-ink-soft">隐私设置</span>
                                                 <select
+                                                    id="account-privacy"
+                                                    name="privacy"
                                                     className="h-10 rounded-[4px] border border-line bg-surface px-3 text-[13px] text-ink outline-none transition-[border-color,box-shadow] focus-visible:border-brand focus-visible:ring-[3px] focus-visible:ring-brand/20"
                                                     value={details.privacy}
                                                     onChange={(event) =>
@@ -1513,9 +1309,11 @@ export default function AccountPanel({ api, section = 'profile' }: Props) {
                                             </label>
                                         </div>
                                         <div className="grid gap-4 sm:grid-cols-2">
-                                            <label className="grid gap-1.5">
+                                            <label className="user-center-field">
                                                 <span className="text-[12px] font-medium text-ink-soft">居住地</span>
                                                 <Input
+                                                    id="account-location"
+                                                    name="location"
                                                     className="h-10"
                                                     value={details.location}
                                                     onChange={(event) =>
@@ -1526,32 +1324,79 @@ export default function AccountPanel({ api, section = 'profile' }: Props) {
                                                     }
                                                     maxLength={64}
                                                     placeholder="例如：广东 深圳"
+                                                    autoComplete="address-level2"
                                                 />
                                             </label>
-                                            <label className="grid gap-1.5">
+                                            <label className="user-center-field">
                                                 <span className="text-[12px] font-medium text-ink-soft">个人主页</span>
                                                 <Input
+                                                    id="account-profile-url"
+                                                    name="url"
                                                     className="h-10"
                                                     type="url"
                                                     value={url}
-                                                    onChange={(event) => setUrl(event.target.value)}
+                                                    onChange={(event) => {
+                                                        setUrl(event.target.value);
+                                                        clearFieldError('profile-url');
+                                                    }}
                                                     maxLength={255}
                                                     placeholder="https://example.com"
+                                                    autoComplete="url"
+                                                    inputMode="url"
+                                                    spellCheck={false}
+                                                    data-account-field="profile-url"
+                                                    aria-invalid={Boolean(fieldErrors['profile-url'])}
+                                                    aria-describedby={
+                                                        fieldErrors['profile-url']
+                                                            ? 'account-profile-url-error'
+                                                            : undefined
+                                                    }
                                                 />
+                                                {fieldErrors['profile-url'] ? (
+                                                    <small
+                                                        id="account-profile-url-error"
+                                                        className="user-center-field-error"
+                                                    >
+                                                        {fieldErrors['profile-url']}
+                                                    </small>
+                                                ) : null}
                                             </label>
                                         </div>
                                     </>
                                 ) : (
-                                    <label className="grid gap-1.5">
+                                    <label className="user-center-field">
                                         <span className="text-[12px] font-medium text-ink-soft">个人主页</span>
                                         <Input
+                                            id="account-profile-url"
+                                            name="url"
                                             className="h-10"
                                             type="url"
                                             value={url}
-                                            onChange={(event) => setUrl(event.target.value)}
+                                            onChange={(event) => {
+                                                setUrl(event.target.value);
+                                                clearFieldError('profile-url');
+                                            }}
                                             maxLength={255}
                                             placeholder="https://example.com"
+                                            autoComplete="url"
+                                            inputMode="url"
+                                            spellCheck={false}
+                                            data-account-field="profile-url"
+                                            aria-invalid={Boolean(fieldErrors['profile-url'])}
+                                            aria-describedby={
+                                                fieldErrors['profile-url']
+                                                    ? 'account-profile-url-error'
+                                                    : undefined
+                                            }
                                         />
+                                        {fieldErrors['profile-url'] ? (
+                                            <small
+                                                id="account-profile-url-error"
+                                                className="user-center-field-error"
+                                            >
+                                                {fieldErrors['profile-url']}
+                                            </small>
+                                        ) : null}
                                     </label>
                                 )}
                                 {api.enhanced && !detailsReady ? (
@@ -1646,11 +1491,17 @@ export default function AccountPanel({ api, section = 'profile' }: Props) {
                                     ) : null}
 
                                     {certification?.status !== 'approved' && certification?.status !== 'pending' ? (
-                                        <form className="mt-4 grid gap-3" onSubmit={(event) => void submitCertification(event)}>
+                                        <form
+                                            className="mt-4 grid gap-3"
+                                            noValidate
+                                            onSubmit={(event) => void submitCertification(event)}
+                                        >
                                             <div className="grid gap-3 sm:grid-cols-[180px_minmax(0,1fr)]">
-                                                <label className="grid gap-1.5">
+                                                <label className="user-center-field">
                                                     <span className="text-[12px] font-medium text-ink-soft">认证类型</span>
                                                     <select
+                                                        id="account-certification-type"
+                                                        name="certificationType"
                                                         className="h-10 rounded-[4px] border border-line bg-surface px-3 text-[13px] text-ink outline-none transition-[border-color,box-shadow] focus-visible:border-brand focus-visible:ring-[3px] focus-visible:ring-brand/20"
                                                         value={certType}
                                                         onChange={(event) =>
@@ -1665,32 +1516,73 @@ export default function AccountPanel({ api, section = 'profile' }: Props) {
                                                         <option value="organization">组织认证</option>
                                                     </select>
                                                 </label>
-                                                <label className="grid gap-1.5">
+                                                <label className="user-center-field">
                                                     <span className="text-[12px] font-medium text-ink-soft">
                                                         {certType === 'organization' ? '组织名称' : '真实姓名'}
                                                     </span>
                                                     <Input
+                                                        id="account-certification-name"
+                                                        name="certificationName"
                                                         className="h-10"
                                                         value={certName}
-                                                        onChange={(event) => setCertName(event.target.value)}
+                                                        onChange={(event) => {
+                                                            setCertName(event.target.value);
+                                                            clearFieldError('cert-name');
+                                                        }}
                                                         maxLength={64}
                                                         placeholder={
                                                             certType === 'organization'
                                                                 ? '例如：SunkenBoat Studio'
                                                                 : '例如：张三'
                                                         }
+                                                        autoComplete="name"
+                                                        data-account-field="cert-name"
+                                                        aria-invalid={Boolean(fieldErrors['cert-name'])}
+                                                        aria-describedby={
+                                                            fieldErrors['cert-name']
+                                                                ? 'account-certification-name-error'
+                                                                : undefined
+                                                        }
                                                     />
+                                                    {fieldErrors['cert-name'] ? (
+                                                        <small
+                                                            id="account-certification-name-error"
+                                                            className="user-center-field-error"
+                                                        >
+                                                            {fieldErrors['cert-name']}
+                                                        </small>
+                                                    ) : null}
                                                 </label>
                                             </div>
-                                            <label className="grid gap-1.5">
+                                            <label className="user-center-field">
                                                 <span className="text-[12px] font-medium text-ink-soft">认证说明</span>
                                                 <textarea
+                                                    id="account-certification-note"
+                                                    name="certificationNote"
                                                     className="min-h-[88px] rounded-[4px] border border-line bg-surface px-3 py-2 text-[13px] text-ink outline-none transition-[border-color,box-shadow] focus-visible:border-brand focus-visible:ring-[3px] focus-visible:ring-brand/20"
                                                     value={certNote}
-                                                    onChange={(event) => setCertNote(event.target.value)}
+                                                    onChange={(event) => {
+                                                        setCertNote(event.target.value);
+                                                        clearFieldError('cert-note');
+                                                    }}
                                                     maxLength={500}
                                                     placeholder="请填写认证依据、个人主页或其他可核验信息"
+                                                    data-account-field="cert-note"
+                                                    aria-invalid={Boolean(fieldErrors['cert-note'])}
+                                                    aria-describedby={
+                                                        fieldErrors['cert-note']
+                                                            ? 'account-certification-note-error'
+                                                            : undefined
+                                                    }
                                                 />
+                                                {fieldErrors['cert-note'] ? (
+                                                    <small
+                                                        id="account-certification-note-error"
+                                                        className="user-center-field-error"
+                                                    >
+                                                        {fieldErrors['cert-note']}
+                                                    </small>
+                                                ) : null}
                                             </label>
                                             <div className="flex items-center gap-2">
                                                 <Button type="submit" disabled={certBusy}>
@@ -1715,8 +1607,12 @@ export default function AccountPanel({ api, section = 'profile' }: Props) {
                         ) : null}
 
                         {section === 'security' ? (
-                            <div className="grid gap-6">
-                                <form className="grid gap-4" onSubmit={(event) => void saveMail(event)}>
+                            <div className="user-center-security">
+                                <form
+                                    className="user-center-form-card"
+                                    noValidate
+                                    onSubmit={(event) => void saveMail(event)}
+                                >
                                     <div>
                                         <h4 className="flex items-center gap-2 text-[14px] font-medium">
                                             <Mail className="size-4 text-ink-mute" strokeWidth={1.8} aria-hidden="true" />
@@ -1728,32 +1624,70 @@ export default function AccountPanel({ api, section = 'profile' }: Props) {
                                                 : '邮箱用于登录和接收站点通知。'}
                                         </p>
                                     </div>
-                                    <label className="grid gap-1.5">
+                                    <div className="user-center-current-value">
+                                        <span>当前邮箱</span>
+                                        <strong>{profile.mail || '未设置'}</strong>
+                                    </div>
+                                    <label className="user-center-field">
                                         <span className="text-[12px] font-medium text-ink-soft">新邮箱</span>
                                         <Input
+                                            id="account-mail"
+                                            name="mail"
                                             className="h-10"
                                             type="email"
                                             value={mail}
-                                            onChange={(event) => setMail(event.target.value)}
+                                            onChange={(event) => {
+                                                setMail(event.target.value);
+                                                clearFieldError('account-mail');
+                                            }}
                                             autoComplete="email"
                                             maxLength={64}
+                                            inputMode="email"
+                                            spellCheck={false}
                                             required
                                             disabled={!api.emailChangeEnabled}
+                                            data-account-field="account-mail"
+                                            aria-invalid={Boolean(fieldErrors['account-mail'])}
+                                            aria-describedby={
+                                                fieldErrors['account-mail']
+                                                    ? 'account-mail-error'
+                                                    : undefined
+                                            }
                                         />
+                                        {fieldErrors['account-mail'] ? (
+                                            <small
+                                                id="account-mail-error"
+                                                className="user-center-field-error"
+                                            >
+                                                {fieldErrors['account-mail']}
+                                            </small>
+                                        ) : null}
                                     </label>
                                     {api.emailVerify ? (
                                         <div className="grid gap-1.5">
                                             <span className="text-[12px] font-medium text-ink-soft">邮箱验证码</span>
                                             <div className="flex gap-2">
                                                 <Input
+                                                    id="account-email-code"
+                                                    name="emailCode"
                                                     className="h-10 min-w-0 flex-1"
                                                     value={emailCode}
-                                                    onChange={(event) => setEmailCode(event.target.value)}
+                                                    onChange={(event) => {
+                                                        setEmailCode(event.target.value);
+                                                        clearFieldError('email-code');
+                                                    }}
                                                     inputMode="numeric"
                                                     pattern="[0-9]*"
                                                     maxLength={6}
                                                     autoComplete="one-time-code"
                                                     disabled={!api.emailChangeEnabled}
+                                                    data-account-field="email-code"
+                                                    aria-invalid={Boolean(fieldErrors['email-code'])}
+                                                    aria-describedby={
+                                                        fieldErrors['email-code']
+                                                            ? 'account-email-code-error'
+                                                            : undefined
+                                                    }
                                                 />
                                                 <Button
                                                     type="button"
@@ -1774,6 +1708,14 @@ export default function AccountPanel({ api, section = 'profile' }: Props) {
                                                           : '发送验证码'}
                                                 </Button>
                                             </div>
+                                            {fieldErrors['email-code'] ? (
+                                                <small
+                                                    id="account-email-code-error"
+                                                    className="user-center-field-error"
+                                                >
+                                                    {fieldErrors['email-code']}
+                                                </small>
+                                            ) : null}
                                         </div>
                                     ) : null}
                                     {!api.emailChangeEnabled ? (
@@ -1795,8 +1737,12 @@ export default function AccountPanel({ api, section = 'profile' }: Props) {
                                     </div>
                                 </form>
 
-                                <div className="border-t border-line pt-6">
-                                    <form className="grid gap-4" onSubmit={(event) => void savePassword(event)}>
+                                <div>
+                                    <form
+                                        className="user-center-form-card"
+                                        noValidate
+                                        onSubmit={(event) => void savePassword(event)}
+                                    >
                                         <div>
                                             <h4 className="flex items-center gap-2 text-[14px] font-medium">
                                                 <KeyRound className="size-4 text-ink-mute" strokeWidth={1.8} aria-hidden="true" />
@@ -1806,44 +1752,104 @@ export default function AccountPanel({ api, section = 'profile' }: Props) {
                                                 修改后当前设备会自动续期，其他设备上的旧登录凭证会失效。
                                             </p>
                                         </div>
-                                        <label className="grid gap-1.5">
+                                        <label className="user-center-field">
                                             <span className="text-[12px] font-medium text-ink-soft">当前密码</span>
                                             <Input
+                                                id="account-current-password"
+                                                name="currentPassword"
                                                 className="h-10"
                                                 type="password"
                                                 value={currentPassword}
-                                                onChange={(event) => setCurrentPassword(event.target.value)}
+                                                onChange={(event) => {
+                                                    setCurrentPassword(event.target.value);
+                                                    clearFieldError('current-password');
+                                                }}
                                                 autoComplete="current-password"
                                                 maxLength={200}
                                                 required
+                                                data-account-field="current-password"
+                                                aria-invalid={Boolean(fieldErrors['current-password'])}
+                                                aria-describedby={
+                                                    fieldErrors['current-password']
+                                                        ? 'account-current-password-error'
+                                                        : undefined
+                                                }
                                             />
+                                            {fieldErrors['current-password'] ? (
+                                                <small
+                                                    id="account-current-password-error"
+                                                    className="user-center-field-error"
+                                                >
+                                                    {fieldErrors['current-password']}
+                                                </small>
+                                            ) : null}
                                         </label>
                                         <div className="grid gap-4 sm:grid-cols-2">
-                                            <label className="grid gap-1.5">
+                                            <label className="user-center-field">
                                                 <span className="text-[12px] font-medium text-ink-soft">新密码</span>
                                                 <Input
+                                                    id="account-new-password"
+                                                    name="newPassword"
                                                     className="h-10"
                                                     type="password"
                                                     value={newPassword}
-                                                    onChange={(event) => setNewPassword(event.target.value)}
+                                                    onChange={(event) => {
+                                                        setNewPassword(event.target.value);
+                                                        clearFieldError('new-password');
+                                                    }}
                                                     autoComplete="new-password"
                                                     minLength={6}
                                                     maxLength={18}
                                                     required
+                                                    data-account-field="new-password"
+                                                    aria-invalid={Boolean(fieldErrors['new-password'])}
+                                                    aria-describedby={
+                                                        fieldErrors['new-password']
+                                                            ? 'account-new-password-error'
+                                                            : undefined
+                                                    }
                                                 />
+                                                {fieldErrors['new-password'] ? (
+                                                    <small
+                                                        id="account-new-password-error"
+                                                        className="user-center-field-error"
+                                                    >
+                                                        {fieldErrors['new-password']}
+                                                    </small>
+                                                ) : null}
                                             </label>
-                                            <label className="grid gap-1.5">
+                                            <label className="user-center-field">
                                                 <span className="text-[12px] font-medium text-ink-soft">确认新密码</span>
                                                 <Input
+                                                    id="account-confirm-password"
+                                                    name="confirmPassword"
                                                     className="h-10"
                                                     type="password"
                                                     value={confirmPassword}
-                                                    onChange={(event) => setConfirmPassword(event.target.value)}
+                                                    onChange={(event) => {
+                                                        setConfirmPassword(event.target.value);
+                                                        clearFieldError('confirm-password');
+                                                    }}
                                                     autoComplete="new-password"
                                                     minLength={6}
                                                     maxLength={18}
                                                     required
+                                                    data-account-field="confirm-password"
+                                                    aria-invalid={Boolean(fieldErrors['confirm-password'])}
+                                                    aria-describedby={
+                                                        fieldErrors['confirm-password']
+                                                            ? 'account-confirm-password-error'
+                                                            : undefined
+                                                    }
                                                 />
+                                                {fieldErrors['confirm-password'] ? (
+                                                    <small
+                                                        id="account-confirm-password-error"
+                                                        className="user-center-field-error"
+                                                    >
+                                                        {fieldErrors['confirm-password']}
+                                                    </small>
+                                                ) : null}
                                             </label>
                                         </div>
                                         <div>
@@ -1865,11 +1871,15 @@ export default function AccountPanel({ api, section = 'profile' }: Props) {
 
                         {section === 'social' ? (
                             api.oauth?.enabled ? (
-                                <div className="grid gap-4">
+                                <div className="user-center-social">
+                                    <div className="user-center-form-intro">
+                                        <h3>已连接平台</h3>
+                                        <p>解绑前请确认站内密码仍可正常使用，避免失去登录方式。</p>
+                                    </div>
                                     {oauthProviders.map((provider) => (
                                         <div
                                             key={provider.id}
-                                            className="flex flex-wrap items-center gap-3 rounded-[6px] border border-line bg-surface-2 p-3"
+                                            className="user-center-provider"
                                         >
                                             <UserAvatar
                                                 name={provider.name || provider.label}
@@ -1934,12 +1944,14 @@ export default function AccountPanel({ api, section = 'profile' }: Props) {
                                     ))}
 
                                     {oauthProviders.length === 0 ? (
-                                        <div className="rounded-[6px] border border-dashed border-line bg-surface-2 px-5 py-8 text-center">
+                                        <div className="user-center-empty">
                                             {api.oauth?.nullImage ? (
                                                 <img
-                                                    className="mx-auto w-48 max-w-full opacity-80"
+                                                    className="mx-auto h-auto w-48 max-w-full opacity-80"
                                                     src={api.oauth.nullImage}
                                                     alt=""
+                                                    width={200}
+                                                    height={120}
                                                     loading="lazy"
                                                 />
                                             ) : null}
@@ -1951,12 +1963,14 @@ export default function AccountPanel({ api, section = 'profile' }: Props) {
                                             </p>
                                         </div>
                                     ) : socialCount === 0 ? (
-                                        <div className="rounded-[6px] border border-dashed border-line bg-surface-2 px-5 py-8 text-center">
+                                        <div className="user-center-empty">
                                             {api.oauth?.nullImage ? (
                                                 <img
-                                                    className="mx-auto w-48 max-w-full opacity-80"
+                                                    className="mx-auto h-auto w-48 max-w-full opacity-80"
                                                     src={api.oauth.nullImage}
                                                     alt=""
+                                                    width={200}
+                                                    height={120}
                                                     loading="lazy"
                                                 />
                                             ) : null}
@@ -1969,12 +1983,12 @@ export default function AccountPanel({ api, section = 'profile' }: Props) {
                                         </div>
                                     ) : null}
 
-                                    <p className="text-[11px] leading-5 text-ink-faint">
-                                        绑定社交账号后，您可更安全、更快速地登录本站。
+                                    <p className="user-center-footnote">
+                                        绑定不会修改站内密码；你仍可随时解绑已连接平台。
                                     </p>
                                 </div>
                             ) : (
-                                <div className="rounded-[6px] border border-dashed border-line bg-surface-2 px-5 py-8 text-center">
+                                <div className="user-center-empty">
                                     <p className="text-[13px] font-medium">
                                         站点尚未开放社交账号登录
                                     </p>
@@ -1986,7 +2000,7 @@ export default function AccountPanel({ api, section = 'profile' }: Props) {
                         ) : null}
 
                         {section === 'content' ? (
-                            <div className="grid gap-[15px]">
+                            <div className="user-center-content-workbench">
                                 <ContentManager api={api} profile={profile} />
                             </div>
                         ) : null}
@@ -1994,7 +2008,8 @@ export default function AccountPanel({ api, section = 'profile' }: Props) {
                         {section === 'downloads' ? (
                             <DownloadHistory client={api.downloads} />
                         ) : null}
-            </section>
+            </div>
+        </UserCenterShell>
 
             <Dialog open={certDetailsOpen} onOpenChange={setCertDetailsOpen}>
                 <DialogContent>
@@ -2099,7 +2114,7 @@ export default function AccountPanel({ api, section = 'profile' }: Props) {
                     void saveBackground(nextDetails);
                 }}
             />
-        </div>
+        </>
     );
 }
 
