@@ -1091,7 +1091,7 @@ export default function AccountPanel({
             userCenter={userCenter}
             checkinBusy={checkinBusy}
         >
-            <div className="user-center-content-card">
+            <div className={`user-center-content-card is-${section}`}>
                 {feedback ? (
                     <div
                         className={`user-center-feedback is-${feedback.tone}`}
@@ -1112,216 +1112,78 @@ export default function AccountPanel({
                         {section === 'profile' ? (
                             <>
                             <form
-                                className="user-center-form"
+                                className="user-center-profile-form"
                                 noValidate
                                 onSubmit={(event) => void saveProfile(event)}
                             >
-                                <div className="user-center-form-intro">
-                                    <h3>公开资料</h3>
-                                    <p>这些信息会显示在公开主页和站点互动区域。</p>
-                                </div>
-                                <div className="grid gap-4 sm:grid-cols-2">
-                                    <label className="user-center-field">
-                                        <span className="text-[12px] font-medium text-ink-soft">显示名称</span>
-                                        <Input
-                                            id="account-screen-name"
-                                            name="screenName"
-                                            className="h-10"
-                                            value={screenName}
-                                            onChange={(event) => {
-                                                setScreenName(event.target.value);
-                                                clearFieldError('screen-name');
-                                            }}
-                                            maxLength={150}
-                                            autoComplete="nickname"
-                                            spellCheck={false}
-                                            data-account-field="screen-name"
-                                            aria-invalid={Boolean(fieldErrors['screen-name'])}
-                                            aria-describedby={
-                                                fieldErrors['screen-name']
-                                                    ? 'account-screen-name-error'
-                                                    : undefined
-                                            }
-                                        />
-                                        {fieldErrors['screen-name'] ? (
-                                            <small
-                                                id="account-screen-name-error"
-                                                className="user-center-field-error"
-                                            >
-                                                {fieldErrors['screen-name']}
-                                            </small>
-                                        ) : null}
-                                    </label>
-                                    {api.enhanced ? (
+                                <section
+                                    className="user-center-card"
+                                    aria-labelledby="account-public-title"
+                                >
+                                    <div className="user-center-card-heading">
+                                        <span className="user-center-card-icon" aria-hidden="true">
+                                            <UserRound />
+                                        </span>
+                                        <div>
+                                            <h3 id="account-public-title">公开身份</h3>
+                                            <p>访客在个人主页、文章与互动区域看到的信息。</p>
+                                        </div>
+                                    </div>
+                                    <div className="user-center-field-grid">
                                         <label className="user-center-field">
-                                            <span className="text-[12px] font-medium text-ink-soft">个性签名</span>
+                                            <span>显示名称</span>
                                             <Input
-                                                id="account-signature"
-                                                name="signature"
+                                                id="account-screen-name"
+                                                name="screenName"
                                                 className="h-10"
-                                                value={details.signature}
-                                                onChange={(event) =>
-                                                    setDetails((current) => ({
-                                                        ...current,
-                                                        signature: event.target.value,
-                                                    }))
+                                                value={screenName}
+                                                onChange={(event) => {
+                                                    setScreenName(event.target.value);
+                                                    clearFieldError('screen-name');
+                                                }}
+                                                maxLength={150}
+                                                autoComplete="nickname"
+                                                spellCheck={false}
+                                                data-account-field="screen-name"
+                                                aria-invalid={Boolean(fieldErrors['screen-name'])}
+                                                aria-describedby={
+                                                    fieldErrors['screen-name']
+                                                        ? 'account-screen-name-error'
+                                                        : undefined
                                                 }
-                                                maxLength={120}
-                                                placeholder="一句话介绍自己"
-                                                autoComplete="off"
                                             />
+                                            {fieldErrors['screen-name'] ? (
+                                                <small
+                                                    id="account-screen-name-error"
+                                                    className="user-center-field-error"
+                                                >
+                                                    {fieldErrors['screen-name']}
+                                                </small>
+                                            ) : null}
                                         </label>
-                                    ) : null}
-                                </div>
-                                {api.enhanced ? (
-                                    <>
-                                        <div className="grid gap-2">
-                                            <span className="text-[12px] font-medium text-ink-soft">头像</span>
-                                            <div className="user-center-media-field">
-                                                <ProfileAvatar
-                                                    profile={avatarPreview}
-                                                    className="size-14 border border-line shadow-sm"
-                                                />
-                                                <div className="min-w-0 flex-1">
-                                                    <p className="truncate text-[12px] text-ink-soft">
-                                                        {details.avatar
-                                                            ? '已选择自定义头像'
-                                                            : '当前使用站点头像源'}
-                                                    </p>
-                                                    <p className="mt-0.5 text-[11px] leading-5 text-ink-faint">
-                                                        头像图片上传到媒体库，保存后立即生效。
-                                                    </p>
-                                                </div>
-                                                <div className="flex shrink-0 flex-wrap items-center gap-1">
-                                                    <Button
-                                                        id="account-avatar"
-                                                        name="avatar"
-                                                        type="button"
-                                                        variant="outline"
-                                                        size="sm"
-                                                        disabled={!api.avatarMediaEnabled}
-                                                        onClick={() => setAvatarMediaOpen(true)}
-                                                        data-account-field="profile-avatar"
-                                                    >
-                                                        从媒体库选择
-                                                    </Button>
-                                                </div>
-                                            </div>
-                                            {fieldErrors['profile-avatar'] ? (
-                                                <small className="user-center-field-error">
-                                                    {fieldErrors['profile-avatar']}
-                                                </small>
-                                            ) : null}
-                                            {!api.avatarMediaEnabled ? (
-                                                <span className="text-[11px] leading-5 text-ink-faint">
-                                                    媒体库接口未启用，暂时无法更换头像。
-                                                </span>
-                                            ) : null}
-                                        </div>
-                                        <div className="grid gap-2">
-                                            <span className="text-[12px] font-medium text-ink-soft">
-                                                个人主页背景
-                                            </span>
-                                            <div className="user-center-media-field">
-                                                <span
-                                                    className="account-cover-thumb shrink-0"
-                                                    style={
-                                                        details.background !== ''
-                                                            ? {
-                                                                  backgroundImage: cssUrl(
-                                                                      details.background
-                                                                  ),
-                                                              }
-                                                            : undefined
-                                                    }
-                                                    aria-hidden="true"
-                                                />
-                                                <div className="min-w-0 flex-1">
-                                                    <p className="truncate text-[12px] text-ink-soft">
-                                                        {details.background
-                                                            ? '已设置个人主页背景'
-                                                            : '使用站点默认渐变背景'}
-                                                    </p>
-                                                    <p className="mt-0.5 text-[11px] leading-5 text-ink-faint">
-                                                        背景会显示在用户中心与个人空间的顶部横幅。
-                                                    </p>
-                                                </div>
-                                                <Button
-                                                    id="account-background"
-                                                    name="background"
-                                                    type="button"
-                                                    variant="outline"
-                                                    size="sm"
-                                                    disabled={
-                                                        !api.avatarMediaEnabled
-                                                        || !detailsReady
-                                                        || backgroundBusy
-                                                    }
-                                                    onClick={() => setBackgroundMediaOpen(true)}
-                                                    data-account-field="profile-background"
-                                                >
-                                                    <Camera aria-hidden="true" />
-                                                    {backgroundBusy ? '保存中…' : '从媒体库选择'}
-                                                </Button>
-                                            </div>
-                                            {fieldErrors['profile-background'] ? (
-                                                <small className="user-center-field-error">
-                                                    {fieldErrors['profile-background']}
-                                                </small>
-                                            ) : null}
-                                            {!api.avatarMediaEnabled ? (
-                                                <span className="text-[11px] leading-5 text-ink-faint">
-                                                    媒体库接口未启用，暂时无法更换背景。
-                                                </span>
-                                            ) : null}
-                                        </div>
-                                        <div className="grid gap-4 sm:grid-cols-2">
+                                        {api.enhanced ? (
                                             <label className="user-center-field">
-                                                <span className="text-[12px] font-medium text-ink-soft">性别</span>
-                                                <select
-                                                    id="account-gender"
-                                                    name="gender"
-                                                    className="h-10 rounded-[4px] border border-line bg-surface px-3 text-[13px] text-ink outline-none transition-[border-color,box-shadow] focus-visible:border-brand focus-visible:ring-[3px] focus-visible:ring-brand/20"
-                                                    value={details.gender}
+                                                <span>个性签名</span>
+                                                <Input
+                                                    id="account-signature"
+                                                    name="signature"
+                                                    className="h-10"
+                                                    value={details.signature}
                                                     onChange={(event) =>
                                                         setDetails((current) => ({
                                                             ...current,
-                                                            gender: event.target.value,
+                                                            signature: event.target.value,
                                                         }))
                                                     }
-                                                >
-                                                    {Object.entries(GENDER_LABELS).map(([value, label]) => (
-                                                        <option key={value} value={value}>
-                                                            {label}
-                                                        </option>
-                                                    ))}
-                                                </select>
+                                                    maxLength={120}
+                                                    placeholder="一句话介绍自己"
+                                                    autoComplete="off"
+                                                />
                                             </label>
+                                        ) : null}
+                                        {api.enhanced ? (
                                             <label className="user-center-field">
-                                                <span className="text-[12px] font-medium text-ink-soft">隐私设置</span>
-                                                <select
-                                                    id="account-privacy"
-                                                    name="privacy"
-                                                    className="h-10 rounded-[4px] border border-line bg-surface px-3 text-[13px] text-ink outline-none transition-[border-color,box-shadow] focus-visible:border-brand focus-visible:ring-[3px] focus-visible:ring-brand/20"
-                                                    value={details.privacy}
-                                                    onChange={(event) =>
-                                                        setDetails((current) => ({
-                                                            ...current,
-                                                            privacy: event.target.value,
-                                                        }))
-                                                    }
-                                                >
-                                                    {Object.entries(PRIVACY_LABELS).map(([value, label]) => (
-                                                        <option key={value} value={value}>
-                                                            {label}
-                                                        </option>
-                                                    ))}
-                                                </select>
-                                            </label>
-                                        </div>
-                                        <div className="grid gap-4 sm:grid-cols-2">
-                                            <label className="user-center-field">
-                                                <span className="text-[12px] font-medium text-ink-soft">居住地</span>
+                                                <span>居住地</span>
                                                 <Input
                                                     id="account-location"
                                                     name="location"
@@ -1338,84 +1200,233 @@ export default function AccountPanel({
                                                     autoComplete="address-level2"
                                                 />
                                             </label>
-                                            <label className="user-center-field">
-                                                <span className="text-[12px] font-medium text-ink-soft">个人主页</span>
-                                                <Input
-                                                    id="account-profile-url"
-                                                    name="url"
-                                                    className="h-10"
-                                                    type="url"
-                                                    value={url}
-                                                    onChange={(event) => {
-                                                        setUrl(event.target.value);
-                                                        clearFieldError('profile-url');
-                                                    }}
-                                                    maxLength={255}
-                                                    placeholder="https://example.com"
-                                                    autoComplete="url"
-                                                    inputMode="url"
-                                                    spellCheck={false}
-                                                    data-account-field="profile-url"
-                                                    aria-invalid={Boolean(fieldErrors['profile-url'])}
-                                                    aria-describedby={
-                                                        fieldErrors['profile-url']
-                                                            ? 'account-profile-url-error'
-                                                            : undefined
-                                                    }
-                                                />
-                                                {fieldErrors['profile-url'] ? (
-                                                    <small
-                                                        id="account-profile-url-error"
-                                                        className="user-center-field-error"
-                                                    >
-                                                        {fieldErrors['profile-url']}
+                                        ) : null}
+                                        <label className="user-center-field">
+                                            <span>个人主页</span>
+                                            <Input
+                                                id="account-profile-url"
+                                                name="url"
+                                                className="h-10"
+                                                type="url"
+                                                value={url}
+                                                onChange={(event) => {
+                                                    setUrl(event.target.value);
+                                                    clearFieldError('profile-url');
+                                                }}
+                                                maxLength={255}
+                                                placeholder="https://example.com"
+                                                autoComplete="url"
+                                                inputMode="url"
+                                                spellCheck={false}
+                                                data-account-field="profile-url"
+                                                aria-invalid={Boolean(fieldErrors['profile-url'])}
+                                                aria-describedby={
+                                                    fieldErrors['profile-url']
+                                                        ? 'account-profile-url-error'
+                                                        : undefined
+                                                }
+                                            />
+                                            {fieldErrors['profile-url'] ? (
+                                                <small
+                                                    id="account-profile-url-error"
+                                                    className="user-center-field-error"
+                                                >
+                                                    {fieldErrors['profile-url']}
+                                                </small>
+                                            ) : null}
+                                        </label>
+                                    </div>
+                                </section>
+
+                                {api.enhanced ? (
+                                    <>
+                                        <section
+                                            className="user-center-card"
+                                            aria-labelledby="account-appearance-title"
+                                        >
+                                            <div className="user-center-card-heading">
+                                                <span className="user-center-card-icon" aria-hidden="true">
+                                                    <Camera />
+                                                </span>
+                                                <div>
+                                                    <h3 id="account-appearance-title">头像与封面</h3>
+                                                    <p>使用媒体库图片塑造个人空间的视觉入口。</p>
+                                                </div>
+                                            </div>
+                                            <div className="user-center-field">
+                                                <span>头像</span>
+                                                <div className="user-center-media-field">
+                                                    <ProfileAvatar
+                                                        profile={avatarPreview}
+                                                        className="size-14 border border-line shadow-sm"
+                                                    />
+                                                    <div className="min-w-0 flex-1">
+                                                        <p className="truncate text-[12px] text-ink-soft">
+                                                            {details.avatar
+                                                                ? '已选择自定义头像'
+                                                                : '当前使用站点头像源'}
+                                                        </p>
+                                                        <p className="user-center-field-help">
+                                                            头像图片上传到媒体库，保存后立即生效。
+                                                        </p>
+                                                    </div>
+                                                    <div className="flex shrink-0 flex-wrap items-center gap-1">
+                                                        <Button
+                                                            id="account-avatar"
+                                                            name="avatar"
+                                                            type="button"
+                                                            variant="outline"
+                                                            size="sm"
+                                                            disabled={!api.avatarMediaEnabled}
+                                                            onClick={() => setAvatarMediaOpen(true)}
+                                                            data-account-field="profile-avatar"
+                                                        >
+                                                            从媒体库选择
+                                                        </Button>
+                                                    </div>
+                                                </div>
+                                                {fieldErrors['profile-avatar'] ? (
+                                                    <small className="user-center-field-error">
+                                                        {fieldErrors['profile-avatar']}
                                                     </small>
                                                 ) : null}
-                                            </label>
-                                        </div>
+                                                {!api.avatarMediaEnabled ? (
+                                                    <span className="user-center-field-help">
+                                                        媒体库接口未启用，暂时无法更换头像。
+                                                    </span>
+                                                ) : null}
+                                            </div>
+                                            <div className="user-center-field">
+                                                <span>个人主页背景</span>
+                                                <div className="user-center-media-field">
+                                                    <span
+                                                        className="account-cover-thumb shrink-0"
+                                                        style={
+                                                            details.background !== ''
+                                                                ? {
+                                                                      backgroundImage: cssUrl(
+                                                                          details.background
+                                                                      ),
+                                                                  }
+                                                                : undefined
+                                                        }
+                                                        aria-hidden="true"
+                                                    />
+                                                    <div className="min-w-0 flex-1">
+                                                        <p className="truncate text-[12px] text-ink-soft">
+                                                            {details.background
+                                                                ? '已设置个人主页背景'
+                                                                : '使用站点默认渐变背景'}
+                                                        </p>
+                                                        <p className="user-center-field-help">
+                                                            背景会显示在用户中心与个人空间的顶部横幅。
+                                                        </p>
+                                                    </div>
+                                                    <Button
+                                                        id="account-background"
+                                                        name="background"
+                                                        type="button"
+                                                        variant="outline"
+                                                        size="sm"
+                                                        disabled={
+                                                            !api.avatarMediaEnabled
+                                                            || !detailsReady
+                                                            || backgroundBusy
+                                                        }
+                                                        onClick={() => setBackgroundMediaOpen(true)}
+                                                        data-account-field="profile-background"
+                                                    >
+                                                        <Camera aria-hidden="true" />
+                                                        {backgroundBusy
+                                                            ? '保存中…'
+                                                            : '从媒体库选择'}
+                                                    </Button>
+                                                </div>
+                                                {fieldErrors['profile-background'] ? (
+                                                    <small className="user-center-field-error">
+                                                        {fieldErrors['profile-background']}
+                                                    </small>
+                                                ) : null}
+                                                {!api.avatarMediaEnabled ? (
+                                                    <span className="user-center-field-help">
+                                                        媒体库接口未启用，暂时无法更换背景。
+                                                    </span>
+                                                ) : null}
+                                            </div>
+                                        </section>
+
+                                        <section
+                                            className="user-center-card"
+                                            aria-labelledby="account-privacy-title"
+                                        >
+                                            <div className="user-center-card-heading">
+                                                <span className="user-center-card-icon" aria-hidden="true">
+                                                    <ShieldCheck />
+                                                </span>
+                                                <div>
+                                                    <h3 id="account-privacy-title">资料与隐私</h3>
+                                                    <p>控制其他访客能看到多少个人信息。</p>
+                                                </div>
+                                            </div>
+                                            <div className="user-center-field-grid">
+                                                <label className="user-center-field">
+                                                    <span>性别</span>
+                                                    <select
+                                                        id="account-gender"
+                                                        name="gender"
+                                                        className="h-10"
+                                                        value={details.gender}
+                                                        onChange={(event) =>
+                                                            setDetails((current) => ({
+                                                                ...current,
+                                                                gender: event.target.value,
+                                                            }))
+                                                        }
+                                                    >
+                                                        {Object.entries(GENDER_LABELS).map(
+                                                            ([value, label]) => (
+                                                                <option key={value} value={value}>
+                                                                    {label}
+                                                                </option>
+                                                            )
+                                                        )}
+                                                    </select>
+                                                </label>
+                                                <label className="user-center-field">
+                                                    <span>隐私设置</span>
+                                                    <select
+                                                        id="account-privacy"
+                                                        name="privacy"
+                                                        className="h-10"
+                                                        value={details.privacy}
+                                                        onChange={(event) =>
+                                                            setDetails((current) => ({
+                                                                ...current,
+                                                                privacy: event.target.value,
+                                                            }))
+                                                        }
+                                                    >
+                                                        {Object.entries(PRIVACY_LABELS).map(
+                                                            ([value, label]) => (
+                                                                <option key={value} value={value}>
+                                                                    {label}
+                                                                </option>
+                                                            )
+                                                        )}
+                                                    </select>
+                                                </label>
+                                            </div>
+                                        </section>
                                     </>
-                                ) : (
-                                    <label className="user-center-field">
-                                        <span className="text-[12px] font-medium text-ink-soft">个人主页</span>
-                                        <Input
-                                            id="account-profile-url"
-                                            name="url"
-                                            className="h-10"
-                                            type="url"
-                                            value={url}
-                                            onChange={(event) => {
-                                                setUrl(event.target.value);
-                                                clearFieldError('profile-url');
-                                            }}
-                                            maxLength={255}
-                                            placeholder="https://example.com"
-                                            autoComplete="url"
-                                            inputMode="url"
-                                            spellCheck={false}
-                                            data-account-field="profile-url"
-                                            aria-invalid={Boolean(fieldErrors['profile-url'])}
-                                            aria-describedby={
-                                                fieldErrors['profile-url']
-                                                    ? 'account-profile-url-error'
-                                                    : undefined
-                                            }
-                                        />
-                                        {fieldErrors['profile-url'] ? (
-                                            <small
-                                                id="account-profile-url-error"
-                                                className="user-center-field-error"
-                                            >
-                                                {fieldErrors['profile-url']}
-                                            </small>
-                                        ) : null}
-                                    </label>
-                                )}
+                                ) : null}
+
                                 {api.enhanced && !detailsReady ? (
-                                    <p className="rounded-[4px] bg-destructive/10 px-3 py-2 text-[12px] leading-5 text-destructive">
+                                    <p className="user-center-inline-alert" role="status">
                                         更多资料尚未加载完成，保存按钮已暂时禁用。请刷新页面重试。
                                     </p>
                                 ) : null}
-                                <div>
+                                <div className="user-center-form-actions">
+                                    <p>保存后会同步更新用户中心、公开主页与互动区域。</p>
                                     <Button
                                         type="submit"
                                         disabled={profileBusy || (api.enhanced && !detailsReady)}
@@ -1432,18 +1443,19 @@ export default function AccountPanel({
                                 </div>
                             </form>
                             {api.certificationEnabled ? (
-                                <section className="mt-6 rounded-[8px] border border-line bg-surface-2 p-4">
-                                    <div className="flex flex-wrap items-start justify-between gap-3">
+                                <section
+                                    className="user-center-card user-center-certification-card"
+                                    aria-labelledby="account-certification-title"
+                                >
+                                    <div className="user-center-card-heading user-center-card-heading-split">
+                                        <span className="user-center-card-icon" aria-hidden="true">
+                                            <UserCheck />
+                                        </span>
                                         <div>
-                                            <h4 className="flex items-center gap-2 text-[14px] font-medium">
-                                                <UserCheck
-                                                    className="size-4 text-ink-mute"
-                                                    strokeWidth={1.8}
-                                                    aria-hidden="true"
-                                                />
+                                            <h3 id="account-certification-title">
                                                 身份认证
-                                            </h4>
-                                            <p className="mt-1 text-[12px] leading-5 text-ink-mute">
+                                            </h3>
+                                            <p>
                                                 提交真实身份或组织信息，管理员审核通过后会在个人空间展示认证徽章。
                                             </p>
                                         </div>
@@ -1624,16 +1636,18 @@ export default function AccountPanel({
                                     noValidate
                                     onSubmit={(event) => void saveMail(event)}
                                 >
-                                    <div>
-                                        <h4 className="flex items-center gap-2 text-[14px] font-medium">
-                                            <Mail className="size-4 text-ink-mute" strokeWidth={1.8} aria-hidden="true" />
-                                            登录邮箱
-                                        </h4>
-                                        <p className="mt-1 text-[12px] leading-5 text-ink-mute">
-                                            {api.emailVerify
-                                                ? '更换邮箱前需要先向新邮箱发送验证码。'
-                                                : '邮箱用于登录和接收站点通知。'}
-                                        </p>
+                                    <div className="user-center-card-heading">
+                                        <span className="user-center-card-icon" aria-hidden="true">
+                                            <Mail />
+                                        </span>
+                                        <div>
+                                            <h3>登录邮箱</h3>
+                                            <p>
+                                                {api.emailVerify
+                                                    ? '更换邮箱前需要先向新邮箱发送验证码。'
+                                                    : '邮箱用于登录和接收站点通知。'}
+                                            </p>
+                                        </div>
                                     </div>
                                     <div className="user-center-current-value">
                                         <span>当前邮箱</span>
@@ -1754,14 +1768,16 @@ export default function AccountPanel({
                                         noValidate
                                         onSubmit={(event) => void savePassword(event)}
                                     >
-                                        <div>
-                                            <h4 className="flex items-center gap-2 text-[14px] font-medium">
-                                                <KeyRound className="size-4 text-ink-mute" strokeWidth={1.8} aria-hidden="true" />
-                                                修改密码
-                                            </h4>
-                                            <p className="mt-1 text-[12px] leading-5 text-ink-mute">
-                                                修改后当前设备会自动续期，其他设备上的旧登录凭证会失效。
-                                            </p>
+                                        <div className="user-center-card-heading">
+                                            <span className="user-center-card-icon" aria-hidden="true">
+                                                <KeyRound />
+                                            </span>
+                                            <div>
+                                                <h3>修改密码</h3>
+                                                <p>
+                                                    修改后当前设备会自动续期，其他设备上的旧登录凭证会失效。
+                                                </p>
+                                            </div>
                                         </div>
                                         <label className="user-center-field">
                                             <span className="text-[12px] font-medium text-ink-soft">当前密码</span>
@@ -1883,9 +1899,16 @@ export default function AccountPanel({
                         {section === 'social' ? (
                             api.oauth?.enabled ? (
                                 <div className="user-center-social">
-                                    <div className="user-center-form-intro">
-                                        <h3>已连接平台</h3>
-                                        <p>解绑前请确认站内密码仍可正常使用，避免失去登录方式。</p>
+                                    <div className="user-center-card-heading">
+                                        <span className="user-center-card-icon" aria-hidden="true">
+                                            <Link2 />
+                                        </span>
+                                        <div>
+                                            <h3>已连接平台</h3>
+                                            <p>
+                                                解绑前请确认站内密码仍可正常使用，避免失去登录方式。
+                                            </p>
+                                        </div>
                                     </div>
                                     {oauthProviders.map((provider) => (
                                         <div

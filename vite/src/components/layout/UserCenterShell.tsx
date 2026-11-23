@@ -147,6 +147,8 @@ export default function UserCenterShell({
     userCenter = DEFAULT_USER_CENTER,
     checkinBusy,
 }: Props) {
+    const shellRef = useRef<HTMLElement>(null);
+    const introRef = useRef<HTMLElement>(null);
     const mobileNavRef = useRef<HTMLElement>(null);
     const name = profile.screenName || profile.name;
     const role = GROUP_LABELS[profile.group] ?? profile.group;
@@ -172,6 +174,30 @@ export default function UserCenterShell({
             return '/admin/';
         }
     })();
+
+    useEffect(() => {
+        const shell = shellRef.current;
+        const intro = introRef.current;
+        if (!shell || !intro) {
+            return;
+        }
+
+        const updateIntroHeight = () => {
+            shell.style.setProperty(
+                '--user-center-intro-height',
+                `${Math.ceil(intro.getBoundingClientRect().height)}px`
+            );
+        };
+
+        updateIntroHeight();
+        const observer = new ResizeObserver(updateIntroHeight);
+        observer.observe(intro);
+        window.addEventListener('resize', updateIntroHeight);
+        return () => {
+            observer.disconnect();
+            window.removeEventListener('resize', updateIntroHeight);
+        };
+    }, []);
 
     useEffect(() => {
         const nav = mobileNavRef.current;
@@ -390,6 +416,7 @@ export default function UserCenterShell({
 
     return (
         <section
+            ref={shellRef}
             className={
                 'user-center-shell is-sidebar-'
                 + (userCenter.railMode === 'follow' ? 'follow' : 'pinned')
@@ -397,7 +424,7 @@ export default function UserCenterShell({
             data-rail-mode={userCenter.railMode}
             aria-labelledby="user-center-title"
         >
-            <header className="user-center-intro">
+            <header ref={introRef} className="user-center-intro">
                 <div>
                     <p className="section-label">{userCenter.eyebrow}</p>
                     <h1 id="user-center-title">{userCenter.title}</h1>
@@ -480,37 +507,39 @@ export default function UserCenterShell({
             </nav>
 
             <div className="user-center-layout">
-                <aside className="user-center-rail">
-                    {identity}
-                    <nav className="user-center-nav" aria-label="用户中心导航">
-                        {navGroups.map((group) => (
-                            <div key={group.label} className="user-center-nav-group">
-                                <p>{group.label}</p>
-                                {group.items.map((item) => (
-                                    <NavLink
-                                        key={item.id}
-                                        active={active === item.id}
-                                        item={item}
-                                    />
-                                ))}
-                            </div>
-                        ))}
-                    </nav>
-                    <Button
-                        type="button"
-                        variant="ghost"
-                        className="user-center-logout"
-                        disabled={loggingOut}
-                        onClick={onLogout}
-                    >
-                        {loggingOut ? (
-                            <LoaderCircle className="animate-spin" aria-hidden="true" />
-                        ) : (
-                            <LogOut aria-hidden="true" />
-                        )}
-                        {loggingOut ? '正在退出…' : '退出登录'}
-                    </Button>
-                </aside>
+                <div className="user-center-rail-column">
+                    <aside className="user-center-rail">
+                        {identity}
+                        <nav className="user-center-nav" aria-label="用户中心导航">
+                            {navGroups.map((group) => (
+                                <div key={group.label} className="user-center-nav-group">
+                                    <p>{group.label}</p>
+                                    {group.items.map((item) => (
+                                        <NavLink
+                                            key={item.id}
+                                            active={active === item.id}
+                                            item={item}
+                                        />
+                                    ))}
+                                </div>
+                            ))}
+                        </nav>
+                        <Button
+                            type="button"
+                            variant="ghost"
+                            className="user-center-logout"
+                            disabled={loggingOut}
+                            onClick={onLogout}
+                        >
+                            {loggingOut ? (
+                                <LoaderCircle className="animate-spin" aria-hidden="true" />
+                            ) : (
+                                <LogOut aria-hidden="true" />
+                            )}
+                            {loggingOut ? '正在退出…' : '退出登录'}
+                        </Button>
+                    </aside>
+                </div>
 
                 <div className="user-center-main">
                     <header className="user-center-section-heading">

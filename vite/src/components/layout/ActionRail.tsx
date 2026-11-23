@@ -77,13 +77,19 @@ export default function ActionRail({ colorMode }: Props) {
                 </button>
             </nav>
 
-            <nav className="action-rail-mobile lg:hidden" aria-label="页面快捷操作">
-                <button type="button" onClick={() => openSearch()}>
+            <nav
+                className={
+                    'action-rail-mobile' + (visible ? ' is-scrolled' : '')
+                }
+                aria-label="页面快捷操作"
+            >
+                <button type="button" aria-label="搜索文章" onClick={() => openSearch()}>
                     <Search className="size-4" strokeWidth={1.8} aria-hidden="true" />
                     <span>搜索</span>
                 </button>
                 <button
                     type="button"
+                    aria-label={theme === 'dark' ? '切换到浅色模式' : '切换到深色模式'}
                     aria-pressed={theme === 'dark'}
                     onClick={toggle}
                 >
@@ -92,15 +98,15 @@ export default function ActionRail({ colorMode }: Props) {
                     ) : (
                         <Moon className="size-4" strokeWidth={1.8} aria-hidden="true" />
                     )}
-                    <span>{theme === 'dark' ? '浅色' : '深色'}</span>
+                    <span>外观</span>
                 </button>
                 <button
                     type="button"
-                    disabled={!visible}
+                    aria-label="回到页面顶部"
                     onClick={scrollToTop}
                 >
                     <ArrowUp className="size-4" strokeWidth={1.8} aria-hidden="true" />
-                    <span>回顶</span>
+                    <span>顶部</span>
                 </button>
             </nav>
         </>
