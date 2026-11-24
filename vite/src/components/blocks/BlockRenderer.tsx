@@ -1,6 +1,12 @@
 import CategoriesBlock from './CategoriesBlock';
 import CarouselBlock from './CarouselBlock';
 import CommentsBlock from './CommentsBlock';
+import {
+    BentoGridBlock,
+    LinkDirectoryBlock,
+    QuickLinksBlock,
+    TopicGridBlock,
+} from './DiscoveryBlocks';
 import HeroBlock from './HeroBlock';
 import PostListBlock from './PostListBlock';
 import ProseBlock from './ProseBlock';
@@ -314,6 +320,49 @@ export default function BlockRenderer({ block }: Props) {
                     variant={block.variant}
                     title={block.title}
                     text={block.text}
+                    items={block.items}
+                />
+            );
+        case 'quick-links':
+            return (
+                <QuickLinksBlock
+                    type="quick-links"
+                    variant={block.variant}
+                    title={block.title}
+                    text={block.text}
+                    items={block.items}
+                />
+            );
+        case 'bento-grid':
+            return (
+                <BentoGridBlock
+                    type="bento-grid"
+                    variant={block.variant}
+                    title={block.title}
+                    text={block.text}
+                    items={block.items}
+                />
+            );
+        case 'topic-grid':
+            return (
+                <TopicGridBlock
+                    type="topic-grid"
+                    variant={block.variant}
+                    title={block.title}
+                    text={block.text}
+                    columns={block.columns}
+                    items={block.items}
+                />
+            );
+        case 'link-directory':
+            return (
+                <LinkDirectoryBlock
+                    type="link-directory"
+                    variant={block.variant}
+                    title={block.title}
+                    text={block.text}
+                    searchLabel={block.searchLabel}
+                    columns={block.columns}
                     items={block.items}
                 />
             );

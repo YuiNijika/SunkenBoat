@@ -320,3 +320,36 @@
         grid-template-columns: repeat(5, minmax(0, 1fr));
     }
 }
+
+/* Mixed-density editorial feed inspired by community and resource portals. */
+.post-mixed-layout,
+.post-mixed-band {
+    display: grid;
+    gap: 15px;
+}
+
+.post-mixed-side {
+    display: grid;
+    align-content: start;
+    gap: 10px;
+}
+
+.post-mixed-band + .post-mixed-band {
+    padding-top: 3px;
+    border-top: 1px solid var(--line);
+}
+
+@media (min-width: 900px) {
+    .post-mixed-band {
+        grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr);
+        align-items: start;
+    }
+
+    .post-mixed-band.is-reversed .post-list-large {
+        order: 2;
+    }
+
+    .post-mixed-band.is-reversed .post-mixed-side {
+        order: 1;
+    }
+}

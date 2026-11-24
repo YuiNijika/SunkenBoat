@@ -167,6 +167,30 @@ export default function PostListBlock({
             );
         }
 
+        if (mode === 'mixed') {
+            return (
+                <div className="post-mixed-layout">
+                    {chunk(items.slice(0, 15), 5).map((group, index) => {
+                        const [lead, ...rest] = group;
+
+                        return (
+                            <div
+                                key={lead?.url ?? index}
+                                className={'post-mixed-band' + (index % 2 === 1 ? ' is-reversed' : '')}
+                            >
+                                {lead ? <LargeCard post={lead} /> : null}
+                                <div className="post-mixed-side">
+                                    {rest.map((post) => (
+                                        <CompactRow key={post.url} post={post} />
+                                    ))}
+                                </div>
+                            </div>
+                        );
+                    })}
+                </div>
+            );
+        }
+
         if (mode === 'masonry') {
             return (
                 <div

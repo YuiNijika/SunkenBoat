@@ -437,6 +437,19 @@ final class Seo
             'search' => self::search($block, $site),
             'cta' => self::cta($block),
             'link-list' => self::linkList($block['title'] ?? '', self::items($block['items'] ?? [], 'label', true)),
+            'quick-links' => self::linkList(
+                $block['title'] ?? '',
+                self::items($block['items'] ?? [], 'title', true)
+            ),
+            'bento-grid' => self::linkList(
+                $block['title'] ?? '',
+                self::items($block['items'] ?? [], 'title', true)
+            ),
+            'topic-grid' => self::topicGrid($block),
+            'link-directory' => self::linkList(
+                $block['title'] ?? '',
+                self::items($block['items'] ?? [], 'label', true)
+            ),
             'forum-home' => self::forumHome($block),
             'forum-circle' => self::forumCircle($block),
             'forum-topic' => self::forumTopic($block),
@@ -679,6 +692,56 @@ final class Seo
         }
 
         return $html . '</ul>' . PHP_EOL;
+    }
+
+    /**
+     * @param array<string, mixed> $block
+     */
+    private static function topicGrid(array $block): string
+    {
+        $items = is_array($block['items'] ?? null) ? $block['items'] : [];
+        $html = self::heading($block['title'] ?? '', $block['text'] ?? '', 2);
+
+        foreach ($items as $item) {
+            if (!is_array($item)) {
+                continue;
+            }
+
+            $label = self::str($item['label'] ?? '');
+            $url = self::str($item['url'] ?? '');
+            if ($label === '' || $url === '') {
+                continue;
+            }
+
+            $html .= '<section>';
+            $html .= '<h3><a href="' . Escaper::url($url) . '">' . Escaper::html($label) . '</a></h3>';
+            $description = self::str($item['text'] ?? '');
+            if ($description !== '') {
+                $html .= '<p>' . Escaper::html($description) . '</p>';
+            }
+
+            $posts = is_array($item['posts'] ?? null) ? $item['posts'] : [];
+            if ($posts !== []) {
+                $html .= '<ul>';
+                foreach ($posts as $post) {
+                    if (!is_array($post)) {
+                        continue;
+                    }
+
+                    $title = self::str($post['title'] ?? '');
+                    $postUrl = self::str($post['url'] ?? '');
+                    if ($title !== '' && $postUrl !== '') {
+                        $html .= '<li><a href="' . Escaper::url($postUrl) . '">'
+                            . Escaper::html($title) . '</a></li>';
+                    }
+                }
+                $html .= '</ul>';
+            }
+
+            $html .= '</section>';
+        }
+
+        return $html;
     }
 
     /**

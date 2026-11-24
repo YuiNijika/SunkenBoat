@@ -33,6 +33,7 @@ return [
                             'split' => '列表 + 推荐',
                             'headline' => '纯标题三栏',
                             'compact' => '紧凑列表',
+                            'mixed' => '混合密度资讯流',
                         ],
                         'fields' => [
                             ['type' => 'Text', 'name' => 'title', 'label' => '标题', 'placeholder' => '留空使用默认标题'],

@@ -777,6 +777,79 @@ export interface PromoGridBlock extends BlockBase {
     items: PromoGridItem[];
 }
 
+export interface QuickLinkItem {
+    icon: string;
+    title: string;
+    text: string;
+    url: string;
+    badge: string;
+}
+
+export interface QuickLinksBlock extends BlockBase {
+    type: 'quick-links';
+    title: string;
+    text: string;
+    items: QuickLinkItem[];
+}
+
+export interface BentoGridItem {
+    title: string;
+    text: string;
+    image: string;
+    url: string;
+    badge: string;
+    size: 'large' | 'wide' | 'tall' | 'small' | 'auto';
+}
+
+export interface BentoGridBlock extends BlockBase {
+    type: 'bento-grid';
+    title: string;
+    text: string;
+    items: BentoGridItem[];
+}
+
+export interface TopicGridPost {
+    title: string;
+    url: string;
+    date: string;
+}
+
+export interface TopicGridItem {
+    label: string;
+    text: string;
+    url: string;
+    image: string;
+    badge: string;
+    count: number;
+    posts: TopicGridPost[];
+}
+
+export interface TopicGridBlock extends BlockBase {
+    type: 'topic-grid';
+    title: string;
+    text: string;
+    columns: number;
+    items: TopicGridItem[];
+}
+
+export interface LinkDirectoryItem {
+    group: string;
+    label: string;
+    description: string;
+    url: string;
+    icon: string;
+    badge: string;
+}
+
+export interface LinkDirectoryBlock extends BlockBase {
+    type: 'link-directory';
+    title: string;
+    text: string;
+    searchLabel: string;
+    columns: number;
+    items: LinkDirectoryItem[];
+}
+
 export interface PostTabsItem {
     label: string;
     url: string;
@@ -1409,6 +1482,10 @@ export type Block =
     | TableBlock
     | MediaGridBlock
     | PromoGridBlock
+    | QuickLinksBlock
+    | BentoGridBlock
+    | TopicGridBlock
+    | LinkDirectoryBlock
     | PostTabsBlock
     | AuthorGridBlock
     | ProductGridBlock

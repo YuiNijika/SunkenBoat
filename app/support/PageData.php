@@ -868,6 +868,9 @@ final class PageData
             'table' => self::tableBlock($data),
             'media-grid' => self::mediaGridBlock($data),
             'promo-grid' => self::promoGridBlock($variant, $data),
+            'quick-links' => self::quickLinksBlock($variant, $data),
+            'bento-grid' => self::bentoGridBlock($variant, $data),
+            'link-directory' => self::linkDirectoryBlock($variant, $data),
             'product-grid' => self::productGridBlock($data),
             'logo-cloud' => self::logoCloudBlock($data),
             'heading' => self::headingBlock($variant, $data),
@@ -1046,6 +1049,10 @@ final class PageData
             'table' => self::tableBlock($data),
             'media-grid' => self::mediaGridBlock($data),
             'promo-grid' => self::promoGridBlock($variant, $data),
+            'quick-links' => self::quickLinksBlock($variant, $data),
+            'bento-grid' => self::bentoGridBlock($variant, $data),
+            'topic-grid' => self::topicGridBlock($variant, $cache, $data),
+            'link-directory' => self::linkDirectoryBlock($variant, $data),
             'post-tabs' => self::postTabsBlock($archive, $variant, $data, $cache),
             'author-grid' => self::authorGridBlock($data),
             'product-grid' => self::productGridBlock($data),
@@ -1916,6 +1923,273 @@ final class PageData
             'variant' => self::blockVariant($variant, ['feature', 'duo', 'trio'], 'feature'),
             'title' => self::text($data, 'title', ''),
             'text' => self::text($data, 'text', ''),
+            'items' => $items,
+        ];
+    }
+
+    /**
+     * Compact icon-led shortcuts for the space directly below a hero or the
+     * beginning of a long content page.
+     *
+     * @return array<string, mixed>|null
+     */
+    private static function quickLinksBlock(string $variant, array $data = []): ?array
+    {
+        $allowedIcons = [
+            'compass',
+            'book',
+            'search',
+            'code',
+            'download',
+            'users',
+            'message',
+            'star',
+            'shield',
+            'sparkles',
+            'layers',
+        ];
+        $items = [];
+
+        foreach (self::pipeRows($data['items'] ?? null, ['icon', 'title', 'text', 'url', 'badge'], 12) as $row) {
+            $url = self::safeUrl($row['url']);
+            if ($row['title'] === '' || $url === '') {
+                continue;
+            }
+
+            $items[] = [
+                'icon' => in_array($row['icon'], $allowedIcons, true) ? $row['icon'] : 'compass',
+                'title' => $row['title'],
+                'text' => $row['text'],
+                'url' => $url,
+                'badge' => $row['badge'],
+            ];
+        }
+
+        if ($items === []) {
+            return null;
+        }
+
+        return [
+            'type' => 'quick-links',
+            'variant' => self::blockVariant($variant, ['cards', 'strip'], 'cards'),
+            'title' => self::text($data, 'title', ''),
+            'text' => self::text($data, 'text', ''),
+            'items' => $items,
+        ];
+    }
+
+    /**
+     * Asymmetric media feature grid inspired by editorial storefront landing
+     * pages while remaining a normal, settings-backed content block.
+     *
+     * @return array<string, mixed>|null
+     */
+    private static function bentoGridBlock(string $variant, array $data = []): ?array
+    {
+        $allowedSizes = ['large', 'wide', 'tall', 'small'];
+        $items = [];
+
+        foreach (self::pipeRows(
+            $data['items'] ?? null,
+            ['title', 'text', 'image', 'url', 'badge', 'size'],
+            8
+        ) as $row) {
+            $image = Media::url($row['image']);
+            $url = self::safeUrl($row['url']);
+            if ($row['title'] === '' && $row['text'] === '' && $image === '') {
+                continue;
+            }
+
+            $items[] = [
+                'title' => $row['title'],
+                'text' => $row['text'],
+                'image' => $image,
+                'url' => $url,
+                'badge' => $row['badge'],
+                'size' => in_array($row['size'], $allowedSizes, true) ? $row['size'] : 'auto',
+            ];
+        }
+
+        if ($items === []) {
+            return null;
+        }
+
+        return [
+            'type' => 'bento-grid',
+            'variant' => self::blockVariant($variant, ['spotlight', 'mosaic'], 'spotlight'),
+            'title' => self::text($data, 'title', ''),
+            'text' => self::text($data, 'text', ''),
+            'items' => $items,
+        ];
+    }
+
+    /**
+     * Category/collection spotlights reuse real Typecho categories and their
+     * latest published articles. Manual rows may override the cover, copy and
+     * link while still resolving counts from a matching category slug.
+     *
+     * @param array<string, mixed> $cache
+     * @return array<string, mixed>|null
+     */
+    private static function topicGridBlock(string $variant, array &$cache, array $data = []): ?array
+    {
+        $limit = is_numeric($data['limit'] ?? null) ? (int) $data['limit'] : 4;
+        $limit = max(1, min(8, $limit));
+        $recentLimit = is_numeric($data['recent_limit'] ?? null) ? (int) $data['recent_limit'] : 3;
+        $recentLimit = max(0, min(5, $recentLimit));
+        $columns = is_numeric($data['columns'] ?? null) ? (int) $data['columns'] : 2;
+        $columns = max(1, min(3, $columns));
+        $categories = self::cached($cache, 'categories', static fn (): array => self::categories());
+        $categoryBySlug = [];
+        foreach ($categories as $category) {
+            if (!is_array($category)) {
+                continue;
+            }
+
+            $slug = trim((string) ($category['slug'] ?? ''));
+            if ($slug !== '') {
+                $categoryBySlug[$slug] = $category;
+            }
+        }
+
+        $rows = self::pipeRows(
+            $data['items'] ?? null,
+            ['label', 'text', 'slug', 'image', 'url', 'badge'],
+            $limit
+        );
+
+        if ($rows === []) {
+            foreach ($categories as $category) {
+                if (!is_array($category) || (int) ($category['count'] ?? 0) <= 0) {
+                    continue;
+                }
+
+                $rows[] = [
+                    'label' => (string) ($category['label'] ?? ''),
+                    'text' => '',
+                    'slug' => (string) ($category['slug'] ?? ''),
+                    'image' => '',
+                    'url' => (string) ($category['url'] ?? ''),
+                    'badge' => '',
+                ];
+
+                if (count($rows) >= $limit) {
+                    break;
+                }
+            }
+        }
+
+        $items = [];
+        foreach ($rows as $row) {
+            $slug = trim($row['slug']);
+            $category = $slug !== '' && isset($categoryBySlug[$slug])
+                ? $categoryBySlug[$slug]
+                : null;
+            $label = $row['label'] !== ''
+                ? $row['label']
+                : (string) ($category['label'] ?? '');
+            $url = self::safeUrl($row['url'], (string) ($category['url'] ?? ''));
+
+            if ($label === '' || $url === '') {
+                continue;
+            }
+
+            $posts = [];
+            if ($recentLimit > 0 && is_array($category)) {
+                $posts = self::cached(
+                    $cache,
+                    'topic:' . $slug,
+                    static fn (): array => self::postSummariesByCategory($slug)
+                );
+                $posts = array_slice($posts, 0, $recentLimit);
+            }
+
+            $items[] = [
+                'label' => $label,
+                'text' => $row['text'],
+                'url' => $url,
+                'image' => Media::url($row['image']),
+                'badge' => $row['badge'],
+                'count' => is_array($category) ? max(0, (int) ($category['count'] ?? 0)) : 0,
+                'posts' => array_map(static fn (array $post): array => [
+                    'title' => (string) ($post['title'] ?? ''),
+                    'url' => (string) ($post['url'] ?? ''),
+                    'date' => (string) ($post['date'] ?? ''),
+                ], $posts),
+            ];
+        }
+
+        if ($items === []) {
+            return null;
+        }
+
+        return [
+            'type' => 'topic-grid',
+            'variant' => self::blockVariant($variant, ['spotlight', 'grid'], 'grid'),
+            'title' => self::text($data, 'title', ''),
+            'text' => self::text($data, 'text', ''),
+            'columns' => $columns,
+            'items' => $items,
+        ];
+    }
+
+    /**
+     * Grouped link directory with client-side filtering. Every destination is
+     * normalized through the same safe URL gate as the rest of the blocks.
+     *
+     * @return array<string, mixed>|null
+     */
+    private static function linkDirectoryBlock(string $variant, array $data = []): ?array
+    {
+        $allowedIcons = [
+            'compass',
+            'book',
+            'search',
+            'code',
+            'download',
+            'users',
+            'message',
+            'star',
+            'shield',
+            'sparkles',
+            'layers',
+            'external',
+        ];
+        $items = [];
+
+        foreach (self::pipeRows(
+            $data['items'] ?? null,
+            ['group', 'label', 'description', 'url', 'icon', 'badge'],
+            30
+        ) as $row) {
+            $url = self::safeUrl($row['url']);
+            if ($row['label'] === '' || $url === '') {
+                continue;
+            }
+
+            $items[] = [
+                'group' => $row['group'],
+                'label' => $row['label'],
+                'description' => $row['description'],
+                'url' => $url,
+                'icon' => in_array($row['icon'], $allowedIcons, true) ? $row['icon'] : 'external',
+                'badge' => $row['badge'],
+            ];
+        }
+
+        if ($items === []) {
+            return null;
+        }
+
+        $columns = is_numeric($data['columns'] ?? null) ? (int) $data['columns'] : 2;
+
+        return [
+            'type' => 'link-directory',
+            'variant' => self::blockVariant($variant, ['grid', 'compact'], 'grid'),
+            'title' => self::text($data, 'title', ''),
+            'text' => self::text($data, 'text', ''),
+            'searchLabel' => self::text($data, 'search_label', '搜索链接、分组或说明'),
+            'columns' => max(1, min(3, $columns)),
             'items' => $items,
         ];
     }

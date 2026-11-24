@@ -271,6 +271,107 @@ $commonBlocks = [
             ...$blockLayoutFields,
         ],
     ],
+    'quick-links' => [
+        'label' => '快捷入口',
+        'variants' => [
+            'cards' => '图标卡片',
+            'strip' => '紧凑横条',
+        ],
+        'fields' => [
+            ['type' => 'Text', 'name' => 'title', 'label' => '标题'],
+            ['type' => 'Textarea', 'name' => 'text', 'label' => '说明', 'rows' => 2],
+            [
+                'type' => 'Textarea',
+                'name' => 'items',
+                'label' => '入口列表',
+                'rows' => 6,
+                'description' => '每行一条：图标|标题|说明|链接|角标。图标支持 compass/book/search/code/download/users/message/star/shield/sparkles/layers。',
+            ],
+            ...$blockLayoutFields,
+        ],
+    ],
+    'bento-grid' => [
+        'label' => 'Bento 精选拼图',
+        'variants' => [
+            'spotlight' => '主次聚焦',
+            'mosaic' => '非对称拼图',
+        ],
+        'fields' => [
+            ['type' => 'Text', 'name' => 'title', 'label' => '标题'],
+            ['type' => 'Textarea', 'name' => 'text', 'label' => '说明', 'rows' => 2],
+            [
+                'type' => 'Textarea',
+                'name' => 'items',
+                'label' => '拼图项目',
+                'rows' => 7,
+                'description' => '每行一条：标题|说明|图片地址|链接|角标|尺寸(large/wide/tall/small)。建议 3–6 条，尺寸留空时自动排布。',
+            ],
+            ...$blockLayoutFields,
+        ],
+    ],
+    'topic-grid' => [
+        'label' => '主题合集',
+        'variants' => [
+            'spotlight' => '重点合集',
+            'grid' => '合集网格',
+        ],
+        'fields' => [
+            ['type' => 'Text', 'name' => 'title', 'label' => '标题'],
+            ['type' => 'Textarea', 'name' => 'text', 'label' => '说明', 'rows' => 2],
+            [
+                'type' => 'Textarea',
+                'name' => 'items',
+                'label' => '自定义合集',
+                'rows' => 6,
+                'description' => '每行一条：标题|说明|分类 slug|封面地址|链接|角标。留空时自动读取现有分类与文章数。',
+            ],
+            ['type' => 'Number', 'name' => 'limit', 'label' => '显示数量', 'value' => 4, 'min' => 1, 'max' => 8, 'step' => 1],
+            ['type' => 'Number', 'name' => 'recent_limit', 'label' => '每个合集显示文章数', 'value' => 3, 'min' => 0, 'max' => 5, 'step' => 1],
+            [
+                'type' => 'Select',
+                'name' => 'columns',
+                'label' => '网格列数',
+                'value' => '2',
+                'options' => [
+                    '1' => '单列',
+                    '2' => '两列',
+                    '3' => '三列',
+                ],
+            ],
+            ...$blockLayoutFields,
+        ],
+    ],
+    'link-directory' => [
+        'label' => '链接目录',
+        'variants' => [
+            'grid' => '目录卡片',
+            'compact' => '紧凑目录',
+        ],
+        'fields' => [
+            ['type' => 'Text', 'name' => 'title', 'label' => '标题'],
+            ['type' => 'Textarea', 'name' => 'text', 'label' => '说明', 'rows' => 2],
+            ['type' => 'Text', 'name' => 'search_label', 'label' => '搜索框占位', 'placeholder' => '搜索链接、分组或说明'],
+            [
+                'type' => 'Textarea',
+                'name' => 'items',
+                'label' => '链接项目',
+                'rows' => 8,
+                'description' => '每行一条：分组|标题|说明|链接|图标|角标。图标支持 compass/book/search/code/download/users/message/star/shield/sparkles/layers/external。',
+            ],
+            [
+                'type' => 'Select',
+                'name' => 'columns',
+                'label' => '网格列数',
+                'value' => '2',
+                'options' => [
+                    '1' => '单列',
+                    '2' => '两列',
+                    '3' => '三列',
+                ],
+            ],
+            ...$blockLayoutFields,
+        ],
+    ],
     'post-tabs' => [
         'label' => '分类文章切换',
         'fields' => [
