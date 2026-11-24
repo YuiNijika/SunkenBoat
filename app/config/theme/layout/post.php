@@ -26,7 +26,7 @@ return [
             [
                 'type' => 'Blocks',
                 'name' => 'Post_Blocks',
-                'value' => ['prose', 'tags', 'post-nav', 'comments'],
+                'value' => ['breadcrumbs', 'prose', 'tags', 'post-nav', 'comments'],
                 'label' => '文章区块',
                 'description' => '组合文章页的标题、正文、标签、上一篇/下一篇与评论区。默认正文卡片内包含标题；如果单独加入“文章标题”区块，正文会自动隐藏重复标题。',
                 'placeholder' => '选择区块…',

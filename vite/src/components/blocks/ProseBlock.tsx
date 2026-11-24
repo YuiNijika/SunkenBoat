@@ -283,7 +283,7 @@ export default function ProseBlock({
 
     return (
         <>
-            <Card className="surface-card gap-0 p-4 sm:p-6">
+            <Card className="surface-card gap-0 p-5">
                 {showHeader && title ? (
                     <PostHeaderBlock embedded title={title} meta={meta} share={share} />
                 ) : null}

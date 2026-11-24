@@ -15,7 +15,7 @@ return [
             [
                 'type' => 'Blocks',
                 'name' => 'Page_Blocks',
-                'value' => ['page-header', 'prose', 'comments'],
+                'value' => ['breadcrumbs', 'page-header', 'prose', 'comments'],
                 'label' => '独立页面区块',
                 'description' => '组合独立页面的标题、正文与评论区。',
                 'placeholder' => '选择区块…',

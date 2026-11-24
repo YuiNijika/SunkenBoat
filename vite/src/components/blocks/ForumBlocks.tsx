@@ -193,7 +193,7 @@ export function Panel({
     className?: string;
 }) {
     return (
-        <section className={cx('surface-card gap-0 p-[15px]', className)}>
+        <section className={cx('surface-card gap-0 p-5', className)}>
             <div className="relative mb-3 flex items-center gap-2 pb-2">
                 <h2 className="text-[15px] font-medium leading-6 text-ink">{title}</h2>
                 {aside ? <div className="ml-auto text-[11px] text-ink-faint">{aside}</div> : null}

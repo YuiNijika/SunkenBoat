@@ -26,8 +26,8 @@ export function ArchiveHeaderBlock({
         <Card className="surface-card gap-0 p-5">
             <div className="flex flex-wrap items-end justify-between gap-5">
                 <div className="min-w-0">
-                    <p className="text-[12px] font-normal text-ink-faint">内容归档</p>
-                    <h1 className="mt-1.5 truncate text-[22px] font-medium leading-[1.4] text-ink">
+                    <p className="section-label">内容归档</p>
+                    <h1 className="mt-2 truncate text-[22px] font-medium leading-[1.4] text-ink">
                         {title}
                     </h1>
                     {description ? (
@@ -119,7 +119,7 @@ export function PostHeaderBlock({ title, meta, share, embedded = false }: PostHe
         <Card className="surface-card gap-0 p-5">
             <Badge
                 variant="secondary"
-                className="rounded-[4px] border-0 bg-brand-soft px-[5px] py-[2px] text-[11px] font-normal leading-[1.44] text-brand"
+                className="w-fit rounded-[4px] border-0 bg-brand-soft px-[7px] py-[3px] text-[11px] font-medium leading-[1.5] text-brand"
             >
                 文章
             </Badge>
@@ -141,13 +141,8 @@ export function PageHeaderBlock({ variant, eyebrow, title }: PageHeaderProps) {
     const compact = variant === 'compact';
 
     return (
-        <Card
-            className={
-                'surface-card gap-0 ' +
-                (compact ? 'p-5' : 'p-5 sm:p-6')
-            }
-        >
-            <p className="text-[12px] font-normal text-brand">
+        <Card className="surface-card gap-0 p-5">
+            <p className="section-label">
                 {eyebrow || '独立页面'}
             </p>
             <h1
