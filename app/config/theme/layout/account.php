@@ -62,28 +62,6 @@ return [
             ],
         ],
         [
-            'type' => 'Text',
-            'name' => 'UserCenter_Eyebrow',
-            'value' => 'Member workspace',
-            'label' => '页面引导语',
-            'placeholder' => 'Member workspace',
-        ],
-        [
-            'type' => 'Text',
-            'name' => 'UserCenter_Title',
-            'value' => '用户中心',
-            'label' => '页面标题',
-            'placeholder' => '用户中心',
-        ],
-        [
-            'type' => 'Textarea',
-            'name' => 'UserCenter_Description',
-            'value' => '管理公开身份、登录安全、创作内容与账号资产。',
-            'label' => '页面说明',
-            'rows' => 3,
-            'placeholder' => '管理公开身份、登录安全、创作内容与账号资产。',
-        ],
-        [
             'type' => 'Switch',
             'name' => 'UserCenter_Show_Identity',
             'value' => true,

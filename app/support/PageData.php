@@ -3331,9 +3331,6 @@ final class PageData
     /**
      * @param array<string, mixed> $values
      * @return array{
-     *     eyebrow: string,
-     *     title: string,
-     *     description: string,
      *     railMode: 'pinned'|'follow',
      *     showIdentity: bool,
      *     showStats: bool,
@@ -3345,16 +3342,8 @@ final class PageData
     private static function userCenter(array $values): array
     {
         $railMode = (string) ($values['UserCenter_Rail_Mode'] ?? 'pinned');
-        $eyebrow = self::clip((string) ($values['UserCenter_Eyebrow'] ?? ''), 48);
-        $title = self::clip((string) ($values['UserCenter_Title'] ?? ''), 48);
-        $description = self::clip((string) ($values['UserCenter_Description'] ?? ''), 180);
 
         return [
-            'eyebrow' => $eyebrow !== '' ? $eyebrow : 'Member workspace',
-            'title' => $title !== '' ? $title : '用户中心',
-            'description' => $description !== ''
-                ? $description
-                : '管理公开身份、登录安全、创作内容与账号资产。',
             'railMode' => in_array($railMode, ['pinned', 'follow'], true)
                 ? $railMode
                 : 'pinned',

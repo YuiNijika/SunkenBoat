@@ -11,7 +11,6 @@ import {
     PenLine,
     ShieldCheck,
     Sparkles,
-    UserRound,
     Wallet,
 } from 'lucide-react';
 import { Button } from '../ui/button';
@@ -64,9 +63,6 @@ interface Props {
 }
 
 const DEFAULT_USER_CENTER: UserCenterOptions = {
-    eyebrow: 'Member workspace',
-    title: '用户中心',
-    description: '管理公开身份、登录安全、创作内容与账号资产。',
     railMode: 'pinned',
     showIdentity: true,
     showStats: true,
@@ -148,7 +144,6 @@ export default function UserCenterShell({
     checkinBusy,
 }: Props) {
     const shellRef = useRef<HTMLElement>(null);
-    const introRef = useRef<HTMLElement>(null);
     const mobileNavRef = useRef<HTMLElement>(null);
     const name = profile.screenName || profile.name;
     const role = GROUP_LABELS[profile.group] ?? profile.group;
@@ -174,30 +169,6 @@ export default function UserCenterShell({
             return '/admin/';
         }
     })();
-
-    useEffect(() => {
-        const shell = shellRef.current;
-        const intro = introRef.current;
-        if (!shell || !intro) {
-            return;
-        }
-
-        const updateIntroHeight = () => {
-            shell.style.setProperty(
-                '--user-center-intro-height',
-                `${Math.ceil(intro.getBoundingClientRect().height)}px`
-            );
-        };
-
-        updateIntroHeight();
-        const observer = new ResizeObserver(updateIntroHeight);
-        observer.observe(intro);
-        window.addEventListener('resize', updateIntroHeight);
-        return () => {
-            observer.disconnect();
-            window.removeEventListener('resize', updateIntroHeight);
-        };
-    }, []);
 
     useEffect(() => {
         const nav = mobileNavRef.current;
@@ -422,21 +393,8 @@ export default function UserCenterShell({
                 + (userCenter.railMode === 'follow' ? 'follow' : 'pinned')
             }
             data-rail-mode={userCenter.railMode}
-            aria-labelledby="user-center-title"
+            aria-label="用户中心"
         >
-            <header ref={introRef} className="user-center-intro">
-                <div>
-                    <p className="section-label">{userCenter.eyebrow}</p>
-                    <h1 id="user-center-title">{userCenter.title}</h1>
-                    <p>{userCenter.description}</p>
-                </div>
-                <a className="user-center-home-link" href={spaceUrl}>
-                    <UserRound aria-hidden="true" />
-                    查看公开主页
-                    <ArrowUpRight aria-hidden="true" />
-                </a>
-            </header>
-
             {userCenter.showIdentity ? (
                 <div className="user-center-mobile-identity">
                     <div className="user-center-mobile-cover" style={coverStyle(coverUrl)}>

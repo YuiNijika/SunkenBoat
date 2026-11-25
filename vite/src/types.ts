@@ -59,9 +59,6 @@ export interface ThemeOptions {
 }
 
 export interface UserCenterOptions {
-    eyebrow: string;
-    title: string;
-    description: string;
     railMode: 'pinned' | 'follow';
     showIdentity: boolean;
     showStats: boolean;
